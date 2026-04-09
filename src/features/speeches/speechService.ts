@@ -1,7 +1,15 @@
+import { FirebaseError } from "firebase/app";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import {
+  getDownloadURL,
+  ref,
+  uploadBytesResumable,
+  type UploadTaskSnapshot,
+} from "firebase/storage";
 import { firestore, storage } from "@/lib/firebase";
 import type { SpeechRecord } from "@/types/models";
+
+const UPLOAD_TIMEOUT_MS = 20_000;
 
 interface NewSpeechInput {
   title: string;
@@ -14,14 +22,79 @@ interface NewSpeechInput {
   file?: File | null;
 }
 
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number) =>
+  new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(
+        new Error(
+          "The upload took too long to respond. This usually means Firebase Storage is blocked by local CORS or network configuration.",
+        ),
+      );
+    }, timeoutMs);
+
+    void promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+
+const uploadTaskToPromise = (task: ReturnType<typeof uploadBytesResumable>) =>
+  new Promise<UploadTaskSnapshot>((resolve, reject) => {
+    task.on(
+      "state_changed",
+      undefined,
+      (error) => reject(error),
+      () => resolve(task.snapshot),
+    );
+  });
+
+const formatStorageError = (error: unknown) => {
+  if (error instanceof FirebaseError) {
+    if (
+      error.code === "storage/unauthorized" ||
+      error.code === "storage/unauthenticated"
+    ) {
+      return "Storage blocked the upload. Check your Firebase Storage rules and make sure the signed-in user is allowed to write to the bucket.";
+    }
+
+    if (
+      error.code === "storage/retry-limit-exceeded" ||
+      error.code === "storage/unknown"
+    ) {
+      return "Storage upload failed before it could complete. On localhost this is commonly caused by missing Cloud Storage CORS settings for your dev origin.";
+    }
+
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Unable to upload the selected file to Firebase Storage.";
+};
+
 export const uploadSpeechAsset = async (file?: File | null) => {
   if (!file || !storage) {
     return null;
   }
 
   const assetRef = ref(storage, `speeches/${Date.now()}-${file.name}`);
-  await uploadBytes(assetRef, file);
-  return getDownloadURL(assetRef);
+  const uploadTask = uploadBytesResumable(assetRef, file);
+
+  try {
+    await withTimeout(uploadTaskToPromise(uploadTask), UPLOAD_TIMEOUT_MS);
+    return await withTimeout(getDownloadURL(assetRef), 8_000);
+  } catch (error) {
+    uploadTask.cancel();
+    throw new Error(formatStorageError(error));
+  }
 };
 
 export const createSpeechRecord = async (

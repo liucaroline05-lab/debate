@@ -30,20 +30,36 @@ export interface SpeechRecord {
 export interface DebateMatchRequest {
   id: string;
   topic: string;
-  format: "Async" | "Practice Round";
+  format: "Lincoln-Douglas" | "Public Forum" | "Policy" | "Async";
   skillLevel: "Novice" | "Intermediate" | "Advanced";
   requestedBy: string;
   preferredSide: "Aff" | "Neg" | "Either";
   status: "Open" | "Matched" | "Closed";
   createdAt: string;
+  rounds?: number;
+  responseWindowHours?: number;
+  requesterSideLabel?: string;
+  requesterGoal?: string;
+}
+
+export interface DebateParticipant {
+  name: string;
+  side: "Aff" | "Neg";
+  label: string;
+  partnerLabel?: string;
 }
 
 export interface DebateTurn {
   id: string;
+  code?: string;
+  title?: string;
   author: string;
   side: "Aff" | "Neg";
-  submittedAt: string;
+  submittedAt?: string;
   summary: string;
+  durationLabel?: string;
+  status: "submitted" | "current" | "locked";
+  actionLabel?: string;
 }
 
 export interface DebateThread {
@@ -51,8 +67,20 @@ export interface DebateThread {
   topic: string;
   format: string;
   status: "Waiting on You" | "Waiting on Opponent" | "Completed";
+  lane: "my-debates" | "completed" | "spectate";
   partnerName: string;
   nextDeadline: string;
+  affirmative: DebateParticipant;
+  negative: DebateParticipant;
+  currentRound: number;
+  totalRounds: number;
+  spectators: number;
+  aiJudged?: boolean;
+  winner?: "Aff" | "Neg";
+  score?: {
+    aff: number;
+    neg: number;
+  };
   turns: DebateTurn[];
   debatePartnerSuggestions: string[];
 }
@@ -74,16 +102,32 @@ export interface CommunityChannel {
   summary: string;
   followers: number;
   topicTags: string[];
+  shortCode?: string;
+  category?: "Tournament" | "School" | "Debate Type" | "Practice Group";
+  memberCount?: number;
+  activityLabel?: string;
+  accent?: "sage" | "gold" | "terracotta" | "sand";
 }
 
 export interface CommunityPost {
   id: string;
   channelId: string;
   author: string;
+  authorRole?: string;
+  category?: "Question" | "Speech Review" | "Tips & Strategies" | "All Posts";
+  debateType?: string;
+  title?: string;
   content: string;
   createdAt: string;
   replyCount: number;
   reported: boolean;
+  likeCount?: number;
+  shareCount?: number;
+  attachmentTitle?: string;
+  attachmentMeta?: string;
+  aiScoreLabel?: string;
+  featuredReplyAuthor?: string;
+  featuredReplyPreview?: string;
 }
 
 export interface EventItem {

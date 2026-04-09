@@ -215,6 +215,15 @@ export const SpeechUploadPage = () => {
               orchestration in v1.
             </p>
           </article>
+
+          <article className="app-card">
+            <span className="pill">Local dev note</span>
+            <p className="card-copy">
+              If file upload fails on <code>localhost</code>, Firebase Storage may
+              need CORS configured for your dev origin. Metadata saves can only
+              complete after the file upload step succeeds.
+            </p>
+          </article>
         </div>
       </section>
     </>

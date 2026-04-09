@@ -24,7 +24,7 @@ export const AboutPage = () => (
             </p>
           </article>
           <article className="card">
-            <h3 className="card-title">Why the aesthetic matters</h3>
+            <h3 className="card-title">something</h3>
             <p className="card-copy">
               Debate platforms often feel sterile. This one uses warmth, texture,
               and editorial pacing to reduce friction and make practice feel more

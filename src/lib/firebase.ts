@@ -32,6 +32,13 @@ export const firestore = firebaseApp ? getFirestore(firebaseApp) : null;
 export const storage = firebaseApp ? getStorage(firebaseApp) : null;
 export const googleProvider = new GoogleAuthProvider();
 
+if (storage) {
+  // Fail faster during upload/network issues so the UI does not sit in a
+  // "Saving..." state for the default multi-minute retry window.
+  storage.maxUploadRetryTime = 15_000;
+  storage.maxOperationRetryTime = 10_000;
+}
+
 if (auth && firestore && storage && env.useFirebaseEmulators) {
   connectAuthEmulator(auth, "http://127.0.0.1:9099", {
     disableWarnings: true,

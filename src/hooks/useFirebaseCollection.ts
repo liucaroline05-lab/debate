@@ -20,8 +20,9 @@ export const useFirebaseCollection = <T extends { id: string }>(
 
   useEffect(() => {
     let isMounted = true;
+    const activeFirestore = firestore;
 
-    if (!firestore) {
+    if (!activeFirestore) {
       setState({ data: fallbackData, isLoading: false, error: null });
       return () => {
         isMounted = false;
@@ -30,7 +31,7 @@ export const useFirebaseCollection = <T extends { id: string }>(
 
     const load = async () => {
       try {
-        const snapshot = await getDocs(collection(firestore, collectionName));
+        const snapshot = await getDocs(collection(activeFirestore, collectionName));
         const nextData = snapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
