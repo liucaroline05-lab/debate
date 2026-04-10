@@ -7,11 +7,11 @@ const appLinks = [
   { to: "/app/debates", label: "Async Debate" },
   { to: "/app/resources", label: "Resources" },
   { to: "/app/community", label: "Community" },
-  { to: "/app/profile", label: "Profile" },
+  { to: "/app/settings", label: "Settings" },
 ];
 
 export const AppLayout = () => {
-  const { currentUser, isDemoMode, logout } = useAuth();
+  const { currentUser, logout } = useAuth();
 
   return (
     <div className="app-layout">
@@ -25,19 +25,21 @@ export const AppLayout = () => {
             <small>Boho practice hub</small>
           </NavLink>
 
-          <div className="organic-panel" style={{ marginTop: "1.5rem" }}>
-            <p className="eyebrow">Workspace</p>
-            <h2 className="display">{currentUser?.displayName}</h2>
-            <p className="muted" style={{ marginBottom: "0.75rem" }}>
-              {currentUser?.role === "coach"
-                ? "Coaching rounds, guiding community, and curating growth."
-                : "Uploading speeches, finding partners, and building confidence."}
-            </p>
-            <div className="pill-row">
-              <span className="pill">{currentUser?.role}</span>
-              {isDemoMode ? <span className="pill">Demo mode</span> : null}
-            </div>
-          </div>
+          <NavLink to="/app/profile" className="sidebar-profile-card" style={{ marginTop: "1.5rem" }}>
+            {currentUser?.avatarUrl ? (
+              <img
+                src={currentUser.avatarUrl}
+                alt={`${currentUser.displayName} avatar`}
+                className="sidebar-profile-avatar"
+              />
+            ) : (
+              <div className="sidebar-profile-avatar sidebar-profile-fallback" aria-hidden="true">
+                {currentUser?.displayName?.charAt(0) ?? "D"}
+              </div>
+            )}
+            <strong className="sidebar-profile-name">{currentUser?.displayName}</strong>
+            <span className="sidebar-profile-role">{currentUser?.role}</span>
+          </NavLink>
 
           <nav className="app-nav" aria-label="App sections">
             {appLinks.map((link) => (

@@ -1,14 +1,35 @@
 export type UserRole = "student" | "coach";
 
+export interface UserPreferences {
+  notifications: {
+    speechFeedback: boolean;
+    debateTurnReminders: boolean;
+    communityReplies: boolean;
+    tournamentReminders: boolean;
+  };
+  debateDefaults: {
+    preferredFormat: "Policy" | "Lincoln-Douglas" | "Public Forum" | "Congress" | "Extemp";
+    preferredSide: "Aff" | "Neg" | "Either";
+    asyncResponseCadence: "12 hours" | "24 hours" | "48 hours";
+  };
+}
+
 export interface UserProfile {
   id: string;
   displayName: string;
+  username?: string;
   email: string;
   role: UserRole;
+  avatarUrl?: string;
   bio: string;
   focusAreas: string[];
   organizationTags: string[];
   recommendationSlots: string[];
+  preferences: UserPreferences;
+  followersCount?: number;
+  followingCount?: number;
+  activeChannelIds?: string[];
+  tabroomProfileUrl?: string;
   createdAt: string;
 }
 
@@ -77,6 +98,9 @@ export interface DebateThread {
   spectators: number;
   aiJudged?: boolean;
   winner?: "Aff" | "Neg";
+  participantIds?: string[];
+  watchPath?: string;
+  summary?: string;
   score?: {
     aff: number;
     neg: number;
@@ -112,6 +136,7 @@ export interface CommunityChannel {
 export interface CommunityPost {
   id: string;
   channelId: string;
+  authorId: string;
   author: string;
   authorRole?: string;
   category?: "Question" | "Speech Review" | "Tips & Strategies" | "All Posts";
@@ -119,15 +144,104 @@ export interface CommunityPost {
   title?: string;
   content: string;
   createdAt: string;
+  updatedAt?: string;
   replyCount: number;
   reported: boolean;
   likeCount?: number;
+  dislikeCount?: number;
+  favoriteCount?: number;
   shareCount?: number;
   attachmentTitle?: string;
   attachmentMeta?: string;
   aiScoreLabel?: string;
   featuredReplyAuthor?: string;
   featuredReplyPreview?: string;
+}
+
+export interface PostComment {
+  id: string;
+  postId: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface PostReaction {
+  id: string;
+  postId: string;
+  userId: string;
+  like: boolean;
+  dislike: boolean;
+  favorite: boolean;
+  createdAt: string;
+}
+
+export interface FollowRelation {
+  id: string;
+  followerId: string;
+  followingId: string;
+  createdAt: string;
+}
+
+export interface ChannelMembership {
+  id: string;
+  channelId: string;
+  userId: string;
+  role?: "Member" | "Coach" | "Moderator";
+  lastActiveAt?: string;
+}
+
+export interface PerformancePoint {
+  label: string;
+  score: number;
+  wins?: number;
+  losses?: number;
+}
+
+export interface RadarPoint {
+  skill: string;
+  value: number;
+}
+
+export interface UserStats {
+  id: string;
+  userId: string;
+  wins: number;
+  losses: number;
+  averageScore: number;
+  winRate: number;
+  totalRounds: number;
+  performanceOverTime: PerformancePoint[];
+  formatBreakdown: PerformancePoint[];
+  topicStrengths: RadarPoint[];
+}
+
+export interface TabroomLink {
+  id: string;
+  userId: string;
+  profileUrl: string;
+  handle: string;
+  status: "linked" | "syncing" | "error" | "unlinked";
+  lastSyncedAt?: string;
+}
+
+export interface TabroomEvent {
+  id: string;
+  name: string;
+  date: string;
+  result: string;
+  sourceUrl: string;
+}
+
+export interface TabroomImport {
+  id: string;
+  userId: string;
+  status: "queued" | "syncing" | "success" | "error";
+  startedAt: string;
+  lastSuccessfulAt?: string;
+  errorMessage?: string;
+  events: TabroomEvent[];
 }
 
 export interface EventItem {

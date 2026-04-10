@@ -40,6 +40,26 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+const normalizeUserProfile = (profile: Partial<UserProfile> | null | undefined): UserProfile => {
+  const baseProfile = mockUser;
+
+  return {
+    ...baseProfile,
+    ...profile,
+    avatarUrl: profile?.avatarUrl || baseProfile.avatarUrl,
+    preferences: {
+      notifications: {
+        ...baseProfile.preferences.notifications,
+        ...profile?.preferences?.notifications,
+      },
+      debateDefaults: {
+        ...baseProfile.preferences.debateDefaults,
+        ...profile?.preferences?.debateDefaults,
+      },
+    },
+  };
+};
+
 const sessionFromStorage = (): UserProfile | null => {
   const raw = localStorage.getItem(SESSION_KEY);
   if (!raw) {
@@ -47,7 +67,7 @@ const sessionFromStorage = (): UserProfile | null => {
   }
 
   try {
-    return JSON.parse(raw) as UserProfile;
+    return normalizeUserProfile(JSON.parse(raw) as Partial<UserProfile>);
   } catch {
     return null;
   }
@@ -66,13 +86,14 @@ const createFallbackProfile = (
   email: string,
   displayName: string,
   role: UserRole,
-): UserProfile => ({
-  ...mockUser,
-  id: email.toLowerCase(),
-  email,
-  displayName,
-  role,
-});
+): UserProfile =>
+  normalizeUserProfile({
+    ...mockUser,
+    id: email.toLowerCase(),
+    email,
+    displayName,
+    role,
+  });
 
 const saveProfile = async (profile: UserProfile) => {
   if (!firestore) {
@@ -96,18 +117,19 @@ const loadProfile = async (firebaseUser: User): Promise<UserProfile> => {
     const snapshot = await getDoc(profileRef);
 
     if (snapshot.exists()) {
-      return snapshot.data() as UserProfile;
+      return normalizeUserProfile(snapshot.data() as Partial<UserProfile>);
     }
   }
 
-  const fallbackProfile: UserProfile = {
+  const fallbackProfile = normalizeUserProfile({
     ...mockUser,
     id: firebaseUser.uid,
     displayName: firebaseUser.displayName || "Debate Studio Member",
     email: firebaseUser.email || "",
+    avatarUrl: firebaseUser.photoURL || mockUser.avatarUrl,
     role: "student",
     createdAt: new Date().toISOString(),
-  };
+  });
 
   await saveProfile(fallbackProfile);
   return fallbackProfile;
@@ -174,14 +196,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
 
         const result = await createUserWithEmailAndPassword(auth, email, password);
-        const profile: UserProfile = {
+        const profile = normalizeUserProfile({
           ...mockUser,
           id: result.user.uid,
           displayName: displayName || result.user.email?.split("@")[0] || "Member",
           email,
           role,
           createdAt: new Date().toISOString(),
-        };
+        });
         await saveProfile(profile);
         setCurrentUser(profile);
       },

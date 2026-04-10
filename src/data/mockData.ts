@@ -14,10 +14,25 @@ export const mockUser: UserProfile = {
   displayName: "Maya Rivera",
   email: "maya@example.com",
   role: "student",
+  avatarUrl:
+    "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80",
   bio: "Public Forum debater blending research discipline with warm, persuasive delivery.",
   focusAreas: ["Crossfire strategy", "Rebuttal timing", "Speech presence"],
   organizationTags: ["Mountain View Debate", "PF Captain"],
   recommendationSlots: ["Partner suggestions", "Coach next steps"],
+  preferences: {
+    notifications: {
+      speechFeedback: true,
+      debateTurnReminders: true,
+      communityReplies: true,
+      tournamentReminders: false,
+    },
+    debateDefaults: {
+      preferredFormat: "Public Forum",
+      preferredSide: "Either",
+      asyncResponseCadence: "24 hours",
+    },
+  },
   createdAt: "2026-03-20T09:00:00.000Z",
 };
 
@@ -365,6 +380,7 @@ export const posts: CommunityPost[] = [
   {
     id: "post-1",
     channelId: "channel-6",
+    authorId: "james-kim",
     author: "James Kim",
     authorRole: "Policy",
     category: "Speech Review",
@@ -387,6 +403,7 @@ export const posts: CommunityPost[] = [
   {
     id: "post-2",
     channelId: "channel-8",
+    authorId: "mia-thompson",
     author: "Mia Thompson",
     authorRole: "LD",
     category: "Question",
@@ -403,6 +420,7 @@ export const posts: CommunityPost[] = [
   {
     id: "post-3",
     channelId: "channel-5",
+    authorId: "alex-chen",
     author: "Alex Chen",
     authorRole: "Coach",
     category: "Tips & Strategies",
@@ -422,6 +440,7 @@ export const posts: CommunityPost[] = [
   {
     id: "post-4",
     channelId: "channel-4",
+    authorId: "priya-shah",
     author: "Priya Shah",
     authorRole: "Tournament Prep",
     category: "All Posts",
