@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { PageMeta } from "@/components/common/PageMeta";
-import { debateThreads, matchRequests } from "@/data/mockData";
-import { useFirebaseCollection } from "@/hooks/useFirebaseCollection";
+import { seededDebates, seededMatchRequests } from "@/data/firestoreSeeds";
+import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDate, formatDateTime } from "@/lib/date";
 import type { DebateThread, DebateTurn } from "@/types/models";
 
@@ -32,10 +32,13 @@ const turnCardClass = (turn: DebateTurn) => {
 const roundSummary = (debate: DebateThread) =>
   `Round ${debate.currentRound} of ${debate.totalRounds}`;
 
+const safeInitial = (value?: string | null) =>
+  value?.trim()?.charAt(0).toUpperCase() || "D";
+
 export const DebatesPage = () => {
   const [activeTab, setActiveTab] = useState<DebateTab>("my-debates");
-  const debateState = useFirebaseCollection("debates", debateThreads);
-  const matchState = useFirebaseCollection("matchRequests", matchRequests);
+  const debateState = useSeededFirestoreCollection("debates", seededDebates);
+  const matchState = useSeededFirestoreCollection("matchRequests", seededMatchRequests);
 
   const myDebates = useMemo(
     () => debateState.data.filter((debate) => debate.lane === "my-debates"),
@@ -108,7 +111,7 @@ export const DebatesPage = () => {
 
               <div className="debate-matchup">
                 <div className="debater-card">
-                  <div className="debater-avatar">{debate.affirmative.name.charAt(0)}</div>
+                  <div className="debater-avatar">{safeInitial(debate.affirmative.name)}</div>
                   <div>
                     <strong>
                       {debate.affirmative.name}
@@ -126,7 +129,7 @@ export const DebatesPage = () => {
                     </strong>
                     <span className="debater-side is-neg">{debate.negative.label}</span>
                   </div>
-                  <div className="debater-avatar is-neg">{debate.negative.name.charAt(0)}</div>
+                  <div className="debater-avatar is-neg">{safeInitial(debate.negative.name)}</div>
                 </div>
               </div>
 
@@ -199,7 +202,7 @@ export const DebatesPage = () => {
 
               <div className="challenge-body">
                 <div className="debater-card">
-                  <div className="debater-avatar">{match.requestedBy.charAt(0)}</div>
+                  <div className="debater-avatar">{safeInitial(match.requestedBy)}</div>
                   <div>
                     <strong>{match.requestedBy}</strong>
                     <span className="meta-line">
@@ -243,7 +246,7 @@ export const DebatesPage = () => {
 
               <div className="debate-scoreboard">
                 <div className="debater-card">
-                  <div className="debater-avatar">{debate.affirmative.name.charAt(0)}</div>
+                  <div className="debater-avatar">{safeInitial(debate.affirmative.name)}</div>
                   <div>
                     <strong>
                       {debate.affirmative.name}
@@ -269,7 +272,7 @@ export const DebatesPage = () => {
                     </strong>
                     <span className="debater-side is-neg">{debate.negative.label}</span>
                   </div>
-                  <div className="debater-avatar is-neg">{debate.negative.name.charAt(0)}</div>
+                  <div className="debater-avatar is-neg">{safeInitial(debate.negative.name)}</div>
                 </div>
               </div>
 
@@ -305,7 +308,7 @@ export const DebatesPage = () => {
 
                 <div className="debate-matchup compact">
                   <div className="debater-card">
-                    <div className="debater-avatar">{debate.affirmative.name.charAt(0)}</div>
+                    <div className="debater-avatar">{safeInitial(debate.affirmative.name)}</div>
                     <div>
                       <strong>{debate.affirmative.name}</strong>
                       <span className="debater-side is-aff">{debate.affirmative.label}</span>
@@ -317,7 +320,7 @@ export const DebatesPage = () => {
                       <strong>{debate.negative.name}</strong>
                       <span className="debater-side is-neg">{debate.negative.label}</span>
                     </div>
-                    <div className="debater-avatar is-neg">{debate.negative.name.charAt(0)}</div>
+                    <div className="debater-avatar is-neg">{safeInitial(debate.negative.name)}</div>
                   </div>
                 </div>
 

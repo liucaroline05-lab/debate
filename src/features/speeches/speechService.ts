@@ -81,8 +81,12 @@ const formatStorageError = (error: unknown) => {
 };
 
 export const uploadSpeechAsset = async (file?: File | null) => {
-  if (!file || !storage) {
+  if (!file) {
     return null;
+  }
+
+  if (!storage) {
+    throw new Error("Firebase Storage is not configured.");
   }
 
   const assetRef = ref(storage, `speeches/${Date.now()}-${file.name}`);
@@ -100,6 +104,10 @@ export const uploadSpeechAsset = async (file?: File | null) => {
 export const createSpeechRecord = async (
   input: NewSpeechInput,
 ): Promise<SpeechRecord> => {
+  if (!firestore) {
+    throw new Error("Firestore is not configured.");
+  }
+
   const mediaPath = await uploadSpeechAsset(input.file);
 
   const speech: SpeechRecord = {
@@ -117,13 +125,11 @@ export const createSpeechRecord = async (
     mediaPath: mediaPath ?? undefined,
   };
 
-  if (firestore) {
-    const docRef = await addDoc(collection(firestore, "speeches"), {
-      ...speech,
-      createdAt: serverTimestamp(),
-    });
-    speech.id = docRef.id;
-  }
+  const docRef = await addDoc(collection(firestore, "speeches"), {
+    ...speech,
+    createdAt: serverTimestamp(),
+  });
+  speech.id = docRef.id;
 
   return speech;
 };

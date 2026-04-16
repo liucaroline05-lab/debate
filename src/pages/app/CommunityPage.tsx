@@ -20,7 +20,6 @@ import {
   seededPosts,
   seededUsers,
 } from "@/data/firestoreSeeds";
-import { mockUser } from "@/data/mockData";
 import {
   addCommentToPost,
   createPost,
@@ -65,7 +64,10 @@ const safeInitial = (value?: string | null) => safeName(value).charAt(0).toUpper
 
 export const CommunityPage = () => {
   const { currentUser } = useAuth();
-  const author = currentUser ?? mockUser;
+  const author = currentUser;
+  if (!author) {
+    return null;
+  }
   const authorName = safeName(author.displayName, "You");
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [activeTab, setActiveTab] = useState<ForumTab>("All Posts");
@@ -292,7 +294,7 @@ export const CommunityPage = () => {
               ) : (
                 <div className="forum-avatar">{safeInitial(author.displayName)}</div>
               )}
-              <div>
+              <div className="space-apart">
                 <strong>{authorName}</strong>
                 <span className="meta-line">Share a round thought, question, or review request.</span>
               </div>
@@ -359,7 +361,7 @@ export const CommunityPage = () => {
             </div>
 
             <div className="forum-composer-footer">
-              {message ? <span className="meta-line">{message}</span> : <span className="meta-line">Posts save to Firestore and seed the live forum feed.</span>}
+              {message ? <span className="meta-line">{message}</span> : <span className="meta-line">placeholder.</span>}
               <div className="button-row">
                 <button type="button" className="btn btn-primary forum-primary-cta" onClick={() => void createNewPost()}>
                   Publish Post

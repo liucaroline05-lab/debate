@@ -14,9 +14,9 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
   seedRecords: T[],
 ) => {
   const [state, setState] = useState<SeededCollectionState<T>>({
-    data: firestore ? [] : seedRecords,
+    data: [],
     isLoading: Boolean(firestore),
-    error: null,
+    error: firestore ? null : "Firebase is not configured.",
   });
 
   useEffect(() => {
@@ -24,9 +24,9 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
 
     if (!firestore) {
       setState({
-        data: seedRecords,
+        data: [],
         isLoading: false,
-        error: null,
+        error: "Firebase is not configured.",
       });
       return () => {
         isMounted = false;
@@ -36,7 +36,7 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
     void ensureSeededCollection(collectionName, seedRecords).catch((error) => {
       if (isMounted) {
         setState({
-          data: seedRecords,
+          data: [],
           isLoading: false,
           error: error instanceof Error ? error.message : "Unable to seed collection.",
         });
@@ -56,7 +56,7 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
         })) as T[];
 
         setState({
-          data: nextData.length > 0 ? nextData : seedRecords,
+          data: nextData,
           isLoading: false,
           error: null,
         });
@@ -67,7 +67,7 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
         }
 
         setState({
-          data: seedRecords,
+          data: [],
           isLoading: false,
           error: error.message,
         });

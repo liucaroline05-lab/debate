@@ -24,7 +24,6 @@ import {
   seededUserStats,
   seededUsers,
 } from "@/data/firestoreSeeds";
-import { mockUser } from "@/data/mockData";
 import { useAuth } from "@/features/auth/AuthContext";
 import { updateUserBio, requestTabroomSync, toggleFollowUser } from "@/features/profile/profileService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
@@ -106,11 +105,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     const userFromCollection = usersState.data.find((user) => user.id === userId);
 
     if (isOwnProfile) {
-      return {
-        ...mockUser,
-        ...userFromCollection,
-        ...currentUser,
-      } as UserProfile;
+      return (userFromCollection ?? currentUser ?? null) as UserProfile | null;
     }
 
     return userFromCollection ?? null;
@@ -168,41 +163,71 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
       follow.followerId === currentUser?.id && follow.followingId === userId,
   );
 
+  const performanceData = useMemo(
+    () => ({
+      labels: stats.performanceOverTime.map((entry) => entry.label),
+      datasets: [
+        {
+          label: "Average score",
+          data: stats.performanceOverTime.map((entry) => entry.score),
+          backgroundColor: "rgba(118, 128, 107, 0.55)",
+          borderRadius: 18,
+        },
+      ],
+    }),
+    [stats.performanceOverTime],
+  );
+
+  const radarData = useMemo(
+    () => ({
+      labels: stats.topicStrengths.map((entry) => entry.skill),
+      datasets: [
+        {
+          label: "Strength",
+          data: stats.topicStrengths.map((entry) => entry.value),
+          backgroundColor: "rgba(203, 141, 108, 0.18)",
+          borderColor: "rgba(189, 109, 79, 0.72)",
+          pointBackgroundColor: "rgba(78, 90, 71, 0.9)",
+        },
+      ],
+    }),
+    [stats.topicStrengths],
+  );
+
+  const radarOptions = useMemo(
+    () => ({
+      plugins: {
+        legend: { display: false },
+      },
+      scales: {
+        r: {
+          suggestedMin: 0,
+          suggestedMax: 100,
+        },
+      },
+    }),
+    [],
+  );
+
+  if (usersState.isLoading && !profile) {
+    return (
+      <section className="empty-state">
+        <h2 className="card-title">Loading profile</h2>
+        <p className="card-copy">Pulling this speaker's profile from Firebase.</p>
+      </section>
+    );
+  }
+
   if (!profile) {
     return (
       <section className="empty-state">
         <h2 className="card-title">User profile not found</h2>
         <p className="card-copy">
-          This account has not been seeded or created in Firestore yet.
+          This account has not been created in Firebase yet.
         </p>
       </section>
     );
   }
-
-  const performanceData = {
-    labels: stats.performanceOverTime.map((entry) => entry.label),
-    datasets: [
-      {
-        label: "Average score",
-        data: stats.performanceOverTime.map((entry) => entry.score),
-        backgroundColor: "rgba(118, 128, 107, 0.55)",
-        borderRadius: 18,
-      },
-    ],
-  };
-
-  const radarData = {
-    labels: stats.topicStrengths.map((entry) => entry.skill),
-    datasets: [
-      {
-        label: "Strength",
-        data: stats.topicStrengths.map((entry) => entry.value),
-        backgroundColor: "rgba(203, 141, 108, 0.18)",
-        borderColor: "rgba(189, 109, 79, 0.72)",
-        pointBackgroundColor: "rgba(78, 90, 71, 0.9)",
-      },
-    ],
-  };
 
   const saveBio = async () => {
     if (!currentUser) {
@@ -333,7 +358,12 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
           <article className="app-card">
             <h2 className="card-title">Performance over time</h2>
             <div className="chart-panel">
-              <Bar data={performanceData} options={chartOptions} />
+              <Bar
+                key={`profile-performance-${userId}`}
+                redraw
+                data={performanceData}
+                options={chartOptions}
+              />
             </div>
           </article>
 
@@ -341,18 +371,10 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
             <h2 className="card-title">Topic strengths</h2>
             <div className="chart-panel">
               <Radar
+                key={`profile-radar-${userId}`}
+                redraw
                 data={radarData}
-                options={{
-                  plugins: {
-                    legend: { display: false },
-                  },
-                  scales: {
-                    r: {
-                      suggestedMin: 0,
-                      suggestedMax: 100,
-                    },
-                  },
-                }}
+                options={radarOptions}
               />
             </div>
           </article>

@@ -54,7 +54,7 @@ export const LoginPage = () => {
           <h1>Step back into your practice space.</h1>
           <p className="muted">
             {isDemoMode
-              ? "Firebase is not configured yet, so login uses a local demo session."
+              ? "Firebase needs to be configured before anyone can log in."
               : "Use your email or Google account to continue."}
           </p>
 

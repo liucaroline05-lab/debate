@@ -43,7 +43,7 @@ export const SignupPage = () => {
           <h1>Open a calm, structured home for your debate work.</h1>
           <p className="muted">
             {isDemoMode
-              ? "You can create a local demo session now and connect Firebase later."
+              ? "Firebase needs to be configured before new accounts can be created."
               : "Student and coach onboarding uses Firebase Authentication and stores a role-aware profile."}
           </p>
 

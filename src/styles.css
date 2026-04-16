@@ -395,7 +395,7 @@ button {
 .nav-links a,
 .app-nav a {
   position: relative;
-  padding: 0.35rem 0;
+  padding: 10px;
   color: var(--color-muted);
 }
 
@@ -666,6 +666,9 @@ button {
 .helper-line {
   color: var(--color-muted);
   font-size: 0.95rem;
+
+  /* left side padding */
+  padding-left: 0.25rem;
 }
 
 .form-grid {
@@ -1078,6 +1081,9 @@ button {
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+
+  /* top padding */
+  padding-top: 20px;
 }
 
 .forum-search {
@@ -1183,6 +1189,16 @@ button {
   background: rgba(245, 239, 230, 0.58);
   display: grid;
   gap: 0.35rem;
+}
+
+.space-apart {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+
+  /* expand */
+  width: 100%;
 }
 
 .forum-author-row,

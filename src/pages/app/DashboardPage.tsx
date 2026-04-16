@@ -1,15 +1,21 @@
 import { NavLink } from "react-router-dom";
 import { PageMeta } from "@/components/common/PageMeta";
-import { channels, debateThreads, events, resources, speeches } from "@/data/mockData";
-import { useFirebaseCollection } from "@/hooks/useFirebaseCollection";
+import {
+  seededChannels,
+  seededDebates,
+  seededEvents,
+  seededResources,
+  seededSpeeches,
+} from "@/data/firestoreSeeds";
+import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDate, formatDateTime } from "@/lib/date";
 
 export const DashboardPage = () => {
-  const speechState = useFirebaseCollection("speeches", speeches);
-  const debateState = useFirebaseCollection("debates", debateThreads);
-  const resourceState = useFirebaseCollection("resources", resources);
-  const channelState = useFirebaseCollection("channels", channels);
-  const eventState = useFirebaseCollection("events", events);
+  const speechState = useSeededFirestoreCollection("speeches", seededSpeeches);
+  const debateState = useSeededFirestoreCollection("debates", seededDebates);
+  const resourceState = useSeededFirestoreCollection("resources", seededResources);
+  const channelState = useSeededFirestoreCollection("channels", seededChannels);
+  const eventState = useSeededFirestoreCollection("events", seededEvents);
 
   return (
     <>

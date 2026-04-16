@@ -22,7 +22,7 @@ export const AppLayout = () => {
               <span className="brand-orb" />
               Debate Studio
             </span>
-            <small>Boho practice hub</small>
+            <small>placeholder</small>
           </NavLink>
 
           <NavLink to="/app/profile" className="sidebar-profile-card" style={{ marginTop: "1.5rem" }}>
@@ -59,8 +59,8 @@ export const AppLayout = () => {
         <div className="app-topbar">
           <div className="app-topbar-bar">
             <div className="cluster">
-              <span className="pill">Students + Coaches</span>
-              <span className="pill">Firebase-ready</span>
+              {/* <span className="pill">Students + Coaches</span>
+              <span className="pill">Firebase-ready</span> */}
             </div>
             <div className="button-row">
               <NavLink to="/" className="btn btn-ghost">

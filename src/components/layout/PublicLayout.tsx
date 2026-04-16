@@ -35,9 +35,9 @@ export const PublicLayout = () => (
             <NavLink to="/login" className="btn btn-secondary">
               Log in
             </NavLink>
-            <NavLink to="/signup" className="btn btn-primary">
+            {/* <NavLink to="/signup" className="btn btn-primary">
               Start free
-            </NavLink>
+            </NavLink> */}
           </nav>
         </div>
       </div>
@@ -56,8 +56,7 @@ export const PublicLayout = () => (
               {APP_NAME}
             </div>
             <p className="footer-copy">
-              A grounded, beautiful practice space for speeches, async rounds,
-              coach feedback, and stronger debate habits.
+              placeholder.
             </p>
           </div>
           <div className="inline-list">

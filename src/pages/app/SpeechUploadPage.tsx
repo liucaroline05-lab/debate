@@ -56,10 +56,10 @@ export const SpeechUploadPage = () => {
       <header className="route-header">
         <p className="eyebrow">Record / Upload</p>
         <h1>Bring new speeches into the studio.</h1>
-        <p>
+        {/* <p>
           The form is Firebase-ready for Storage uploads and Firestore metadata,
           while still working as a demo flow before credentials are added.
-        </p>
+        </p> */}
       </header>
 
       <section className="speech-grid">
@@ -184,47 +184,6 @@ export const SpeechUploadPage = () => {
             </button>
           </div>
         </form>
-
-        <div className="stack">
-          <article className="app-card">
-            <span className="pill">Transcript status</span>
-            <h2 className="card-title" style={{ marginTop: "0.75rem" }}>
-              Processing pipeline
-            </h2>
-            <div className="list" style={{ marginTop: "1rem" }}>
-              <div className="list-item">
-                <strong>1. Upload media</strong>
-                <span className="meta-line">Store in Firebase Storage with a durable path.</span>
-              </div>
-              <div className="list-item">
-                <strong>2. Queue transcript</strong>
-                <span className="meta-line">Set transcript state to pending while analysis is deferred.</span>
-              </div>
-              <div className="list-item">
-                <strong>3. Review and feedback</strong>
-                <span className="meta-line">Attach coach observations and next-step prompts.</span>
-              </div>
-            </div>
-          </article>
-
-          <article className="app-card">
-            <span className="pill">AI-ready fields</span>
-            <p className="card-copy">
-              This flow already captures tags, organization markers, and a place
-              for future recommendation metadata without requiring model
-              orchestration in v1.
-            </p>
-          </article>
-
-          <article className="app-card">
-            <span className="pill">Local dev note</span>
-            <p className="card-copy">
-              If file upload fails on <code>localhost</code>, Firebase Storage may
-              need CORS configured for your dev origin. Metadata saves can only
-              complete after the file upload step succeeds.
-            </p>
-          </article>
-        </div>
       </section>
     </>
   );

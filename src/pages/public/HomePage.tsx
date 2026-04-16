@@ -1,7 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { PageMeta } from "@/components/common/PageMeta";
 import { SectionHeading } from "@/components/common/SectionHeading";
-import { channels, debateThreads, events, resources, speeches } from "@/data/mockData";
 
 export const HomePage = () => (
   <>
@@ -32,20 +31,20 @@ export const HomePage = () => (
           </div>
           <div className="stats-band">
             <div className="metric-card">
-              <span>Recent uploads</span>
-              <strong>{speeches.length}</strong>
+              <span>Practice flow</span>
+              <strong>Uploads</strong>
             </div>
             <div className="metric-card">
-              <span>Practice debates</span>
-              <strong>{debateThreads.length}</strong>
+              <span>Round structure</span>
+              <strong>Async debates</strong>
             </div>
             <div className="metric-card">
-              <span>Curated resources</span>
-              <strong>{resources.length}</strong>
+              <span>Coach support</span>
+              <strong>Resources</strong>
             </div>
             <div className="metric-card">
-              <span>Active channels</span>
-              <strong>{channels.length}</strong>
+              <span>Community rhythm</span>
+              <strong>Channels</strong>
             </div>
           </div>
         </div>
@@ -130,17 +129,27 @@ export const HomePage = () => (
         />
 
         <div className="three-up" style={{ marginTop: "1.5rem" }}>
-          {events.map((event) => (
-            <article key={event.id} className="card">
-              <span className="pill">{event.type}</span>
-              <h3 className="card-title" style={{ fontSize: "1.5rem", marginTop: "1rem" }}>
-                {event.name}
-              </h3>
-              <p className="card-copy">
-                {event.location} • {new Date(event.date).toLocaleDateString()}
-              </p>
-            </article>
-          ))}
+          <article className="card">
+            <span className="pill">Scrimmage</span>
+            <h3 className="card-title" style={{ fontSize: "1.5rem", marginTop: "1rem" }}>
+              Golden Oak Scrimmage
+            </h3>
+            <p className="card-copy">Remote • April 5, 2026</p>
+          </article>
+          <article className="card">
+            <span className="pill">Workshop</span>
+            <h3 className="card-title" style={{ fontSize: "1.5rem", marginTop: "1rem" }}>
+              West Coast Debate Workshop
+            </h3>
+            <p className="card-copy">Oakland, California • April 11, 2026</p>
+          </article>
+          <article className="card">
+            <span className="pill">Community</span>
+            <h3 className="card-title" style={{ fontSize: "1.5rem", marginTop: "1rem" }}>
+              Weekly review circle
+            </h3>
+            <p className="card-copy">Live feedback, calmer prep, and guided reflection between tournaments.</p>
+          </article>
         </div>
       </div>
     </section>

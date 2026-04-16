@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { PageMeta } from "@/components/common/PageMeta";
-import { resources } from "@/data/mockData";
-import { useFirebaseCollection } from "@/hooks/useFirebaseCollection";
+import { seededResources } from "@/data/firestoreSeeds";
+import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 
 export const ResourcesPage = () => {
-  const resourceState = useFirebaseCollection("resources", resources);
+  const resourceState = useSeededFirestoreCollection("resources", seededResources);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
 

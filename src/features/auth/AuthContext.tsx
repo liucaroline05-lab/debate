@@ -16,10 +16,8 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, firestore, googleProvider } from "@/lib/firebase";
-import { mockUser } from "@/data/mockData";
+import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import type { UserProfile, UserRole } from "@/types/models";
-
-const SESSION_KEY = "debate-studio-session";
 
 interface Credentials {
   email: string;
@@ -40,65 +38,9 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const normalizeUserProfile = (profile: Partial<UserProfile> | null | undefined): UserProfile => {
-  const baseProfile = mockUser;
-
-  return {
-    ...baseProfile,
-    ...profile,
-    avatarUrl: profile?.avatarUrl || baseProfile.avatarUrl,
-    preferences: {
-      notifications: {
-        ...baseProfile.preferences.notifications,
-        ...profile?.preferences?.notifications,
-      },
-      debateDefaults: {
-        ...baseProfile.preferences.debateDefaults,
-        ...profile?.preferences?.debateDefaults,
-      },
-    },
-  };
-};
-
-const sessionFromStorage = (): UserProfile | null => {
-  const raw = localStorage.getItem(SESSION_KEY);
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return normalizeUserProfile(JSON.parse(raw) as Partial<UserProfile>);
-  } catch {
-    return null;
-  }
-};
-
-const persistSession = (profile: UserProfile | null) => {
-  if (!profile) {
-    localStorage.removeItem(SESSION_KEY);
-    return;
-  }
-
-  localStorage.setItem(SESSION_KEY, JSON.stringify(profile));
-};
-
-const createFallbackProfile = (
-  email: string,
-  displayName: string,
-  role: UserRole,
-): UserProfile =>
-  normalizeUserProfile({
-    ...mockUser,
-    id: email.toLowerCase(),
-    email,
-    displayName,
-    role,
-  });
-
 const saveProfile = async (profile: UserProfile) => {
   if (!firestore) {
-    persistSession(profile);
-    return;
+    throw new Error("Firebase is not configured. Add your Firebase environment values to continue.");
   }
 
   await setDoc(
@@ -112,21 +54,25 @@ const saveProfile = async (profile: UserProfile) => {
 };
 
 const loadProfile = async (firebaseUser: User): Promise<UserProfile> => {
-  if (firestore) {
-    const profileRef = doc(firestore, "users", firebaseUser.uid);
-    const snapshot = await getDoc(profileRef);
+  if (!firestore) {
+    throw new Error("Firebase is not configured. Add your Firebase environment values to continue.");
+  }
 
-    if (snapshot.exists()) {
-      return normalizeUserProfile(snapshot.data() as Partial<UserProfile>);
-    }
+  const profileRef = doc(firestore, "users", firebaseUser.uid);
+  const snapshot = await getDoc(profileRef);
+
+  if (snapshot.exists()) {
+    return normalizeUserProfile({
+      id: firebaseUser.uid,
+      ...(snapshot.data() as Partial<UserProfile>),
+    });
   }
 
   const fallbackProfile = normalizeUserProfile({
-    ...mockUser,
     id: firebaseUser.uid,
     displayName: firebaseUser.displayName || "Debate Studio Member",
     email: firebaseUser.email || "",
-    avatarUrl: firebaseUser.photoURL || mockUser.avatarUrl,
+    avatarUrl: firebaseUser.photoURL || undefined,
     role: "student",
     createdAt: new Date().toISOString(),
   });
@@ -140,8 +86,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    if (!auth) {
-      setCurrentUser(sessionFromStorage());
+    if (!auth || !firestore) {
+      setCurrentUser(null);
       setAuthReady(true);
       return;
     }
@@ -156,7 +102,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       void loadProfile(firebaseUser)
         .then((profile) => {
           setCurrentUser(profile);
-          persistSession(profile);
+        })
+        .catch(() => {
+          setCurrentUser(null);
         })
         .finally(() => {
           setAuthReady(true);
@@ -170,13 +118,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     () => ({
       currentUser,
       authReady,
-      isDemoMode: !auth,
+      isDemoMode: !auth || !firestore,
       login: async ({ email, password }) => {
-        if (!auth) {
-          const profile = createFallbackProfile(email, "Demo Debater", "student");
-          persistSession(profile);
-          setCurrentUser(profile);
-          return;
+        if (!auth || !firestore) {
+          throw new Error("Firebase is not configured. Add your Firebase environment values to log in.");
         }
 
         const result = await signInWithEmailAndPassword(auth, email, password);
@@ -184,20 +129,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setCurrentUser(profile);
       },
       signup: async ({ email, password, displayName, role = "student" }) => {
-        if (!auth) {
-          const profile = createFallbackProfile(
-            email,
-            displayName || "Demo Debater",
-            role,
-          );
-          persistSession(profile);
-          setCurrentUser(profile);
-          return;
+        if (!auth || !firestore) {
+          throw new Error("Firebase is not configured. Add your Firebase environment values to create an account.");
         }
 
         const result = await createUserWithEmailAndPassword(auth, email, password);
         const profile = normalizeUserProfile({
-          ...mockUser,
           id: result.user.uid,
           displayName: displayName || result.user.email?.split("@")[0] || "Member",
           email,
@@ -208,15 +145,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setCurrentUser(profile);
       },
       loginWithGoogle: async () => {
-        if (!auth) {
-          const profile = createFallbackProfile(
-            "demo-google@example.com",
-            "Google Demo Member",
-            "coach",
-          );
-          persistSession(profile);
-          setCurrentUser(profile);
-          return;
+        if (!auth || !firestore) {
+          throw new Error("Firebase is not configured. Add your Firebase environment values to continue with Google.");
         }
 
         const result = await signInWithPopup(auth, googleProvider);
@@ -224,7 +154,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setCurrentUser(profile);
       },
       logout: async () => {
-        persistSession(null);
         setCurrentUser(null);
 
         if (auth) {

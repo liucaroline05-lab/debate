@@ -2,9 +2,13 @@ import type {
   ChannelMembership,
   CommunityChannel,
   CommunityPost,
+  DebateMatchRequest,
   DebateThread,
+  EventItem,
   FollowRelation,
   PostComment,
+  ResourceItem,
+  SpeechRecord,
   TabroomImport,
   TabroomLink,
   UserProfile,
@@ -543,6 +547,116 @@ export const seededDebates: DebateThread[] = [
   },
 ];
 
+export const seededMatchRequests: DebateMatchRequest[] = [
+  {
+    id: "match-1",
+    topic: "Resolved: universal basic income is preferable to welfare",
+    format: "Lincoln-Douglas",
+    skillLevel: "Intermediate",
+    requestedBy: "Alex Chen",
+    preferredSide: "Aff",
+    status: "Open",
+    createdAt: "2026-03-29T11:30:00.000Z",
+    rounds: 4,
+    responseWindowHours: 48,
+    requesterSideLabel: "Affirmative",
+    requesterGoal: "Looking for a Negative opponent",
+  },
+  {
+    id: "match-2",
+    topic: "Resolved: public transit should be fare-free",
+    format: "Public Forum",
+    skillLevel: "Advanced",
+    requestedBy: "Noah S.",
+    preferredSide: "Either",
+    status: "Open",
+    createdAt: "2026-03-30T10:15:00.000Z",
+    rounds: 4,
+    responseWindowHours: 24,
+    requesterSideLabel: "Either side",
+    requesterGoal: "Seeking a fast-turn practice partner",
+  },
+];
+
+export const seededSpeeches: SpeechRecord[] = [
+  {
+    id: "speech-1",
+    title: "Climate Adaptation Constructive",
+    eventName: "Spring Invitational",
+    format: "Public Forum",
+    status: "Ready for Feedback",
+    speakerName: "Maya Rivera",
+    coachNotes: "Strong pacing and framing. Needs cleaner impact collapse.",
+    uploadedAt: "2026-03-30T15:20:00.000Z",
+    transcriptStatus: "Generated",
+    tags: ["Impact calculus", "Case structure"],
+    organizationTags: ["partner-match-ready"],
+  },
+  {
+    id: "speech-2",
+    title: "Federalism Rebuttal Drill",
+    eventName: "Team Lab",
+    format: "Lincoln-Douglas",
+    status: "Reviewing",
+    speakerName: "Maya Rivera",
+    coachNotes: "Waiting on coach notes from workshop circle.",
+    uploadedAt: "2026-03-28T11:15:00.000Z",
+    transcriptStatus: "Pending",
+    tags: ["Line-by-line", "Extensions"],
+    organizationTags: ["needs-tagging"],
+  },
+];
+
+export const seededResources: ResourceItem[] = [
+  {
+    id: "resource-1",
+    title: "Three-layer rebuttal framework",
+    category: "Rebuttal",
+    description: "A coach-curated worksheet for grouping warrants, weighing, and crystallization.",
+    curatedBy: "Coach Lila Tran",
+    saved: true,
+    level: "Starter",
+    tags: ["Template", "Practice"],
+  },
+  {
+    id: "resource-2",
+    title: "Research sprint checklist",
+    category: "Research",
+    description: "A boho-friendly printable flow for evidence triage, source credibility, and cut-card prep.",
+    curatedBy: "Debate Studio",
+    saved: false,
+    level: "Growth",
+    tags: ["Workflow", "Prep"],
+  },
+  {
+    id: "resource-3",
+    title: "Delivery reset ritual",
+    category: "Delivery",
+    description: "Breath, posture, and emphasis prompts for calmer, stronger speeches.",
+    curatedBy: "Coach Jonah Price",
+    saved: true,
+    level: "Advanced",
+    tags: ["Confidence", "Warm-up"],
+  },
+];
+
+export const seededEvents: EventItem[] = [
+  {
+    id: "event-1",
+    name: "Golden Oak Scrimmage",
+    date: "2026-04-05T18:00:00.000Z",
+    location: "Remote",
+    type: "Scrimmage",
+  },
+  {
+    id: "event-2",
+    name: "West Coast Debate Workshop",
+    date: "2026-04-11T17:00:00.000Z",
+    location: "Oakland, CA",
+    type: "Workshop",
+  },
+];
+
 export const seededUserStats: UserStats[] = [
   {
     id: "stats-demo-user",
@@ -669,6 +783,10 @@ export const firestoreSeeds = {
   channels: seededChannels,
   channelMemberships: seededChannelMemberships,
   debates: seededDebates,
+  matchRequests: seededMatchRequests,
+  speeches: seededSpeeches,
+  resources: seededResources,
+  events: seededEvents,
   userStats: seededUserStats,
   tabroomLinks: seededTabroomLinks,
   tabroomImports: seededTabroomImports,

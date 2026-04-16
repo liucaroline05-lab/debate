@@ -1,11 +1,31 @@
 import { NavLink, useParams } from "react-router-dom";
 import { PageMeta } from "@/components/common/PageMeta";
-import { speeches } from "@/data/mockData";
+import { seededSpeeches } from "@/data/firestoreSeeds";
+import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDateTime } from "@/lib/date";
 
 export const SpeechDetailPage = () => {
   const { speechId } = useParams();
-  const speech = speeches.find((item) => item.id === speechId) ?? speeches[0];
+  const speechesState = useSeededFirestoreCollection("speeches", seededSpeeches);
+  const speech = speechesState.data.find((item) => item.id === speechId);
+
+  if (speechesState.isLoading) {
+    return (
+      <section className="empty-state">
+        <h2 className="card-title">Loading speech</h2>
+        <p className="card-copy">Pulling this recording from Firebase.</p>
+      </section>
+    );
+  }
+
+  if (!speech) {
+    return (
+      <section className="empty-state">
+        <h2 className="card-title">Speech not found</h2>
+        <p className="card-copy">This speech record is not available in Firebase yet.</p>
+      </section>
+    );
+  }
 
   return (
     <>

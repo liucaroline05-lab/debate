@@ -4,5 +4,9 @@ import { useAuth } from "@/features/auth/AuthContext";
 export const ProfilePage = () => {
   const { currentUser } = useAuth();
 
-  return <UserProfileView userId={currentUser?.id ?? "demo-user"} isOwnProfile />;
+  if (!currentUser) {
+    return null;
+  }
+
+  return <UserProfileView userId={currentUser.id} isOwnProfile />;
 };

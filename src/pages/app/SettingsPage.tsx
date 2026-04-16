@@ -1,18 +1,31 @@
 import { useState } from "react";
 import { PageMeta } from "@/components/common/PageMeta";
-import { mockUser } from "@/data/mockData";
 import { useAuth } from "@/features/auth/AuthContext";
+import { defaultUserPreferences } from "@/features/users/defaultProfile";
+
+const safeInitial = (value?: string | null) =>
+  value?.trim()?.charAt(0).toUpperCase() || "D";
 
 export const SettingsPage = () => {
   const { currentUser, isDemoMode } = useAuth();
-  const profile = currentUser ?? mockUser;
+  const profile = currentUser;
+
+  if (!profile) {
+    return (
+      <section className="empty-state">
+        <h2 className="card-title">Settings unavailable</h2>
+        <p className="card-copy">Sign in with Firebase to manage your account settings.</p>
+      </section>
+    );
+  }
+
   const resolvedPreferences = {
     notifications: {
-      ...mockUser.preferences.notifications,
+      ...defaultUserPreferences.notifications,
       ...profile.preferences?.notifications,
     },
     debateDefaults: {
-      ...mockUser.preferences.debateDefaults,
+      ...defaultUserPreferences.debateDefaults,
       ...profile.preferences?.debateDefaults,
     },
   };
@@ -56,7 +69,7 @@ export const SettingsPage = () => {
             <div className="list-item">
               <strong>Session status</strong>
               <span className="meta-line">
-                {isDemoMode ? "Local demo session" : "Firebase account session"}
+                {isDemoMode ? "Firebase configuration required" : "Firebase account session"}
               </span>
             </div>
           </div>
@@ -73,7 +86,7 @@ export const SettingsPage = () => {
               />
             ) : (
               <div className="settings-avatar-image settings-avatar-fallback" aria-hidden="true">
-                {profile.displayName.charAt(0)}
+                {safeInitial(profile.displayName)}
               </div>
             )}
             <div className="stack">
