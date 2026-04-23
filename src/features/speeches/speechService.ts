@@ -4,6 +4,7 @@ import {
   getDownloadURL,
   ref,
   uploadBytesResumable,
+  UploadMetadata,
   type UploadTaskSnapshot,
 } from "firebase/storage";
 import { firestore, storage } from "@/lib/firebase";
@@ -12,6 +13,7 @@ import type { SpeechRecord } from "@/types/models";
 const UPLOAD_TIMEOUT_MS = 20_000;
 
 interface NewSpeechInput {
+  userId: string;
   title: string;
   eventName: string;
   format: SpeechRecord["format"];
@@ -80,7 +82,9 @@ const formatStorageError = (error: unknown) => {
   return "Unable to upload the selected file to Firebase Storage.";
 };
 
-export const uploadSpeechAsset = async (file?: File | null) => {
+export const uploadSpeechAsset = async (speechInput?: NewSpeechInput | null) => {
+  var file: File | null | undefined = speechInput?.file;
+  
   if (!file) {
     return null;
   }
@@ -89,8 +93,22 @@ export const uploadSpeechAsset = async (file?: File | null) => {
     throw new Error("Firebase Storage is not configured.");
   }
 
+  // User metadata
+  const metadata: UploadMetadata = {
+    contentType: file.type,
+    customMetadata: {
+      'userId': speechInput?.userId || 'unknown',
+      'title': speechInput?.title || 'untitled',
+      'eventName': speechInput?.eventName || 'unknown',
+      'format': speechInput?.format || 'unknown',
+      'speakerName': speechInput?.speakerName || 'unknown',
+      'tags': JSON.stringify(speechInput?.tags || []),
+      'organizationTags': JSON.stringify(speechInput?.organizationTags || []),
+    },
+  };
+
   const assetRef = ref(storage, `speeches/${Date.now()}-${file.name}`);
-  const uploadTask = uploadBytesResumable(assetRef, file);
+  const uploadTask = uploadBytesResumable(assetRef, file, metadata);
 
   try {
     await withTimeout(uploadTaskToPromise(uploadTask), UPLOAD_TIMEOUT_MS);
@@ -108,7 +126,7 @@ export const createSpeechRecord = async (
     throw new Error("Firestore is not configured.");
   }
 
-  const mediaPath = await uploadSpeechAsset(input.file);
+  const mediaPath = await uploadSpeechAsset(input);
 
   const speech: SpeechRecord = {
     id: `speech-${Date.now()}`,

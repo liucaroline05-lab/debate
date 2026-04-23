@@ -13,8 +13,8 @@ describe("DashboardPage", () => {
     expect(
       screen.getByRole("heading", { name: /your debate week at a glance/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/recent speeches/i)).toBeInTheDocument();
-    expect(screen.getByText(/resource library/i)).toBeInTheDocument();
-    expect(screen.getByText(/channels/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /recent speeches/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /resource library/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /channels/i })).toBeInTheDocument();
   });
 });

@@ -1,15 +1,8 @@
 import type { ReactNode } from "react";
 import { Navigate, createBrowserRouter } from "react-router-dom";
-import { PublicLayout } from "@/components/layout/PublicLayout";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import { AuthProvider } from "@/features/auth/AuthContext";
-import { HomePage } from "@/pages/public/HomePage";
-import { AboutPage } from "@/pages/public/AboutPage";
-import { ServicesPage } from "@/pages/public/ServicesPage";
-import { ContactPage } from "@/pages/public/ContactPage";
-import { LoginPage } from "@/pages/public/LoginPage";
-import { SignupPage } from "@/pages/public/SignupPage";
 import { DashboardPage } from "@/pages/app/DashboardPage";
 import { SpeechUploadPage } from "@/pages/app/SpeechUploadPage";
 import { SpeechDetailPage } from "@/pages/app/SpeechDetailPage";
@@ -27,20 +20,32 @@ const withProviders = (element: ReactNode) => <AuthProvider>{element}</AuthProvi
 export const router = createBrowserRouter([
   {
     path: "/",
-    element: withProviders(<PublicLayout />),
-    errorElement: withProviders(<NotFoundPage />),
-    children: [
-      { index: true, element: <HomePage /> },
-      { path: "about", element: <AboutPage /> },
-      { path: "services", element: <ServicesPage /> },
-      { path: "contact", element: <ContactPage /> },
-      { path: "login", element: <LoginPage /> },
-      { path: "signup", element: <SignupPage /> },
-    ],
+    element: withProviders(<Navigate to="/app/dashboard" replace />),
+  },
+  {
+    path: "/about",
+    element: withProviders(<Navigate to="/app/dashboard" replace />),
+  },
+  {
+    path: "/services",
+    element: withProviders(<Navigate to="/app/dashboard" replace />),
+  },
+  {
+    path: "/contact",
+    element: withProviders(<Navigate to="/app/dashboard" replace />),
+  },
+  {
+    path: "/login",
+    element: withProviders(<Navigate to="/app/dashboard" replace />),
+  },
+  {
+    path: "/signup",
+    element: withProviders(<Navigate to="/app/dashboard?auth=signup" replace />),
   },
   {
     path: "/app",
     element: withProviders(<ProtectedRoute />),
+    errorElement: withProviders(<NotFoundPage />),
     children: [
       {
         element: <AppLayout />,

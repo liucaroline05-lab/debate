@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { createSpeechRecord } from "@/features/speeches/speechService";
 import type { SpeechRecord } from "@/types/models";
+import { useAuth } from "@/features/auth/AuthContext";
 
 const initialForm = {
   title: "",
@@ -19,14 +20,23 @@ export const SpeechUploadPage = () => {
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const { currentUser } = useAuth();
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (!currentUser) {
+      setMessage("You must be signed in to upload a speech.");
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage("");
 
     try {
       const speech = await createSpeechRecord({
         ...form,
+        userId: currentUser.id,
         tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
         organizationTags: form.organizationTags
           .split(",")
@@ -73,7 +83,7 @@ export const SpeechUploadPage = () => {
                 onChange={(event) =>
                   setForm((current) => ({ ...current, title: event.target.value }))
                 }
-                placeholder="Quarterfinal rebuttal"
+                placeholder="Name your speech!"
                 required
               />
             </div>
@@ -85,7 +95,7 @@ export const SpeechUploadPage = () => {
                 onChange={(event) =>
                   setForm((current) => ({ ...current, eventName: event.target.value }))
                 }
-                placeholder="Spring Invitational"
+                placeholder="Choose your event"
                 required
               />
             </div>
@@ -163,14 +173,23 @@ export const SpeechUploadPage = () => {
             <div className="form-field full">
               <label htmlFor="speechFile">Audio or video file</label>
               <div className="dropzone">
-                <input
-                  id="speechFile"
-                  type="file"
-                  accept="audio/*,video/*"
-                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                />
+                <div className="file-input-shell">
+                  <input
+                    id="speechFile"
+                    type="file"
+                    accept="audio/*,video/*"
+                    className="file-input-native"
+                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  />
+                  <label htmlFor="speechFile" className="file-input-trigger">
+                    Choose file
+                  </label>
+                  <span className={file ? "file-input-name has-file" : "file-input-name"}>
+                    {file ? file.name : "No file chosen"}
+                  </span>
+                </div>
                 <p className="helper-line" style={{ marginBottom: 0 }}>
-                  {file ? `Selected: ${file.name}` : "No file selected yet."}
+                  {file ? "Ready to upload." : "No file selected yet."}
                 </p>
               </div>
             </div>
