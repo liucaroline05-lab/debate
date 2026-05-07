@@ -8,6 +8,7 @@ const initialForm = {
   title: "",
   eventName: "",
   format: "Public Forum" as SpeechRecord["format"],
+  visibility: "private" as NonNullable<SpeechRecord["visibility"]>,
   speakerName: "",
   coachNotes: "",
   tags: "delivery, framing",
@@ -132,6 +133,24 @@ export const SpeechUploadPage = () => {
                 placeholder="Maya Rivera"
                 required
               />
+            </div>
+            <div className="form-field">
+              <label htmlFor="visibility">Visibility</label>
+              <select
+                id="visibility"
+                value={form.visibility}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    visibility: event.target.value as NonNullable<
+                      SpeechRecord["visibility"]
+                    >,
+                  }))
+                }
+              >
+                <option value="private">Private</option>
+                <option value="public">Public</option>
+              </select>
             </div>
             <div className="form-field full">
               <label htmlFor="coachNotes">Coach notes</label>

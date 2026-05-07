@@ -1,5 +1,12 @@
 import { FirebaseError } from "firebase/app";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
 import {
   getDownloadURL,
   ref,
@@ -17,12 +24,25 @@ interface NewSpeechInput {
   title: string;
   eventName: string;
   format: SpeechRecord["format"];
+  visibility: NonNullable<SpeechRecord["visibility"]>;
   speakerName: string;
   coachNotes: string;
   tags: string[];
   organizationTags: string[];
   file?: File | null;
 }
+
+export type SpeechUpdateInput = Pick<
+  SpeechRecord,
+  | "title"
+  | "eventName"
+  | "format"
+  | "visibility"
+  | "speakerName"
+  | "coachNotes"
+  | "tags"
+  | "organizationTags"
+>;
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number) =>
   new Promise<T>((resolve, reject) => {
@@ -101,6 +121,7 @@ export const uploadSpeechAsset = async (speechInput?: NewSpeechInput | null) => 
       'title': speechInput?.title || 'untitled',
       'eventName': speechInput?.eventName || 'unknown',
       'format': speechInput?.format || 'unknown',
+      'visibility': speechInput?.visibility || 'private',
       'speakerName': speechInput?.speakerName || 'unknown',
       'tags': JSON.stringify(speechInput?.tags || []),
       'organizationTags': JSON.stringify(speechInput?.organizationTags || []),
@@ -130,9 +151,11 @@ export const createSpeechRecord = async (
 
   const speech: SpeechRecord = {
     id: `speech-${Date.now()}`,
+    creatorId: input.userId,
     title: input.title,
     eventName: input.eventName,
     format: input.format,
+    visibility: input.visibility,
     status: "Uploaded",
     speakerName: input.speakerName,
     coachNotes: input.coachNotes,
@@ -150,4 +173,37 @@ export const createSpeechRecord = async (
   speech.id = docRef.id;
 
   return speech;
+};
+
+export const updateSpeechRecord = async (
+  speechId: string,
+  updates: SpeechUpdateInput,
+) => {
+  if (!firestore) {
+    throw new Error("Firestore is not configured.");
+  }
+
+  await updateDoc(doc(firestore, "speeches", speechId), {
+    ...updates,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const deleteSpeechRecord = async (speechId: string) => {
+  if (!firestore) {
+    throw new Error("Firestore is not configured.");
+  }
+
+  await deleteDoc(doc(firestore, "speeches", speechId));
+};
+
+export const reportSpeechRecord = async (speechId: string) => {
+  if (!firestore) {
+    throw new Error("Firestore is not configured.");
+  }
+
+  await updateDoc(doc(firestore, "speeches", speechId), {
+    reported: true,
+    updatedAt: serverTimestamp(),
+  });
 };

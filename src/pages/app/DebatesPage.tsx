@@ -177,9 +177,9 @@ export const DebatesPage = () => {
                   <button type="button" className="btn btn-ghost">
                     Invite Spectators
                   </button>
-                  <button type="button" className="btn btn-secondary">
+                  {/* <button type="button" className="btn btn-secondary">
                     View AI Judging
-                  </button>
+                  </button> */}
                 </div>
               </div>
             </article>

@@ -1,21 +1,53 @@
+import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
+import { where, type QueryConstraint } from "firebase/firestore";
+import { Flag, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import {
   seededChannels,
   seededDebates,
   seededEvents,
   seededResources,
-  seededSpeeches,
 } from "@/data/firestoreSeeds";
+import { useAuth } from "@/features/auth/AuthContext";
+import {
+  deleteSpeechRecord,
+  reportSpeechRecord,
+} from "@/features/speeches/speechService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDate, formatDateTime } from "@/lib/date";
+import type { SpeechRecord } from "@/types/models";
 
 export const DashboardPage = () => {
-  const speechState = useSeededFirestoreCollection("speeches", seededSpeeches);
+  const { currentUser } = useAuth();
+  const [menuSpeechId, setMenuSpeechId] = useState<string | null>(null);
+  const [speechMessage, setSpeechMessage] = useState("");
+  const speechConstraints = useMemo<QueryConstraint[]>(
+    () => (currentUser ? [where("creatorId", "==", currentUser.id)] : []),
+    [currentUser],
+  );
+  const speechState = useSeededFirestoreCollection<SpeechRecord>(
+    "speeches",
+    [],
+    speechConstraints,
+    Boolean(currentUser),
+  );
   const debateState = useSeededFirestoreCollection("debates", seededDebates);
   const resourceState = useSeededFirestoreCollection("resources", seededResources);
   const channelState = useSeededFirestoreCollection("channels", seededChannels);
   const eventState = useSeededFirestoreCollection("events", seededEvents);
+
+  const handleDeleteSpeech = async (speechId: string) => {
+    await deleteSpeechRecord(speechId);
+    setMenuSpeechId(null);
+    setSpeechMessage("Speech deleted.");
+  };
+
+  const handleReportSpeech = async (speechId: string) => {
+    await reportSpeechRecord(speechId);
+    setMenuSpeechId(null);
+    setSpeechMessage("Speech reported.");
+  };
 
   return (
     <>
@@ -48,18 +80,62 @@ export const DashboardPage = () => {
           </div>
           <div className="list" style={{ marginTop: "1rem" }}>
             {speechState.data.map((speech) => (
-              <NavLink
-                key={speech.id}
-                to={`/app/speeches/${speech.id}`}
-                className="list-item"
-              >
-                <strong>{speech.title}</strong>
-                <span className="meta-line">
-                  {speech.format} • {speech.status} • {formatDateTime(speech.uploadedAt)}
-                </span>
-              </NavLink>
+              <div key={speech.id} className="list-item speech-list-item">
+                <NavLink
+                  to={`/app/speeches/${speech.id}`}
+                  className="speech-list-link"
+                >
+                  <strong>{speech.title}</strong>
+                  <span className="meta-line">
+                    {speech.format} • {speech.status} • {formatDateTime(speech.uploadedAt)}
+                  </span>
+                </NavLink>
+                <div className="forum-post-menu">
+                  <button
+                    type="button"
+                    className="forum-icon-button"
+                    aria-label={`Actions for ${speech.title}`}
+                    onClick={() =>
+                      setMenuSpeechId(menuSpeechId === speech.id ? null : speech.id)
+                    }
+                  >
+                    <MoreHorizontal size={18} />
+                  </button>
+                  {menuSpeechId === speech.id ? (
+                    <div className="forum-menu-dropdown">
+                      {speech.creatorId === currentUser?.id ? (
+                        <>
+                          <NavLink
+                            className="forum-menu-item"
+                            to={`/app/speeches/${speech.id}?mode=edit`}
+                            onClick={() => setMenuSpeechId(null)}
+                          >
+                            <Pencil size={16} /> Edit
+                          </NavLink>
+                          <button
+                            type="button"
+                            className="forum-menu-item"
+                            onClick={() => void handleDeleteSpeech(speech.id)}
+                          >
+                            <Trash2 size={16} /> Delete
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="forum-menu-item"
+                          onClick={() => void handleReportSpeech(speech.id)}
+                        >
+                          <Flag size={16} /> Report
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             ))}
           </div>
+          {speechMessage ? <p className="meta-line">{speechMessage}</p> : null}
         </article>
 
         <article className="app-card">

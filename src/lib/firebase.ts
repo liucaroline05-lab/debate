@@ -6,7 +6,7 @@ import {
 } from "firebase/auth";
 import {
   connectFirestoreEmulator,
-  getFirestore,
+  initializeFirestore,
 } from "firebase/firestore";
 import {
   connectStorageEmulator,
@@ -28,7 +28,9 @@ export const firebaseApp = isFirebaseConfigured
   : null;
 
 export const auth = firebaseApp ? getAuth(firebaseApp) : null;
-export const firestore = firebaseApp ? getFirestore(firebaseApp) : null;
+export const firestore = firebaseApp
+  ? initializeFirestore(firebaseApp, { ignoreUndefinedProperties: true })
+  : null;
 export const storage = firebaseApp ? getStorage(firebaseApp) : null;
 export const googleProvider = new GoogleAuthProvider();
 

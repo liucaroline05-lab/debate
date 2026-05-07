@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  type QueryConstraint,
+} from "firebase/firestore";
 import { ensureSeededCollection } from "@/features/firestore/seed";
 import { firestore } from "@/lib/firebase";
 
@@ -9,9 +14,13 @@ interface SeededCollectionState<T> {
   error: string | null;
 }
 
+const EMPTY_QUERY_CONSTRAINTS: QueryConstraint[] = [];
+
 export const useSeededFirestoreCollection = <T extends { id: string }>(
   collectionName: string,
   seedRecords: T[],
+  constraints: QueryConstraint[] = EMPTY_QUERY_CONSTRAINTS,
+  enabled = true,
 ) => {
   const [state, setState] = useState<SeededCollectionState<T>>({
     data: [],
@@ -21,6 +30,17 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
 
   useEffect(() => {
     let isMounted = true;
+
+    if (!enabled) {
+      setState({
+        data: [],
+        isLoading: false,
+        error: null,
+      });
+      return () => {
+        isMounted = false;
+      };
+    }
 
     if (!firestore) {
       setState({
@@ -44,7 +64,7 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
     });
 
     const unsubscribe = onSnapshot(
-      collection(firestore, collectionName),
+      query(collection(firestore, collectionName), ...constraints),
       (snapshot) => {
         if (!isMounted) {
           return;
@@ -78,7 +98,7 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
       isMounted = false;
       unsubscribe();
     };
-  }, [collectionName, seedRecords]);
+  }, [collectionName, constraints, enabled, seedRecords]);
 
   return state;
 };

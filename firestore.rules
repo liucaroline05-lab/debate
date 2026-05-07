@@ -1,0 +1,116 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function ownsExistingResource(fieldName) {
+      return isSignedIn() && resource.data[fieldName] == request.auth.uid;
+    }
+
+    function hasValidSpeechVisibility() {
+      return request.resource.data.visibility in ["private", "public"];
+    }
+
+    function canReadSpeech() {
+      return isSignedIn()
+        && (
+          resource.data.visibility == "public"
+          || resource.data.creatorId == request.auth.uid
+        );
+    }
+
+    function isSpeechReportUpdate() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "reported",
+          "updatedAt"
+        ])
+        && request.resource.data.reported == true;
+    }
+
+    match /users/{userId} {
+      allow create, read, update: if isOwner(userId);
+    }
+
+    match /follows/{followId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.followerId == request.auth.uid;
+      allow delete: if ownsExistingResource("followerId");
+    }
+
+    match /tabroomLinks/{linkId} {
+      allow read, create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if ownsExistingResource("userId");
+    }
+
+    match /tabroomImports/{importId} {
+      allow read, create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.authorId == request.auth.uid;
+      allow update: if isSignedIn();
+      allow delete: if ownsExistingResource("authorId");
+    }
+
+    match /postComments/{commentId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.authorId == request.auth.uid;
+    }
+
+    match /postReactions/{reactionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /speeches/{speechId} {
+      allow read: if canReadSpeech();
+      allow create: if isSignedIn()
+        && request.resource.data.creatorId == request.auth.uid
+        && hasValidSpeechVisibility();
+      allow update: if (
+          ownsExistingResource("creatorId")
+          && hasValidSpeechVisibility()
+        )
+        || isSpeechReportUpdate();
+      allow delete: if ownsExistingResource("creatorId");
+    }
+
+    match /debates/{debateId} {
+      allow read, create, update: if isSignedIn();
+    }
+
+    match /matchRequests/{requestId} {
+      allow read, create, update: if isSignedIn();
+    }
+
+    match /resources/{resourceId} {
+      allow read: if true;
+      allow create, update: if isSignedIn();
+    }
+
+    match /channels/{channelId} {
+      allow read: if true;
+      allow create, update: if isSignedIn();
+    }
+
+    match /events/{eventId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+    }
+  }
+}

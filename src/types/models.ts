@@ -35,9 +35,11 @@ export interface UserProfile {
 
 export interface SpeechRecord {
   id: string;
+  creatorId?: string;
   title: string;
   eventName: string;
   format: "Policy" | "Lincoln-Douglas" | "Public Forum" | "Congress" | "Extemp";
+  visibility?: "private" | "public";
   status: "Uploaded" | "Reviewing" | "Ready for Feedback";
   speakerName: string;
   coachNotes: string;
@@ -46,6 +48,7 @@ export interface SpeechRecord {
   tags: string[];
   organizationTags: string[];
   mediaPath?: string;
+  reported?: boolean;
 }
 
 export interface DebateMatchRequest {
