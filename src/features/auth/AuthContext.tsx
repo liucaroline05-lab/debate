@@ -9,6 +9,7 @@ import {
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut as firebaseSignOut,
@@ -33,6 +34,7 @@ interface AuthContextValue {
   login: (credentials: Credentials) => Promise<void>;
   signup: (credentials: Credentials) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -152,6 +154,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const result = await signInWithPopup(auth, googleProvider);
         const profile = await loadProfile(result.user);
         setCurrentUser(profile);
+      },
+      resetPassword: async (email) => {
+        if (!auth) {
+          throw new Error("Firebase is not configured. Add your Firebase environment values to reset a password.");
+        }
+
+        await sendPasswordResetEmail(auth, email);
       },
       logout: async () => {
         setCurrentUser(null);

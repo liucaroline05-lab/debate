@@ -4,16 +4,18 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { useAuth } from "@/features/auth/AuthContext";
 
 export const LoginPage = () => {
-  const { login, loginWithGoogle, isDemoMode } = useAuth();
+  const { login, loginWithGoogle, resetPassword, isDemoMode } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const redirectTo = (location.state as { from?: string } | null)?.from ?? "/app/dashboard";
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+    setNotice("");
 
     try {
       await login(form);
@@ -29,6 +31,7 @@ export const LoginPage = () => {
 
   const handleGoogleLogin = async () => {
     setError("");
+    setNotice("");
 
     try {
       await loginWithGoogle();
@@ -38,6 +41,27 @@ export const LoginPage = () => {
         submissionError instanceof Error
           ? submissionError.message
           : "Unable to continue with Google right now.",
+      );
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setError("");
+    setNotice("");
+
+    if (!form.email) {
+      setError("Enter your email above, then select “Forgot password?”.");
+      return;
+    }
+
+    try {
+      await resetPassword(form.email);
+      setNotice(`If an account exists for ${form.email}, a password reset link is on its way.`);
+    } catch (submissionError) {
+      setError(
+        submissionError instanceof Error
+          ? submissionError.message
+          : "Unable to send a reset email right now.",
       );
     }
   };
@@ -64,7 +88,7 @@ export const LoginPage = () => {
               <input
                 id="email"
                 type="email"
-                placeholder="maya@example.com"
+                placeholder=""
                 value={form.email}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, email: event.target.value }))
@@ -77,17 +101,25 @@ export const LoginPage = () => {
               <input
                 id="password"
                 type="password"
-                placeholder="••••••••"
+                placeholder=""
                 value={form.password}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, password: event.target.value }))
                 }
                 required
               />
+              <button
+                type="button"
+                className="auth-switch-button auth-forgot-button"
+                onClick={() => void handleForgotPassword()}
+              >
+                Forgot password?
+              </button>
             </div>
           </div>
 
           {error ? <p className="meta-line">{error}</p> : null}
+          {notice ? <p className="meta-line">{notice}</p> : null}
 
           <div className="button-row" style={{ marginTop: "1.25rem" }}>
             <button type="submit" className="btn btn-primary">

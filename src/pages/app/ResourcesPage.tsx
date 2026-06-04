@@ -1,6 +1,14 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bookmark, ExternalLink, FileUp, Search, Upload } from "lucide-react";
+import {
+  Bookmark,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  FileUp,
+  Search,
+  Upload,
+} from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { seededResources } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -113,9 +121,34 @@ export const ResourcesPage = () => {
   }, [category, format, level, mediaType, query, resourceState.data, savedOnly]);
 
   const featuredResources = useMemo(
-    () => resourceState.data.filter((resource) => resource.saved).slice(0, 3),
+    () => resourceState.data.filter((resource) => resource.saved).slice(0, 12),
     [resourceState.data],
   );
+
+  const featuredTrackRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateFeaturedScroll = useCallback(() => {
+    const track = featuredTrackRef.current;
+    if (!track) return;
+    const { scrollLeft, scrollWidth, clientWidth } = track;
+    setCanScrollLeft(scrollLeft > 1);
+    setCanScrollRight(Math.ceil(scrollLeft + clientWidth) < scrollWidth - 1);
+  }, []);
+
+  const scrollFeatured = (direction: "left" | "right") => {
+    const track = featuredTrackRef.current;
+    if (!track) return;
+    const amount = track.clientWidth * 0.8;
+    track.scrollBy({ left: direction === "left" ? -amount : amount, behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    updateFeaturedScroll();
+    window.addEventListener("resize", updateFeaturedScroll);
+    return () => window.removeEventListener("resize", updateFeaturedScroll);
+  }, [updateFeaturedScroll, featuredResources.length]);
 
   const submitResource = async () => {
     if (!currentUser) {
@@ -178,20 +211,6 @@ export const ResourcesPage = () => {
           </button>
         </div>
       </header>
-
-      {featuredResources.length > 0 ? (
-        <section className="resource-featured-row" aria-label="Recommended resources">
-          {featuredResources.map((resource) => (
-            <Link key={resource.id} to={getResourcePath(resource)} className="resource-featured-card">
-              <span className="pill">{resource.category}</span>
-              <strong>{resource.title}</strong>
-              <span className="meta-line">
-                {resource.level} • {resource.mediaType ?? "Article"} • {resource.estimatedTime ?? "Quick read"}
-              </span>
-            </Link>
-          ))}
-        </section>
-      ) : null}
 
       {isUploadOpen ? (
       <section ref={uploadRef} className="forum-composer-card resource-upload-card composer-slide-down">
@@ -320,27 +339,25 @@ export const ResourcesPage = () => {
           <div className="form-field">
             <label htmlFor="resourceFile">Audio/video file</label>
             <div className="file-input-shell">
-
               <input
-              id="resourceFile"
-              type="file"
-              accept="audio/*,video/*"
-              className="file-input-native"
-              onChange={(event) =>
-                setComposer((current) => ({
-                  ...current,
-                  file: event.target.files?.[0] ?? null,
-                }))
-              }
-            />
-            <label htmlFor="speechFile" className="file-input-trigger">
-                    Choose file
-                  </label>
-                  {/* <span className={file ? "file-input-name has-file" : "file-input-name"}>
-                    {file ? file.name : "No file chosen"}
-                  </span> */}
+                id="resourceFile"
+                type="file"
+                accept="audio/*,video/*"
+                className="file-input-native"
+                onChange={(event) =>
+                  setComposer((current) => ({
+                    ...current,
+                    file: event.target.files?.[0] ?? null,
+                  }))
+                }
+              />
+              <label htmlFor="resourceFile" className="file-input-trigger">
+                Choose file
+              </label>
+              <span className={composer.file ? "file-input-name has-file" : "file-input-name"}>
+                {composer.file ? composer.file.name : "No file chosen"}
+              </span>
             </div>
-            
           </div>
           <div className="form-field full">
             <label htmlFor="resourceThumbnail">Thumbnail URL</label>
@@ -366,17 +383,19 @@ export const ResourcesPage = () => {
 
         <div className="forum-composer-footer">
           <span className="meta-line">{message || "Resources appear in the library after upload."}</span>
-          <button type="button" className="btn btn-secondary" onClick={() => setIsUploadOpen(false)}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary forum-primary-cta"
-            disabled={isUploading}
-            onClick={() => void submitResource()}
-          >
-            {isUploading ? "Uploading..." : "Publish Resource"}
-          </button>
+          <div className="button-row">
+            <button type="button" className="btn btn-secondary" onClick={() => setIsUploadOpen(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary forum-primary-cta"
+              disabled={isUploading}
+              onClick={() => void submitResource()}
+            >
+              {isUploading ? "Uploading..." : "Publish Resource"}
+            </button>
+          </div>
         </div>
       </section>
       ) : null}
@@ -448,6 +467,43 @@ export const ResourcesPage = () => {
           </div>
         ) : null}
       </section>
+
+      {featuredResources.length > 0 ? (
+        <section className="resource-featured" aria-label="Recommended resources">
+          <h2 className="card-title">Recommended for you</h2>
+          <div className="resource-featured-viewport">
+            <button
+              type="button"
+              className="carousel-button carousel-button-left"
+              aria-label="Scroll featured resources left"
+              onClick={() => scrollFeatured("left")}
+              disabled={!canScrollLeft}
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <div className="resource-featured-row" ref={featuredTrackRef} onScroll={updateFeaturedScroll}>
+              {featuredResources.map((resource) => (
+                <Link key={resource.id} to={getResourcePath(resource)} className="resource-featured-card">
+                  <span className="pill">{resource.category}</span>
+                  <strong>{resource.title}</strong>
+                  <span className="meta-line">
+                    {resource.level} • {resource.mediaType ?? "Article"} • {resource.estimatedTime ?? "Quick read"}
+                  </span>
+                </Link>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="carousel-button carousel-button-right"
+              aria-label="Scroll featured resources right"
+              onClick={() => scrollFeatured("right")}
+              disabled={!canScrollRight}
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="resources-grid">
         {filtered.map((resource) => (
