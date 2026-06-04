@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Bookmark,
+  Check,
   Flag,
   MessageCircle,
   MoreHorizontal,
@@ -34,6 +35,18 @@ import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollecti
 
 type ForumTab = "All Posts" | "Question" | "Speech Review" | "Tips & Strategies";
 type FeedScope = "all" | "following";
+
+interface PostReaction {
+  id: string;
+  postId: string;
+  userId: string;
+  like?: boolean;
+  dislike?: boolean;
+  favorite?: boolean;
+}
+
+// Stable reference so the seeded-collection hook does not re-subscribe each render.
+const EMPTY_REACTIONS: PostReaction[] = [];
 
 const forumTabs: Array<{ id: ForumTab; label: string }> = [
   { id: "All Posts", label: "All Posts" },
@@ -75,6 +88,7 @@ export const CommunityPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [menuPostId, setMenuPostId] = useState<string | null>(null);
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
+  const [sharedPostId, setSharedPostId] = useState<string | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [composer, setComposer] = useState({
@@ -91,6 +105,17 @@ export const CommunityPage = () => {
   const postState = useSeededFirestoreCollection("posts", seededPosts);
   const commentState = useSeededFirestoreCollection("postComments", seededComments);
   const followsState = useSeededFirestoreCollection("follows", seededFollows);
+  const reactionState = useSeededFirestoreCollection<PostReaction>("postReactions", EMPTY_REACTIONS);
+
+  const myReactions = useMemo(() => {
+    const map = new Map<string, PostReaction>();
+    reactionState.data.forEach((reaction) => {
+      if (reaction.userId === author.id) {
+        map.set(reaction.postId, reaction);
+      }
+    });
+    return map;
+  }, [reactionState.data, author.id]);
 
   const followingIds = followsState.data
     .filter((follow) => follow.followerId === author.id)
@@ -223,14 +248,50 @@ export const CommunityPage = () => {
     }
   };
 
-  const sharePost = async (postId: string, shareCount = 0) => {
-    try {
-      await incrementPostShareCount(postId, shareCount);
-      await navigator.clipboard.writeText(`${window.location.origin}/app/community#${postId}`);
-      setMessage("Post link copied.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to share post.");
+  const copyToClipboard = async (text: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
     }
+
+    // Fallback for browsers/non-secure contexts without the async clipboard API.
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "absolute";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+  };
+
+  const sharePost = async (postId: string, shareCount = 0) => {
+    const url = `${window.location.origin}/app/community#${postId}`;
+
+    try {
+      if (navigator.share) {
+        // Native share sheet (mobile / supported desktops).
+        await navigator.share({ title: "Debate Studio community post", url });
+      } else {
+        await copyToClipboard(url);
+        setSharedPostId(postId);
+        window.setTimeout(
+          () => setSharedPostId((current) => (current === postId ? null : current)),
+          2000,
+        );
+      }
+    } catch (error) {
+      // The user dismissing the native share sheet is not an error.
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      setMessage("Unable to share this post right now.");
+      return;
+    }
+
+    // Best-effort: record the share without blocking or breaking the copy above.
+    void incrementPostShareCount(postId, shareCount).catch(() => {});
   };
 
   const editPost = async (postId: string, currentTitle?: string, currentContent?: string, currentCategory?: ForumTab, currentDebateType?: string) => {
@@ -431,6 +492,13 @@ export const CommunityPage = () => {
               const postAuthorName = safeName(authorProfile?.displayName ?? post.author);
               const comments = commentState.data.filter((entry) => entry.postId === post.id);
               const isOwner = author.id === post.authorId;
+              const reaction = myReactions.get(post.id);
+              const liked = reaction?.like ?? false;
+              const disliked = reaction?.dislike ?? false;
+              const favorited = reaction?.favorite ?? false;
+              const isCommentsOpen = expandedPostId === post.id;
+              const hasCommented = comments.some((entry) => entry.authorId === author.id);
+              const justShared = sharedPostId === post.id;
 
               return (
                 <article key={post.id} className="forum-post-card" id={post.id}>
@@ -523,38 +591,47 @@ export const CommunityPage = () => {
                     <div className="forum-post-actions">
                       <button
                         type="button"
-                        className="forum-action-button"
+                        className={liked ? "forum-action-button is-like" : "forum-action-button"}
+                        aria-pressed={liked}
                         onClick={() => void togglePostReaction(post.id, author.id, "like")}
                       >
                         <ThumbsUp size={16} /> {post.likeCount ?? 0}
                       </button>
                       <button
                         type="button"
-                        className="forum-action-button"
+                        className={disliked ? "forum-action-button is-dislike" : "forum-action-button"}
+                        aria-pressed={disliked}
                         onClick={() => void togglePostReaction(post.id, author.id, "dislike")}
                       >
                         <ThumbsDown size={16} /> {post.dislikeCount ?? 0}
                       </button>
                       <button
                         type="button"
-                        className="forum-action-button"
+                        className={favorited ? "forum-action-button is-favorite" : "forum-action-button"}
+                        aria-pressed={favorited}
                         onClick={() => void togglePostReaction(post.id, author.id, "favorite")}
                       >
                         <Bookmark size={16} /> {post.favoriteCount ?? 0}
                       </button>
                       <button
                         type="button"
-                        className="forum-action-button"
-                        onClick={() => setExpandedPostId(expandedPostId === post.id ? null : post.id)}
+                        className={
+                          isCommentsOpen || hasCommented
+                            ? "forum-action-button is-comment"
+                            : "forum-action-button"
+                        }
+                        aria-pressed={isCommentsOpen}
+                        onClick={() => setExpandedPostId(isCommentsOpen ? null : post.id)}
                       >
                         <MessageCircle size={16} /> {comments.length}
                       </button>
                       <button
                         type="button"
-                        className="forum-action-button"
+                        className={justShared ? "forum-action-button is-share" : "forum-action-button"}
                         onClick={() => void sharePost(post.id, post.shareCount)}
                       >
-                        <Share2 size={16} /> {post.shareCount ?? 0}
+                        {justShared ? <Check size={16} /> : <Share2 size={16} />}{" "}
+                        {justShared ? "Copied" : post.shareCount ?? 0}
                       </button>
                     </div>
                   </div>

@@ -1928,9 +1928,52 @@ button {
   color: var(--color-muted);
 }
 
+.forum-action-button {
+  cursor: pointer;
+  transition:
+    color var(--transition),
+    background-color var(--transition),
+    border-color var(--transition);
+}
+
 .forum-action-button:hover,
 .forum-icon-button:hover {
   color: var(--color-charcoal);
+}
+
+/* Colored states once the current user has interacted with a post. */
+.forum-action-button.is-like {
+  color: var(--color-moss);
+  background: rgba(118, 128, 107, 0.16);
+  border-color: rgba(78, 90, 71, 0.35);
+}
+
+.forum-action-button.is-dislike {
+  color: var(--color-terracotta);
+  background: rgba(234, 121, 103, 0.14);
+  border-color: rgba(234, 121, 103, 0.35);
+}
+
+.forum-action-button.is-favorite {
+  color: var(--color-gold);
+  background: rgba(208, 160, 65, 0.16);
+  border-color: rgba(208, 160, 65, 0.4);
+}
+
+.forum-action-button.is-favorite svg {
+  fill: currentColor;
+}
+
+.forum-action-button.is-comment {
+  color: var(--color-sage);
+  background: rgba(118, 128, 107, 0.12);
+  border-color: rgba(118, 128, 107, 0.3);
+}
+
+.forum-action-button.is-share {
+  color: var(--color-moss);
+  background: rgba(118, 128, 107, 0.16);
+  border-color: rgba(78, 90, 71, 0.35);
 }
 
 .forum-post-menu {
