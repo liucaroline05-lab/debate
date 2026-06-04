@@ -53,3 +53,10 @@ Visual Improvements Pass:
 
 Public-Facing Site:
 - should look like the dashboard, but main content is covered by a login prompt (semi-transparent dark background behind the login popup; cannot click anything else on the page until you log in)
+
+
+
+Resources Page:
+- curated posts with attached media (images/video/etc)
+- For each of the content cards, clicking them expands them to take the user to a new page dedicated to that specific topic
+- Search and filters available

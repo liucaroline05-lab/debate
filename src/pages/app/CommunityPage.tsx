@@ -75,6 +75,7 @@ export const CommunityPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [menuPostId, setMenuPostId] = useState<string | null>(null);
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [composer, setComposer] = useState({
     title: "",
@@ -201,6 +202,7 @@ export const CommunityPage = () => {
         content: "",
         debateType: "",
       }));
+      setIsComposerOpen(false);
       setMessage("Post published.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to publish post.");
@@ -274,7 +276,10 @@ export const CommunityPage = () => {
           <button
             type="button"
             className="btn btn-primary forum-primary-cta"
-            onClick={() => composerRef.current?.focus()}
+            onClick={() => {
+              setIsComposerOpen(true);
+              window.setTimeout(() => composerRef.current?.focus(), 180);
+            }}
           >
             New Post
           </button>
@@ -283,7 +288,8 @@ export const CommunityPage = () => {
 
       <div className="forum-layout">
         <section className="forum-main">
-          <article className="forum-composer-card">
+          {isComposerOpen ? (
+          <article className="forum-composer-card composer-slide-down">
             <div className="forum-author-row">
               {author.avatarUrl ? (
                 <img
@@ -363,12 +369,16 @@ export const CommunityPage = () => {
             <div className="forum-composer-footer">
               {message ? <span className="meta-line">{message}</span> : <span className="meta-line">placeholder.</span>}
               <div className="button-row">
+                <button type="button" className="btn btn-secondary" onClick={() => setIsComposerOpen(false)}>
+                  Cancel
+                </button>
                 <button type="button" className="btn btn-primary forum-primary-cta" onClick={() => void createNewPost()}>
                   Publish Post
                 </button>
               </div>
             </div>
           </article>
+          ) : null}
 
           <div className="forum-toolbar">
             <label className="forum-search" htmlFor="communitySearch">

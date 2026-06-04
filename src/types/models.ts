@@ -114,13 +114,28 @@ export interface DebateThread {
 
 export interface ResourceItem {
   id: string;
+  slug?: string;
   title: string;
   category: "Case Building" | "Rebuttal" | "Research" | "Delivery";
   description: string;
   curatedBy: string;
+  creatorId?: string;
+  creatorRole?: UserRole;
   saved: boolean;
   level: "Starter" | "Growth" | "Advanced";
+  format?: "Policy" | "Lincoln-Douglas" | "Public Forum" | "Congress" | "Extemp" | "All Formats";
+  mediaType?: "Article" | "Audio" | "Video" | "Link" | "Worksheet";
+  mediaPath?: string;
+  externalUrl?: string;
+  thumbnailUrl?: string;
   tags: string[];
+  contentSections?: Array<{
+    title: string;
+    body: string;
+  }>;
+  estimatedTime?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CommunityChannel {

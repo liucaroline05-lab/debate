@@ -9,6 +9,7 @@ import { SpeechDetailPage } from "@/pages/app/SpeechDetailPage";
 import { DebatesPage } from "@/pages/app/DebatesPage";
 import { DebateWatchPage } from "@/pages/app/DebateWatchPage";
 import { ResourcesPage } from "@/pages/app/ResourcesPage";
+import { ResourceDetailPage } from "@/pages/app/ResourceDetailPage";
 import { CommunityPage } from "@/pages/app/CommunityPage";
 import { ProfilePage } from "@/pages/app/ProfilePage";
 import { UserProfilePage } from "@/pages/app/UserProfilePage";
@@ -57,6 +58,7 @@ export const router = createBrowserRouter([
           { path: "debates", element: <DebatesPage /> },
           { path: "debates/:debateId", element: <DebateWatchPage /> },
           { path: "resources", element: <ResourcesPage /> },
+          { path: "resources/:resourceId", element: <ResourceDetailPage /> },
           { path: "community", element: <CommunityPage /> },
           { path: "profile", element: <ProfilePage /> },
           { path: "users/:userId", element: <UserProfilePage /> },

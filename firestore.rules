@@ -100,7 +100,14 @@ service cloud.firestore {
 
     match /resources/{resourceId} {
       allow read: if true;
-      allow create, update: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.creatorId == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.category in ["Case Building", "Rebuttal", "Research", "Delivery"]
+        && request.resource.data.description is string
+        && request.resource.data.curatedBy is string
+        && request.resource.data.level in ["Starter", "Growth", "Advanced"];
+      allow update: if isSignedIn();
     }
 
     match /channels/{channelId} {
