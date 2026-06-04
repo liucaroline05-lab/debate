@@ -613,7 +613,8 @@ export const seededResources: ResourceItem[] = [
     slug: "three-layer-rebuttal-framework",
     title: "Three-layer rebuttal framework",
     category: "Rebuttal",
-    description: "A coach-curated worksheet for grouping warrants, weighing, and crystallization.",
+    description:
+      "A coach-curated worksheet that breaks rebuttals into three deliberate layers — direct answers, comparative weighing, and final-round crystallization — so you walk into the speech knowing exactly what each block is supposed to do for the judge.",
     curatedBy: "Coach Lila Tran",
     creatorId: "user-coach-lila",
     creatorRole: "coach",
@@ -629,15 +630,27 @@ export const seededResources: ResourceItem[] = [
     contentSections: [
       {
         title: "Overview",
-        body: "Use this framework to separate direct answers, comparative weighing, and final-round crystallization before the speech starts.",
+        body: "Most lost rounds are not lost on the line-by-line — they are lost because the judge cannot tell which answers actually matter. This framework keeps three jobs separate so you never collapse them into one undifferentiated wall of responses: answer the argument, compare it to yours, and tell the judge how to vote. Run every contested contention through all three layers before you ever stand up.",
+      },
+      {
+        title: "Layer 1 — Direct answers",
+        body: "Start at the link and internal link, not the impact. For each opposing contention, write the single cleanest response that breaks the chain: a missing uniqueness, a non-unique link, an empirically denied impact, or a piece of counter-evidence. One sharp answer the judge can repeat back beats five thin ones they will forget.",
+      },
+      {
+        title: "Layer 2 — Comparative weighing",
+        body: "Assume both impacts are true and explain why yours still comes first. Name the weighing mechanism out loud — magnitude, timeframe, probability, or reversibility — and apply it to this specific clash rather than reciting it in the abstract. This is the layer novices skip and the layer that wins close ballots.",
+      },
+      {
+        title: "Layer 3 — Crystallization",
+        body: "In the final rebuttal, stop covering everything and tell the story of the round. Collapse to the two or three voting issues, explain why each was won, and give the judge the exact sentence you want to see on the ballot. If you have done Layers 1 and 2 well, crystallization is just pointing at the work you already did.",
       },
       {
         title: "Practice drill",
-        body: "Take one opponent contention and write one sentence for uniqueness, one for link defense, and one for impact comparison.",
+        body: "Take one opponent contention and write exactly three sentences: one for the direct answer, one for the comparative weighing, and one for crystallization. Time yourself at ninety seconds. When that feels easy, do it on a flow you have never seen before to simulate a live round.",
       },
       {
-        title: "Common mistake",
-        body: "Students often list responses without naming why the judge should prefer one layer over another.",
+        title: "Common mistakes",
+        body: "Students list responses without ever naming why the judge should prefer one layer over another, and they weigh in the abstract (\"magnitude matters\") instead of comparing the two impacts actually in the round. If your weighing sentence would make sense in any debate, it is too generic — anchor it to the specific clash.",
       },
     ],
   },
@@ -646,7 +659,8 @@ export const seededResources: ResourceItem[] = [
     slug: "research-sprint-checklist",
     title: "Research sprint checklist",
     category: "Research",
-    description: "A boho-friendly printable flow for evidence triage, source credibility, and cut-card prep.",
+    description:
+      "A timed, repeatable workflow for turning a cold topic into credible, tagged, speech-ready evidence in a single focused sitting — built to stop the doom-scroll of open tabs and get cards into your team file with sources you can defend in cross.",
     curatedBy: "Debate Studio",
     creatorId: "user-debate-studio",
     creatorRole: "coach",
@@ -663,15 +677,27 @@ export const seededResources: ResourceItem[] = [
     contentSections: [
       {
         title: "Overview",
-        body: "A timed sprint for moving from broad topic scanning to credible, tagged evidence.",
+        body: "Research stalls when scanning, reading, and cutting all happen at once. This checklist splits the sprint into discrete passes so each one has a clear finish line, and so two teammates can divide the work without duplicating cards. The goal is not more evidence — it is evidence you can find again and trust under pressure.",
       },
       {
-        title: "Source check",
-        body: "Record author, institution, date, claim, and limitation before a card enters the team file.",
+        title: "The 25-minute sprint",
+        body: "Spend the first five minutes scanning for the best three sources, fifteen minutes reading and cutting, and the last five tagging and filing. Set a timer. The constraint is the point: it forces you to commit to strong sources early instead of opening a thirtieth tab you will never read.",
       },
       {
-        title: "Next step",
-        body: "Pair this checklist with a rebuttal block so research turns into speech-ready material.",
+        title: "Source credibility check",
+        body: "Before a card enters the team file, record author, institution, date, the precise claim, and — critically — its stated limitation. The limitation line is what saves you in cross-examination: knowing exactly what your own evidence does not say keeps you from over-claiming and losing the card entirely.",
+      },
+      {
+        title: "Tagging for retrieval",
+        body: "Write the tag as the argument, not the topic. \"Adaptation funding solves coastal displacement\" is findable mid-round; \"climate stuff\" is not. Add the format and contention it supports so the card surfaces in the right block during prep, not three rounds later when you finally remember you cut it.",
+      },
+      {
+        title: "From evidence to blocks",
+        body: "End every sprint by dropping at least one new card into an existing rebuttal block. Research that never reaches a block is research you will not have in-round. Pairing this checklist with the three-layer rebuttal worksheet turns raw cards into answers you can actually deliver.",
+      },
+      {
+        title: "Common mistakes",
+        body: "The two killers are hoarding (cutting forty cards you never tag) and trusting the headline over the study (the press release says more than the paper does). Read the methods section, or at least the abstract's limitation, before you cut.",
       },
     ],
   },
@@ -680,7 +706,8 @@ export const seededResources: ResourceItem[] = [
     slug: "delivery-reset-ritual",
     title: "Delivery reset ritual",
     category: "Delivery",
-    description: "Breath, posture, and emphasis prompts for calmer, stronger speeches.",
+    description:
+      "A short, repeatable pre-round ritual — breath, posture, and emphasis prompts — that settles your nervous system in the last minute before a speech so the first thirty seconds sound deliberate instead of rushed.",
     curatedBy: "Coach Jonah Price",
     creatorId: "user-coach-jonah",
     creatorRole: "coach",
@@ -697,15 +724,27 @@ export const seededResources: ResourceItem[] = [
     contentSections: [
       {
         title: "Overview",
-        body: "A short pre-round reset that helps speakers slow the first thirty seconds and land emphasis with intention.",
+        body: "Judges form an impression of your credibility in the opening seconds, and that is exactly when nerves are loudest. This ritual is a fixed sequence you can run anywhere — hallway, prep room, your seat — so your body has a routine to fall back on when the adrenaline hits. Listen once to the audio to internalize the pacing, then run it silently before each round.",
+      },
+      {
+        title: "Breath before posture",
+        body: "Take three slow breaths with a longer exhale than inhale; the extended exhale is what actually lowers your heart rate. Only after the breath do you fix posture: feet planted, shoulders down and back, weight even. Fixing posture while still holding your breath just makes you look stiff.",
+      },
+      {
+        title: "The first thirty seconds",
+        body: "Plan your opening line word-for-word and deliver it slower than feels natural — nerves speed everyone up, so deliberately under-pacing lands you at the right tempo. Make eye contact before the first word, not after. Owning the opening buys you the credibility to be conversational for the rest of the speech.",
+      },
+      {
+        title: "Emphasis over volume",
+        body: "Emphasis comes from pace and placement, not loudness. Slow down on the phrase that matters, pause just before it, and let the silence do the work. A well-placed half-second pause makes a warrant land harder than any increase in volume, and it never reads as aggressive to a judge.",
       },
       {
         title: "Practice drill",
-        body: "Read the same warrant three times: neutral, urgent, and comparative. Mark which version improves clarity.",
+        body: "Read the same warrant three times — neutral, urgent, and comparative — and record yourself. Play it back and mark which version actually improved clarity rather than just energy. Most speakers discover the urgent take is the weakest; clarity, not intensity, is what carries.",
       },
       {
-        title: "Common mistake",
-        body: "Do not use volume as a substitute for emphasis; change pace and placement first.",
+        title: "Common mistakes",
+        body: "Do not substitute volume for emphasis, and do not skip the breath because the round is running late — that is precisely when you need it most. A rushed reset is worse than none, because it teaches your body that the ritual is optional.",
       },
     ],
   },
@@ -714,7 +753,8 @@ export const seededResources: ResourceItem[] = [
     slug: "case-building-map",
     title: "Case building map",
     category: "Case Building",
-    description: "A visual walkthrough for turning a resolution into claims, warrants, impacts, and weighing language.",
+    description:
+      "A visual, step-by-step walkthrough for turning a bare resolution into a clean two-contention case — burdens, claims, warrants, impacts, and the weighing language that ties it together — designed so a beginner can build a coherent case from scratch in one sitting.",
     curatedBy: "Maya Rivera",
     creatorId: "user-maya",
     creatorRole: "student",
@@ -731,11 +771,27 @@ export const seededResources: ResourceItem[] = [
     contentSections: [
       {
         title: "Overview",
-        body: "Map the resolution into burdens, then choose the cleanest two-contention structure for judge flow.",
+        body: "A case is not a list of facts — it is an argument the judge can follow without a flow. The video walks through the same five-step map every time so that building a case becomes a routine instead of a blank-page panic. Watch it once end to end, then rebuild your current case alongside the steps.",
       },
       {
-        title: "Next step",
-        body: "After drafting, write one sentence explaining why each contention matters more than the opponent's best offense.",
+        title: "From resolution to burdens",
+        body: "Before writing a single contention, name what each side has to prove to win. Defining your burden narrows the resolution to ground you can actually defend and tells you which contentions are worth the speech time. Teams that skip this step end up defending the whole topic instead of their strongest slice of it.",
+      },
+      {
+        title: "Claims, warrants, impacts",
+        body: "Every contention needs all three: the claim (what you assert), the warrant (the evidence and reasoning for it), and the impact (why it matters in the real world). A claim without a warrant is an assertion; a warrant without an impact is trivia. Write all three in full sentences before you compress them for delivery.",
+      },
+      {
+        title: "Weighing language",
+        body: "Bake the comparison into the case itself — do not save it for rebuttal. End each contention with one sentence on why this impact outweighs the most likely response: bigger, sooner, more certain, or harder to reverse. Front-loading the weighing means you are never inventing it under time pressure later.",
+      },
+      {
+        title: "Practice drill",
+        body: "After drafting, write one sentence for each contention explaining why it matters more than the opponent's single best piece of offense. If you cannot, the contention is probably defensive padding and should be cut for something that can win the round on its own.",
+      },
+      {
+        title: "Common mistakes",
+        body: "Beginners run too many thin contentions instead of two deep ones, and they bury the impact under the warrant so the judge never hears why to care. Fewer, fully-developed arguments beat a long shallow list every time.",
       },
     ],
   },

@@ -2,12 +2,18 @@ import { useState } from "react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { useAuth } from "@/features/auth/AuthContext";
 import { defaultUserPreferences } from "@/features/users/defaultProfile";
+import type { UserRole } from "@/types/models";
+
+const accountTypes: Array<{ value: UserRole; label: string }> = [
+  { value: "student", label: "Student" },
+  { value: "coach", label: "Coach" },
+];
 
 const safeInitial = (value?: string | null) =>
   value?.trim()?.charAt(0).toUpperCase() || "D";
 
 export const SettingsPage = () => {
-  const { currentUser, isDemoMode } = useAuth();
+  const { currentUser, isDemoMode, updateProfile } = useAuth();
   const profile = currentUser;
 
   if (!profile) {
@@ -31,12 +37,36 @@ export const SettingsPage = () => {
   };
   const [notifications, setNotifications] = useState(resolvedPreferences.notifications);
   const [debateDefaults, setDebateDefaults] = useState(resolvedPreferences.debateDefaults);
+  const [roleMessage, setRoleMessage] = useState("");
+  const [isSavingRole, setIsSavingRole] = useState(false);
 
   const toggleNotification = (key: keyof typeof notifications) => {
     setNotifications((current) => ({
       ...current,
       [key]: !current[key],
     }));
+  };
+
+  const changeRole = async (nextRole: UserRole) => {
+    if (nextRole === profile.role || isSavingRole) {
+      return;
+    }
+
+    setRoleMessage("");
+    setIsSavingRole(true);
+
+    try {
+      await updateProfile({ role: nextRole });
+      setRoleMessage(
+        isDemoMode
+          ? "Switched for this session. Connect Firebase to save it to your account."
+          : `Account type updated to ${nextRole === "coach" ? "Coach" : "Student"}.`,
+      );
+    } catch {
+      setRoleMessage("Unable to update your account type right now.");
+    } finally {
+      setIsSavingRole(false);
+    }
   };
 
   return (
@@ -63,15 +93,46 @@ export const SettingsPage = () => {
               <span className="meta-line">{profile.email}</span>
             </div>
             <div className="list-item">
-              <strong>Account type</strong>
-              <span className="meta-line">{profile.role}</span>
-            </div>
-            <div className="list-item">
               <strong>Session status</strong>
               <span className="meta-line">
                 {isDemoMode ? "Firebase configuration required" : "Firebase account session"}
               </span>
             </div>
+            <div className="list-item settings-account-type">
+              <div>
+                <strong>Account type</strong>
+                <span className="meta-line">
+                  Coaches unlock roster and review tools.
+                </span>
+              </div>
+              <div
+                className="settings-segment"
+                role="group"
+                aria-label="Account type"
+              >
+                {accountTypes.map((accountType) => {
+                  const isActive = profile.role === accountType.value;
+
+                  return (
+                    <button
+                      key={accountType.value}
+                      type="button"
+                      className={isActive ? "settings-segment-option is-on" : "settings-segment-option"}
+                      aria-pressed={isActive}
+                      disabled={isSavingRole}
+                      onClick={() => void changeRole(accountType.value)}
+                    >
+                      {accountType.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {roleMessage ? (
+              <p className="meta-line" style={{ marginTop: "0.25rem" }}>
+                {roleMessage}
+              </p>
+            ) : null}
           </div>
         </article>
 
@@ -89,19 +150,13 @@ export const SettingsPage = () => {
                 {safeInitial(profile.displayName)}
               </div>
             )}
-            <div className="stack">
-              <p className="card-copy">
-                Your account is now modeled with a stored avatar URL. Upload and
-                replace controls can connect to Firebase Storage in a later pass.
-              </p>
-              <div className="button-row">
-                <button type="button" className="btn btn-secondary">
-                  Replace photo
-                </button>
-                <button type="button" className="btn btn-ghost">
-                  Remove photo
-                </button>
-              </div>
+            <div className="button-row settings-avatar-actions">
+              <button type="button" className="btn btn-secondary">
+                Replace photo
+              </button>
+              <button type="button" className="btn btn-ghost">
+                Remove photo
+              </button>
             </div>
           </div>
         </article>

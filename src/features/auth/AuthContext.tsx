@@ -35,6 +35,7 @@ interface AuthContextValue {
   signup: (credentials: Credentials) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -161,6 +162,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
 
         await sendPasswordResetEmail(auth, email);
+      },
+      updateProfile: async (updates) => {
+        if (!currentUser) {
+          throw new Error("You must be signed in to update your profile.");
+        }
+
+        const previous = currentUser;
+        // Optimistically reflect the change so the UI feels instant.
+        setCurrentUser({ ...currentUser, ...updates });
+
+        if (!auth || !firestore) {
+          return;
+        }
+
+        try {
+          await setDoc(
+            doc(firestore, "users", currentUser.id),
+            { ...updates, updatedAt: serverTimestamp() },
+            { merge: true },
+          );
+        } catch (error) {
+          // Roll back the optimistic update if the write fails.
+          setCurrentUser(previous);
+          throw error;
+        }
       },
       logout: async () => {
         setCurrentUser(null);

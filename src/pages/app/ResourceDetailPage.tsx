@@ -114,6 +114,7 @@ export const ResourceDetailPage = () => {
 
       <section className="resource-detail-layout">
         <article className="app-card resource-detail-content">
+          <p className="resource-detail-lead">{resource.description}</p>
           {(resource.contentSections?.length ? resource.contentSections : [
             {
               title: "Overview",
@@ -128,7 +129,26 @@ export const ResourceDetailPage = () => {
         </article>
 
         <aside className="app-card resource-detail-sidebar">
-          <h2 className="card-title">Tags</h2>
+          <h2 className="card-title">At a glance</h2>
+          <dl className="resource-detail-facts">
+            <div>
+              <dt>Level</dt>
+              <dd>{resource.level}</dd>
+            </div>
+            <div>
+              <dt>Format</dt>
+              <dd>{resource.format ?? "All Formats"}</dd>
+            </div>
+            <div>
+              <dt>Media</dt>
+              <dd>{resource.mediaType ?? "Article"}</dd>
+            </div>
+            <div>
+              <dt>Time</dt>
+              <dd>{resource.estimatedTime ?? "Self-paced"}</dd>
+            </div>
+          </dl>
+          <h2 className="card-title" style={{ marginTop: "1.5rem" }}>Tags</h2>
           <div className="pill-row">
             {resource.tags.map((tag) => (
               <span key={tag} className="pill">
