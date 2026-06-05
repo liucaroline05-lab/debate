@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { ChangeEvent } from "react";
+import { getAuth } from "firebase/auth";
 import { PageMeta } from "@/components/common/PageMeta";
 import { useAuth } from "@/features/auth/AuthContext";
 import { defaultUserPreferences } from "@/features/users/defaultProfile";
@@ -11,6 +13,9 @@ const accountTypes: Array<{ value: UserRole; label: string }> = [
 
 const safeInitial = (value?: string | null) =>
   value?.trim()?.charAt(0).toUpperCase() || "D";
+
+const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
+const maxImageSizeBytes = 5 * 1024 * 1024; // 5MB
 
 export const SettingsPage = () => {
   const { currentUser, isDemoMode, updateProfile } = useAuth();
@@ -39,6 +44,42 @@ export const SettingsPage = () => {
   const [debateDefaults, setDebateDefaults] = useState(resolvedPreferences.debateDefaults);
   const [roleMessage, setRoleMessage] = useState("");
   const [isSavingRole, setIsSavingRole] = useState(false);
+
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+  const [avatarMessage, setAvatarMessage] = useState("");
+  const [isSavingAvatar, setIsSavingAvatar] = useState(false);
+
+  const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+
+    input.value = "";
+
+    if (!file || isSavingAvatar) {
+      return;
+    }
+
+    setAvatarMessage("");
+
+    // TODO: add UX to inform user on what files to upload
+
+    setIsSavingAvatar(true);
+
+    try {
+      const authToken = await getAuth().currentUser?.getIdToken();
+
+      if (!authToken) {
+        throw new Error("User not authenticated");
+      }
+
+      const formData = new FormData();
+      formData.append("photo", file);
+
+      const response = await fetch("/api")
+    } catch {
+      setAvatarMessage("Unable to upload avatar right now. Please try again later.");
+    }
+  }
 
   const toggleNotification = (key: keyof typeof notifications) => {
     setNotifications((current) => ({
@@ -151,10 +192,30 @@ export const SettingsPage = () => {
               </div>
             )}
             <div className="button-row settings-avatar-actions">
-              <button type="button" className="btn btn-secondary">
-                Replace photo
-              </button>
-              <button type="button" className="btn btn-ghost">
+              {/* <s */}
+              <div>
+                <input
+                  id="resourceFile"
+                  type="file"
+                  accept="audio/*,video/*"
+                  className="file-input-native-tall"
+                  // onChange={
+                  //   (event) =>
+                  //   setComposer((current) => ({
+                  //     ...current,
+                  //     file: event.target.files?.[0] ?? null,
+                  //   }))
+                  // }
+                />
+                <label htmlFor="resourceFile" className="file-input-trigger">
+                  Replace Photo
+                </label>
+                {/* <span className={composer.file ? "file-input-name has-file" : "file-input-name"}>
+                  {composer.file ? composer.file.name : "No file chosen"}
+                </span> */}
+              </div>
+
+              <button type="button" className="btn btn-primary forum-primary-cta">
                 Remove photo
               </button>
             </div>
