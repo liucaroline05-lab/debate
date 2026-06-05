@@ -211,6 +211,13 @@ button {
   color: var(--color-white);
 }
 
+.btn:disabled,
+.btn.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  transform: none;
+}
+
 .btn-secondary {
   background: rgba(255, 253, 248, 0.8);
   color: var(--color-charcoal);
@@ -2198,6 +2205,19 @@ button {
 
 .settings-avatar-actions {
   justify-content: center;
+}
+
+.settings-avatar-replace-button {
+  min-height: 3.3rem;
+  padding-inline: 1.45rem;
+  background: var(--color-sand);
+  color: var(--color-white);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+}
+
+.settings-avatar-replace-button:hover {
+  background: hwb(28 60% 11%);
 }
 
 .settings-account-type {

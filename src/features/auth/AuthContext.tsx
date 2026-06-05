@@ -15,7 +15,14 @@ import {
   signOut as firebaseSignOut,
   type User,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import {
+  deleteField,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+  type DocumentData,
+} from "firebase/firestore";
 import { auth, firestore, googleProvider } from "@/lib/firebase";
 import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import type { UserProfile, UserRole } from "@/types/models";
@@ -177,9 +184,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
 
         try {
+          const firestoreUpdates = Object.entries(updates).reduce<DocumentData>(
+            (accumulator, [key, value]) => {
+              accumulator[key] = value === undefined ? deleteField() : value;
+              return accumulator;
+            },
+            { updatedAt: serverTimestamp() },
+          );
+
           await setDoc(
             doc(firestore, "users", currentUser.id),
-            { ...updates, updatedAt: serverTimestamp() },
+            firestoreUpdates,
             { merge: true },
           );
         } catch (error) {

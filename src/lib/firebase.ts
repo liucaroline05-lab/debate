@@ -9,6 +9,10 @@ import {
   initializeFirestore,
 } from "firebase/firestore";
 import {
+  connectFunctionsEmulator,
+  getFunctions,
+} from "firebase/functions";
+import {
   connectStorageEmulator,
   getStorage,
 } from "firebase/storage";
@@ -31,6 +35,7 @@ export const auth = firebaseApp ? getAuth(firebaseApp) : null;
 export const firestore = firebaseApp
   ? initializeFirestore(firebaseApp, { ignoreUndefinedProperties: true })
   : null;
+export const functions = firebaseApp ? getFunctions(firebaseApp) : null;
 export const storage = firebaseApp ? getStorage(firebaseApp) : null;
 export const googleProvider = new GoogleAuthProvider();
 
@@ -46,5 +51,8 @@ if (auth && firestore && storage && env.useFirebaseEmulators) {
     disableWarnings: true,
   });
   connectFirestoreEmulator(firestore, "127.0.0.1", 8080);
+  if (functions) {
+    connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+  }
   connectStorageEmulator(storage, "127.0.0.1", 9199);
 }

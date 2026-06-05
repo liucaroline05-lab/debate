@@ -21,6 +21,7 @@ export interface UserProfile {
   email: string;
   role: UserRole;
   avatarUrl?: string;
+  avatarStoragePath?: string;
   bio: string;
   focusAreas: string[];
   organizationTags: string[];

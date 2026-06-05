@@ -1,8 +1,13 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChangeEvent } from "react";
-import { getAuth } from "firebase/auth";
 import { PageMeta } from "@/components/common/PageMeta";
 import { useAuth } from "@/features/auth/AuthContext";
+import {
+  allowedAvatarImageTypes,
+  maxAvatarImageSizeBytes,
+  removeProfilePhoto,
+  uploadProfilePhoto,
+} from "@/features/profile/avatarService";
 import { defaultUserPreferences } from "@/features/users/defaultProfile";
 import type { UserRole } from "@/types/models";
 
@@ -14,30 +19,17 @@ const accountTypes: Array<{ value: UserRole; label: string }> = [
 const safeInitial = (value?: string | null) =>
   value?.trim()?.charAt(0).toUpperCase() || "D";
 
-const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
-const maxImageSizeBytes = 5 * 1024 * 1024; // 5MB
-
 export const SettingsPage = () => {
   const { currentUser, isDemoMode, updateProfile } = useAuth();
   const profile = currentUser;
-
-  if (!profile) {
-    return (
-      <section className="empty-state">
-        <h2 className="card-title">Settings unavailable</h2>
-        <p className="card-copy">Sign in with Firebase to manage your account settings.</p>
-      </section>
-    );
-  }
-
   const resolvedPreferences = {
     notifications: {
       ...defaultUserPreferences.notifications,
-      ...profile.preferences?.notifications,
+      ...profile?.preferences?.notifications,
     },
     debateDefaults: {
       ...defaultUserPreferences.debateDefaults,
-      ...profile.preferences?.debateDefaults,
+      ...profile?.preferences?.debateDefaults,
     },
   };
   const [notifications, setNotifications] = useState(resolvedPreferences.notifications);
@@ -48,6 +40,30 @@ export const SettingsPage = () => {
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
   const [avatarMessage, setAvatarMessage] = useState("");
   const [isSavingAvatar, setIsSavingAvatar] = useState(false);
+
+  useEffect(() => {
+    if (!profile) {
+      return;
+    }
+
+    setNotifications({
+      ...defaultUserPreferences.notifications,
+      ...profile.preferences?.notifications,
+    });
+    setDebateDefaults({
+      ...defaultUserPreferences.debateDefaults,
+      ...profile.preferences?.debateDefaults,
+    });
+  }, [profile]);
+
+  if (!profile) {
+    return (
+      <section className="empty-state">
+        <h2 className="card-title">Settings unavailable</h2>
+        <p className="card-copy">Sign in with Firebase to manage your account settings.</p>
+      </section>
+    );
+  }
 
   const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
@@ -61,25 +77,61 @@ export const SettingsPage = () => {
 
     setAvatarMessage("");
 
-    // TODO: add UX to inform user on what files to upload
+    if (!allowedAvatarImageTypes.includes(file.type)) {
+      setAvatarMessage("Choose a JPG, PNG, or WebP image.");
+      return;
+    }
+
+    if (file.size > maxAvatarImageSizeBytes) {
+      setAvatarMessage("Choose an image smaller than 5 MB.");
+      return;
+    }
 
     setIsSavingAvatar(true);
 
     try {
-      const authToken = await getAuth().currentUser?.getIdToken();
-
-      if (!authToken) {
-        throw new Error("User not authenticated");
-      }
-
-      const formData = new FormData();
-      formData.append("photo", file);
-
-      const response = await fetch("/api")
-    } catch {
-      setAvatarMessage("Unable to upload avatar right now. Please try again later.");
+      const result = await uploadProfilePhoto(file);
+      await updateProfile({
+        avatarUrl: result.avatarUrl,
+        avatarStoragePath: result.storagePath,
+      });
+      setAvatarMessage("Profile photo updated.");
+    } catch (error) {
+      setAvatarMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to upload avatar right now. Please try again later.",
+      );
+    } finally {
+      setIsSavingAvatar(false);
     }
-  }
+  };
+
+  const handleAvatarRemove = async () => {
+    if (isSavingAvatar || !profile.avatarUrl) {
+      return;
+    }
+
+    setAvatarMessage("");
+    setIsSavingAvatar(true);
+
+    try {
+      await removeProfilePhoto();
+      await updateProfile({
+        avatarUrl: undefined,
+        avatarStoragePath: undefined,
+      });
+      setAvatarMessage("Profile photo removed.");
+    } catch (error) {
+      setAvatarMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to remove avatar right now. Please try again later.",
+      );
+    } finally {
+      setIsSavingAvatar(false);
+    }
+  };
 
   const toggleNotification = (key: keyof typeof notifications) => {
     setNotifications((current) => ({
@@ -192,33 +244,43 @@ export const SettingsPage = () => {
               </div>
             )}
             <div className="button-row settings-avatar-actions">
-              {/* <s */}
               <div>
                 <input
-                  id="resourceFile"
+                  id="avatarFile"
+                  ref={avatarFileInputRef}
                   type="file"
-                  accept="audio/*,video/*"
-                  className="file-input-native-tall"
-                  // onChange={
-                  //   (event) =>
-                  //   setComposer((current) => ({
-                  //     ...current,
-                  //     file: event.target.files?.[0] ?? null,
-                  //   }))
-                  // }
+                  accept={allowedAvatarImageTypes.join(",")}
+                  className="file-input-native"
+                  disabled={isSavingAvatar}
+                  onChange={(event) => void handleAvatarUpload(event)}
                 />
-                <label htmlFor="resourceFile" className="file-input-trigger">
-                  Replace Photo
+                <label
+                  htmlFor="avatarFile"
+                  className={
+                    isSavingAvatar
+                      ? "btn settings-avatar-replace-button is-disabled"
+                      : "btn settings-avatar-replace-button"
+                  }
+                  aria-disabled={isSavingAvatar}
+                >
+                  {isSavingAvatar ? "Saving..." : "Replace photo"}
                 </label>
-                {/* <span className={composer.file ? "file-input-name has-file" : "file-input-name"}>
-                  {composer.file ? composer.file.name : "No file chosen"}
-                </span> */}
               </div>
 
-              <button type="button" className="btn btn-primary forum-primary-cta">
-                Remove photo
+              <button
+                type="button"
+                className="btn btn-primary forum-primary-cta"
+                disabled={isSavingAvatar || !profile.avatarUrl}
+                onClick={() => void handleAvatarRemove()}
+              >
+                {isSavingAvatar ? "Saving..." : "Remove photo"}
               </button>
             </div>
+            {avatarMessage ? (
+              <p className="meta-line" aria-live="polite">
+                {avatarMessage}
+              </p>
+            ) : null}
           </div>
         </article>
 
