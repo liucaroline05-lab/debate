@@ -27,6 +27,7 @@ Community Page:
   - Make them actual icons instead of emojis
   - Report button in the top right corner of each post via a ellipsis menu (three dots) that also includes options to edit or delete the post for the original poster
 - Clicking a user's profile picture or name should take you to their profile page with their bio, list of their posts, and list of their debates, stats, etc. There should also be a follow button on their profile page to follow them and see their posts in your feed.
+- Add a Saved tab alongside the existing All/Following
 
 Profile Page:
 - how many rounds you've won/lost, your win percentage, your average score, etc
@@ -60,3 +61,12 @@ Resources Page:
 - curated posts with attached media (images/video/etc)
 - For each of the content cards, clicking them expands them to take the user to a new page dedicated to that specific topic
 - Search and filters available
+
+
+
+
+Settings Page Improvements:
+- Profile photo card:
+  - below the two buttons, include a multi-line textbox for the user to write whatever they want
+  - make the debate preferences card shorter and use the reclaimed vertical space to give more room for the user bio
+  - switch the two columns
