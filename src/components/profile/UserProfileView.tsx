@@ -26,6 +26,7 @@ import {
 } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
 import { updateUserBio, requestTabroomSync, toggleFollowUser } from "@/features/profile/profileService";
+import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type { UserProfile } from "@/types/models";
 
@@ -105,10 +106,12 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     const userFromCollection = usersState.data.find((user) => user.id === userId);
 
     if (isOwnProfile) {
-      return (userFromCollection ?? currentUser ?? null) as UserProfile | null;
+      return userFromCollection || currentUser
+        ? normalizeUserProfile(userFromCollection ?? currentUser)
+        : null;
     }
 
-    return userFromCollection ?? null;
+    return userFromCollection ? normalizeUserProfile(userFromCollection) : null;
   }, [currentUser, isOwnProfile, userId, usersState.data]);
 
   const profileName = safeName(profile?.displayName);
@@ -351,6 +354,64 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
           <article className="metric-card">
             <span>Average score</span>
             <strong>{stats.averageScore}</strong>
+          </article>
+        </section>
+
+        <section className="settings-grid">
+          <article className="app-card">
+            <h2 className="card-title">Profile details</h2>
+            <div className="profile-detail-grid">
+              <div className="profile-detail-item">
+                <span>Role</span>
+                <strong>{profile.role}</strong>
+              </div>
+              <div className="profile-detail-item">
+                <span>Preferred format</span>
+                <strong>{profile.preferences.debateDefaults.preferredFormat}</strong>
+              </div>
+              <div className="profile-detail-item">
+                <span>Preferred side</span>
+                <strong>{profile.preferences.debateDefaults.preferredSide}</strong>
+              </div>
+              <div className="profile-detail-item">
+                <span>Async cadence</span>
+                <strong>{profile.preferences.debateDefaults.asyncResponseCadence}</strong>
+              </div>
+            </div>
+          </article>
+
+          <article className="app-card">
+            <h2 className="card-title">Debate preferences</h2>
+            <div className="profile-preference-block">
+              <span className="meta-line">Focus areas</span>
+              <div className="pill-row">
+                {(profile.focusAreas.length > 0 ? profile.focusAreas : ["No focus areas yet"]).map((area) => (
+                  <span key={area} className="pill">
+                    {area}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="profile-preference-block">
+              <span className="meta-line">Organizations</span>
+              <div className="pill-row">
+                {(profile.organizationTags.length > 0 ? profile.organizationTags : ["No organizations listed"]).map((tag) => (
+                  <span key={tag} className="pill">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="profile-preference-block">
+              <span className="meta-line">Recommendation slots</span>
+              <div className="pill-row">
+                {(profile.recommendationSlots.length > 0 ? profile.recommendationSlots : ["No recommendation slots yet"]).map((slot) => (
+                  <span key={slot} className="pill">
+                    {slot}
+                  </span>
+                ))}
+              </div>
+            </div>
           </article>
         </section>
 

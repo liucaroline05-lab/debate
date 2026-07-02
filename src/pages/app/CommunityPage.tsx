@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   Bookmark,
@@ -32,6 +32,7 @@ import {
 } from "@/features/community/communityService";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
+import type { UserProfile } from "@/types/models";
 
 type ForumTab = "All Posts" | "Question" | "Speech Review" | "Tips & Strategies";
 type FeedScope = "all" | "following";
@@ -74,6 +75,47 @@ const safeName = (value?: string | null, fallback = "Unknown Speaker") => {
 };
 
 const safeInitial = (value?: string | null) => safeName(value).charAt(0).toUpperCase();
+
+interface ProfileHoverLinkProps {
+  user: UserProfile | undefined;
+  userId: string;
+  name: string;
+  children: ReactNode;
+  className?: string;
+}
+
+const ProfileHoverLink = ({
+  user,
+  userId,
+  name,
+  children,
+  className,
+}: ProfileHoverLinkProps) => (
+  <span className="profile-hover-wrap">
+    <Link to={`/app/users/${userId}`} className={className ?? "forum-author-link"}>
+      {children}
+    </Link>
+    <span className="profile-hover-card" role="status">
+      {user?.avatarUrl ? (
+        <img src={user.avatarUrl} alt={`${name} avatar`} className="profile-hover-avatar" />
+      ) : (
+        <span className="profile-hover-avatar profile-hover-avatar-fallback" aria-hidden="true">
+          {safeInitial(name)}
+        </span>
+      )}
+      <span className="profile-hover-content">
+        <strong>{name}</strong>
+        <span className="pill-row">
+          <span className="forum-mini-pill">{user?.role ?? "member"}</span>
+          {user?.username ? <span className="forum-mini-pill subtle">@{user.username}</span> : null}
+        </span>
+        <span className="profile-hover-bio">
+          {user?.bio?.trim() || "This member has not added a bio yet."}
+        </span>
+      </span>
+    </span>
+  </span>
+);
 
 export const CommunityPage = () => {
   const { currentUser } = useAuth();
@@ -504,7 +546,12 @@ export const CommunityPage = () => {
                 <article key={post.id} className="forum-post-card" id={post.id}>
                   <div className="forum-post-header">
                     <div className="forum-author-row">
-                      <Link to={`/app/users/${post.authorId}`} className="forum-author-link">
+                      <ProfileHoverLink
+                        user={authorProfile}
+                        userId={post.authorId}
+                        name={postAuthorName}
+                        className="forum-author-link"
+                      >
                         {authorProfile?.avatarUrl ? (
                           <img
                             src={authorProfile.avatarUrl}
@@ -514,11 +561,16 @@ export const CommunityPage = () => {
                         ) : (
                           <div className="forum-avatar">{safeInitial(postAuthorName)}</div>
                         )}
-                      </Link>
+                      </ProfileHoverLink>
                       <div>
-                        <Link to={`/app/users/${post.authorId}`} className="forum-author-link">
+                        <ProfileHoverLink
+                          user={authorProfile}
+                          userId={post.authorId}
+                          name={postAuthorName}
+                          className="forum-author-link"
+                        >
                           <strong>{postAuthorName}</strong>
-                        </Link>
+                        </ProfileHoverLink>
                         <div className="pill-row">
                           {post.authorRole ? <span className="forum-mini-pill">{post.authorRole}</span> : null}
                           {post.debateType ? <span className="forum-mini-pill subtle">{post.debateType}</span> : null}
@@ -641,9 +693,14 @@ export const CommunityPage = () => {
                       <div className="stack">
                         {comments.map((comment) => (
                           <div key={comment.id} className="forum-comment-item">
-                            <Link to={`/app/users/${comment.authorId}`} className="forum-author-link">
+                            <ProfileHoverLink
+                              user={usersState.data.find((item) => item.id === comment.authorId)}
+                              userId={comment.authorId}
+                              name={safeName(comment.authorName)}
+                              className="forum-author-link"
+                            >
                               <strong>{safeName(comment.authorName)}</strong>
-                            </Link>
+                            </ProfileHoverLink>
                             <span className="meta-line">
                               {new Date(comment.createdAt).toLocaleString([], {
                                 hour: "numeric",
@@ -746,14 +803,20 @@ export const CommunityPage = () => {
             <h2>Top Contributors</h2>
             <div className="stack">
               {topContributors.map((person, index) => (
-                <Link key={person.id} to={`/app/users/${person.id}`} className="forum-contributor-row">
+                <ProfileHoverLink
+                  key={person.id}
+                  user={usersState.data.find((item) => item.id === person.id)}
+                  userId={person.id}
+                  name={person.name}
+                  className="forum-contributor-row"
+                >
                   <div className="forum-avatar">{safeInitial(person.name)}</div>
                   <div>
                     <strong>{safeName(person.name)}</strong>
                     <span className="meta-line">{person.role}</span>
                   </div>
                   <span className="forum-rank">#{index + 1}</span>
-                </Link>
+                </ProfileHoverLink>
               ))}
             </div>
           </article>

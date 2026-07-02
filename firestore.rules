@@ -36,7 +36,8 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow create, read, update: if isOwner(userId);
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(userId);
     }
 
     match /follows/{followId} {

@@ -40,6 +40,10 @@ export const SettingsPage = () => {
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
   const [avatarMessage, setAvatarMessage] = useState("");
   const [isSavingAvatar, setIsSavingAvatar] = useState(false);
+  const [bioDraft, setBioDraft] = useState(profile?.bio ?? "");
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
+  const [pendingAvatarPreviewUrl, setPendingAvatarPreviewUrl] = useState("");
+  const [shouldRemoveAvatar, setShouldRemoveAvatar] = useState(false);
 
   useEffect(() => {
     if (!profile) {
@@ -54,7 +58,22 @@ export const SettingsPage = () => {
       ...defaultUserPreferences.debateDefaults,
       ...profile.preferences?.debateDefaults,
     });
+    setBioDraft(profile.bio ?? "");
   }, [profile]);
+
+  useEffect(() => {
+    if (!pendingAvatarFile) {
+      setPendingAvatarPreviewUrl("");
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(pendingAvatarFile);
+    setPendingAvatarPreviewUrl(previewUrl);
+
+    return () => {
+      URL.revokeObjectURL(previewUrl);
+    };
+  }, [pendingAvatarFile]);
 
   if (!profile) {
     return (
@@ -65,7 +84,7 @@ export const SettingsPage = () => {
     );
   }
 
-  const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
     const file = input.files?.[0];
 
@@ -87,28 +106,23 @@ export const SettingsPage = () => {
       return;
     }
 
-    setIsSavingAvatar(true);
-
-    try {
-      const result = await uploadProfilePhoto(file);
-      await updateProfile({
-        avatarUrl: result.avatarUrl,
-        avatarStoragePath: result.storagePath,
-      });
-      setAvatarMessage("Profile photo updated.");
-    } catch (error) {
-      setAvatarMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to upload avatar right now. Please try again later.",
-      );
-    } finally {
-      setIsSavingAvatar(false);
-    }
+    setPendingAvatarFile(file);
+    setShouldRemoveAvatar(false);
+    setAvatarMessage("Photo ready to save.");
   };
 
-  const handleAvatarRemove = async () => {
-    if (isSavingAvatar || !profile.avatarUrl) {
+  const handleAvatarRemove = () => {
+    if (isSavingAvatar || (!profile.avatarUrl && !pendingAvatarFile)) {
+      return;
+    }
+
+    setPendingAvatarFile(null);
+    setShouldRemoveAvatar(true);
+    setAvatarMessage("Photo will be removed when you save.");
+  };
+
+  const saveProfileCard = async () => {
+    if (isSavingAvatar) {
       return;
     }
 
@@ -116,17 +130,33 @@ export const SettingsPage = () => {
     setIsSavingAvatar(true);
 
     try {
-      await removeProfilePhoto();
-      await updateProfile({
-        avatarUrl: undefined,
-        avatarStoragePath: undefined,
-      });
-      setAvatarMessage("Profile photo removed.");
+      const updates: Parameters<typeof updateProfile>[0] = {
+        bio: bioDraft,
+      };
+
+      if (pendingAvatarFile) {
+        const result = await uploadProfilePhoto(pendingAvatarFile);
+        updates.avatarUrl = result.avatarUrl;
+        updates.avatarStoragePath = result.storagePath;
+      } else if (shouldRemoveAvatar) {
+        await removeProfilePhoto();
+        updates.avatarUrl = undefined;
+        updates.avatarStoragePath = undefined;
+      }
+
+      await updateProfile(updates);
+      setPendingAvatarFile(null);
+      setShouldRemoveAvatar(false);
+      setAvatarMessage(
+        isDemoMode
+          ? "Saved for this session. Connect Firebase to save it to your account."
+          : "Profile changes saved.",
+      );
     } catch (error) {
       setAvatarMessage(
         error instanceof Error
           ? error.message
-          : "Unable to remove avatar right now. Please try again later.",
+          : "Unable to save profile changes right now. Please try again later.",
       );
     } finally {
       setIsSavingAvatar(false);
@@ -232,7 +262,13 @@ export const SettingsPage = () => {
         <article className="app-card">
           <h2 className="card-title">Profile photo</h2>
           <div className="settings-avatar-panel">
-            {profile.avatarUrl ? (
+            {pendingAvatarPreviewUrl ? (
+              <img
+                src={pendingAvatarPreviewUrl}
+                alt="Selected profile preview"
+                className="settings-avatar-image"
+              />
+            ) : profile.avatarUrl && !shouldRemoveAvatar ? (
               <img
                 src={profile.avatarUrl}
                 alt={`${profile.displayName} avatar`}
@@ -252,7 +288,7 @@ export const SettingsPage = () => {
                   accept={allowedAvatarImageTypes.join(",")}
                   className="file-input-native"
                   disabled={isSavingAvatar}
-                  onChange={(event) => void handleAvatarUpload(event)}
+                  onChange={handleAvatarSelect}
                 />
                 <label
                   htmlFor="avatarFile"
@@ -263,19 +299,37 @@ export const SettingsPage = () => {
                   }
                   aria-disabled={isSavingAvatar}
                 >
-                  {isSavingAvatar ? "Saving..." : "Replace photo"}
+                  Replace photo
                 </label>
               </div>
 
               <button
                 type="button"
                 className="btn btn-primary forum-primary-cta"
-                disabled={isSavingAvatar || !profile.avatarUrl}
-                onClick={() => void handleAvatarRemove()}
+                disabled={isSavingAvatar || (!profile.avatarUrl && !pendingAvatarFile)}
+                onClick={handleAvatarRemove}
               >
-                {isSavingAvatar ? "Saving..." : "Remove photo"}
+                Remove photo
               </button>
             </div>
+            <div className="form-field settings-bio-field">
+              <label htmlFor="profileBio">Bio</label>
+              <textarea
+                id="profileBio"
+                className="profile-bio-input"
+                value={bioDraft}
+                onChange={(event) => setBioDraft(event.target.value)}
+                placeholder="Tell other debaters about your events, goals, coaching style, or team."
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary forum-primary-cta settings-profile-save-button"
+              disabled={isSavingAvatar}
+              onClick={() => void saveProfileCard()}
+            >
+              {isSavingAvatar ? "Saving..." : "Save changes"}
+            </button>
             {avatarMessage ? (
               <p className="meta-line" aria-live="polite">
                 {avatarMessage}
