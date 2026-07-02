@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/features/auth/AuthContext";
+import { maxDisplayNameLength } from "@/features/profile/profileService";
 import type { UserRole } from "@/types/models";
 
 type AuthMode = "login" | "signup";
@@ -125,6 +126,7 @@ export const AuthOverlay = () => {
                   id="displayName"
                   placeholder="Maya Rivera"
                   value={form.displayName}
+                  maxLength={maxDisplayNameLength}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, displayName: event.target.value }))
                   }

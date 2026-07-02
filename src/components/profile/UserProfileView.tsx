@@ -25,10 +25,14 @@ import {
   seededUsers,
 } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
-import { updateUserBio, requestTabroomSync, toggleFollowUser } from "@/features/profile/profileService";
+import {
+  maxDisplayNameLength,
+  requestTabroomSync,
+  toggleFollowUser,
+} from "@/features/profile/profileService";
 import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { UserProfile } from "@/types/models";
+import type { TabroomImport, UserProfile, UserStats } from "@/types/models";
 
 ChartJS.register(
   CategoryScale,
@@ -46,7 +50,19 @@ interface UserProfileViewProps {
   isOwnProfile: boolean;
 }
 
-const defaultStats = {
+type ProfileStats = Pick<
+  UserStats,
+  | "wins"
+  | "losses"
+  | "averageScore"
+  | "winRate"
+  | "totalRounds"
+  | "performanceOverTime"
+  | "formatBreakdown"
+  | "topicStrengths"
+>;
+
+const defaultStats: ProfileStats = {
   wins: 0,
   losses: 0,
   averageScore: 0,
@@ -56,6 +72,35 @@ const defaultStats = {
   formatBreakdown: [],
   topicStrengths: [],
 };
+
+const normalizeProfileStats = (
+  stats: Partial<UserStats> | null | undefined,
+): ProfileStats => ({
+  wins: typeof stats?.wins === "number" ? stats.wins : defaultStats.wins,
+  losses: typeof stats?.losses === "number" ? stats.losses : defaultStats.losses,
+  averageScore:
+    typeof stats?.averageScore === "number"
+      ? stats.averageScore
+      : defaultStats.averageScore,
+  winRate:
+    typeof stats?.winRate === "number" ? stats.winRate : defaultStats.winRate,
+  totalRounds:
+    typeof stats?.totalRounds === "number"
+      ? stats.totalRounds
+      : defaultStats.totalRounds,
+  performanceOverTime: Array.isArray(stats?.performanceOverTime)
+    ? stats.performanceOverTime
+    : defaultStats.performanceOverTime,
+  formatBreakdown: Array.isArray(stats?.formatBreakdown)
+    ? stats.formatBreakdown
+    : defaultStats.formatBreakdown,
+  topicStrengths: Array.isArray(stats?.topicStrengths)
+    ? stats.topicStrengths
+    : defaultStats.topicStrengths,
+});
+
+const getTabroomEvents = (tabroomImport: Partial<TabroomImport> | undefined) =>
+  Array.isArray(tabroomImport?.events) ? tabroomImport.events : [];
 
 const chartOptions = {
   responsive: true,
@@ -85,7 +130,7 @@ const safeHandle = (username?: string | null, displayName?: string | null) =>
   username?.trim() || safeName(displayName).toLowerCase().replace(/\s+/g, "_");
 
 export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) => {
-  const { currentUser } = useAuth();
+  const { currentUser, isDemoMode, updateProfile } = useAuth();
   const usersState = useSeededFirestoreCollection("users", seededUsers);
   const postsState = useSeededFirestoreCollection("posts", seededPosts);
   const followsState = useSeededFirestoreCollection("follows", seededFollows);
@@ -116,6 +161,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
 
   const profileName = safeName(profile?.displayName);
 
+  const [displayNameDraft, setDisplayNameDraft] = useState(profileName);
   const [bioDraft, setBioDraft] = useState(profile?.bio ?? "");
   const [tabroomDraft, setTabroomDraft] = useState(
     profile?.tabroomProfileUrl ?? "",
@@ -124,12 +170,14 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     safeHandle(profile?.username, profile?.displayName),
   );
   const [message, setMessage] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   useEffect(() => {
     if (!profile) {
       return;
     }
 
+    setDisplayNameDraft(safeName(profile.displayName));
     setBioDraft(profile.bio ?? "");
     setTabroomDraft(profile.tabroomProfileUrl ?? "");
     setHandleDraft(safeHandle(profile.username, profile.displayName));
@@ -157,10 +205,13 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const activeChannels = channelsState.data.filter((channel) =>
     activeChannelIds.includes(channel.id),
   );
-  const stats =
-    statsState.data.find((entry) => entry.userId === userId) ?? defaultStats;
+  const stats = useMemo(
+    () => normalizeProfileStats(statsState.data.find((entry) => entry.userId === userId)),
+    [statsState.data, userId],
+  );
   const tabroomLink = tabroomLinksState.data.find((entry) => entry.userId === userId);
   const tabroomImport = tabroomImportsState.data.find((entry) => entry.userId === userId);
+  const tabroomEvents = getTabroomEvents(tabroomImport);
   const isFollowing = followsState.data.some(
     (follow) =>
       follow.followerId === currentUser?.id && follow.followingId === userId,
@@ -232,16 +283,39 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     );
   }
 
-  const saveBio = async () => {
-    if (!currentUser) {
+  const saveProfileDetails = async () => {
+    if (!currentUser || !isOwnProfile || isSavingProfile) {
       return;
     }
 
+    const nextDisplayName = displayNameDraft.trim();
+    if (!nextDisplayName) {
+      setMessage("Add a display name before saving.");
+      return;
+    }
+
+    if (nextDisplayName.length > maxDisplayNameLength) {
+      setMessage(`Display name must be ${maxDisplayNameLength} characters or fewer.`);
+      return;
+    }
+
+    setMessage("");
+    setIsSavingProfile(true);
+
     try {
-      await updateUserBio(currentUser.id, bioDraft);
-      setMessage("Bio saved.");
+      await updateProfile({
+        displayName: nextDisplayName,
+        bio: bioDraft,
+      });
+      setMessage(
+        isDemoMode
+          ? "Saved for this session. Connect Firebase to save it to your account."
+          : "Profile details saved.",
+      );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to save bio.");
+      setMessage(error instanceof Error ? error.message : "Unable to save profile details.");
+    } finally {
+      setIsSavingProfile(false);
     }
   };
 
@@ -312,14 +386,35 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
               </div>
               {isOwnProfile ? (
                 <div className="stack" style={{ gap: "0.65rem" }}>
-                  <textarea
-                    className="profile-bio-input"
-                    value={bioDraft}
-                    onChange={(event) => setBioDraft(event.target.value)}
-                  />
+                  <div className="form-field">
+                    <label htmlFor="profileDisplayName">Display name</label>
+                    <input
+                      id="profileDisplayName"
+                      value={displayNameDraft}
+                      maxLength={maxDisplayNameLength}
+                      onChange={(event) => setDisplayNameDraft(event.target.value)}
+                    />
+                    <span className="meta-line">
+                      {displayNameDraft.trim().length}/{maxDisplayNameLength} characters
+                    </span>
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="profileBio">Bio</label>
+                    <textarea
+                      id="profileBio"
+                      className="profile-bio-input"
+                      value={bioDraft}
+                      onChange={(event) => setBioDraft(event.target.value)}
+                    />
+                  </div>
                   <div className="button-row">
-                    <button type="button" className="btn btn-primary" onClick={() => void saveBio()}>
-                      Save bio
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={isSavingProfile}
+                      onClick={() => void saveProfileDetails()}
+                    >
+                      {isSavingProfile ? "Saving..." : "Save profile details"}
                     </button>
                   </div>
                 </div>
@@ -533,7 +628,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
             </div>
 
             <div className="list" style={{ marginTop: "1rem" }}>
-              {tabroomImport?.events.map((event) => (
+              {tabroomEvents.map((event) => (
                 <a
                   key={event.id}
                   href={event.sourceUrl}

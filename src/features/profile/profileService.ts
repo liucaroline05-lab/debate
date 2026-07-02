@@ -5,7 +5,75 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import { firestore } from "@/lib/firebase";
+import { FirebaseError } from "firebase/app";
+import { httpsCallable } from "firebase/functions";
+import { firestore, functions } from "@/lib/firebase";
+
+export const maxDisplayNameLength = 30;
+
+export const normalizeDisplayNameInput = (displayName: string) =>
+  displayName.trim().replace(/\s+/g, " ");
+
+const validateDisplayName = (displayName: string) => {
+  if (!displayName) {
+    throw new Error("Add a display name before saving.");
+  }
+
+  if (displayName.length > maxDisplayNameLength) {
+    throw new Error(`Display name must be ${maxDisplayNameLength} characters or fewer.`);
+  }
+};
+
+const formatDisplayNameFunctionError = (error: unknown) => {
+  if (error instanceof FirebaseError) {
+    if (error.code === "functions/invalid-argument") {
+      return error.message;
+    }
+
+    if (error.code === "functions/failed-precondition") {
+      return "That display name could not be accepted. Please choose a different name.";
+    }
+
+    if (error.code === "functions/unauthenticated") {
+      return "Sign in again before changing your display name.";
+    }
+
+    if (error.code === "functions/unavailable") {
+      return "Display name moderation is temporarily unavailable. Please try again later.";
+    }
+
+    if (error.code === "functions/internal") {
+      return "Unable to update your display name right now. Please try again later.";
+    }
+
+    return error.message;
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "Unable to update your display name right now.";
+};
+
+export const updateUserDisplayName = async (displayName: string) => {
+  const normalizedDisplayName = normalizeDisplayNameInput(displayName);
+  validateDisplayName(normalizedDisplayName);
+
+  if (!functions) {
+    throw new Error("Firebase Functions is not configured.");
+  }
+
+  const updateName = httpsCallable<
+    { displayName: string },
+    { displayName: string }
+  >(functions, "updateDisplayName");
+
+  try {
+    const result = await updateName({ displayName: normalizedDisplayName });
+    return result.data.displayName;
+  } catch (error) {
+    throw new Error(formatDisplayNameFunctionError(error));
+  }
+};
 
 export const updateUserBio = async (userId: string, bio: string) => {
   if (!firestore) {

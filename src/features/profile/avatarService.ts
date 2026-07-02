@@ -29,12 +29,24 @@ const fileToBase64 = async (file: File) =>
 
 const formatAvatarFunctionError = (error: unknown) => {
   if (error instanceof FirebaseError) {
+    if (error.code === "functions/invalid-argument") {
+      return error.message;
+    }
+
     if (error.code === "functions/failed-precondition") {
       return "That photo could not be accepted. Please choose a different image.";
     }
 
     if (error.code === "functions/unauthenticated") {
       return "Sign in again before changing your profile photo.";
+    }
+
+    if (error.code === "functions/unavailable") {
+      return "Profile photo moderation is temporarily unavailable. Please try again later.";
+    }
+
+    if (error.code === "functions/internal") {
+      return "Unable to update your profile photo right now. Please try again later.";
     }
 
     return error.message;

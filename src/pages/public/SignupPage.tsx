@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageMeta } from "@/components/common/PageMeta";
 import { useAuth } from "@/features/auth/AuthContext";
+import { maxDisplayNameLength } from "@/features/profile/profileService";
 import type { UserRole } from "@/types/models";
 
 export const SignupPage = () => {
@@ -54,6 +55,7 @@ export const SignupPage = () => {
                 id="displayName"
                 placeholder="Maya Rivera"
                 value={form.displayName}
+                maxLength={maxDisplayNameLength}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, displayName: event.target.value }))
                 }

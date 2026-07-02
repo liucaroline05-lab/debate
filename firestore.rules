@@ -35,9 +35,22 @@ service cloud.firestore {
         && request.resource.data.reported == true;
     }
 
+    function hasValidDisplayName() {
+      return request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.displayName.size() <= 30;
+    }
+
+    function keepsExistingDisplayName() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "displayName"
+      ]);
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create, update: if isOwner(userId);
+      allow create: if isOwner(userId) && hasValidDisplayName();
+      allow update: if isOwner(userId) && keepsExistingDisplayName();
     }
 
     match /follows/{followId} {

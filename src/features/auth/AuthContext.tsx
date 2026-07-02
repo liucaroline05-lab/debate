@@ -25,6 +25,11 @@ import {
 } from "firebase/firestore";
 import { auth, firestore, googleProvider } from "@/lib/firebase";
 import { normalizeUserProfile } from "@/features/users/defaultProfile";
+import {
+  maxDisplayNameLength,
+  normalizeDisplayNameInput,
+  updateUserDisplayName,
+} from "@/features/profile/profileService";
 import type { UserProfile, UserRole } from "@/types/models";
 
 interface Credentials {
@@ -47,6 +52,14 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+const getSignupDisplayName = (displayName: string | undefined, email: string | null | undefined) => {
+  const normalizedDisplayName = normalizeDisplayNameInput(
+    displayName || email?.split("@")[0] || "Member",
+  );
+
+  return normalizedDisplayName.slice(0, maxDisplayNameLength) || "Member";
+};
 
 const saveProfile = async (profile: UserProfile) => {
   if (!firestore) {
@@ -146,7 +159,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const result = await createUserWithEmailAndPassword(auth, email, password);
         const profile = normalizeUserProfile({
           id: result.user.uid,
-          displayName: displayName || result.user.email?.split("@")[0] || "Member",
+          displayName: getSignupDisplayName(displayName, result.user.email),
           email,
           role,
           createdAt: new Date().toISOString(),
@@ -176,15 +189,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
 
         const previous = currentUser;
+        const nextDisplayName =
+          typeof updates.displayName === "string"
+            ? normalizeDisplayNameInput(updates.displayName)
+            : undefined;
+
+        if (updates.displayName !== undefined) {
+          if (!nextDisplayName) {
+            throw new Error("Add a display name before saving.");
+          }
+
+          if (nextDisplayName.length > maxDisplayNameLength) {
+            throw new Error(`Display name must be ${maxDisplayNameLength} characters or fewer.`);
+          }
+        }
+
         // Optimistically reflect the change so the UI feels instant.
-        setCurrentUser({ ...currentUser, ...updates });
+        setCurrentUser({
+          ...currentUser,
+          ...updates,
+          ...(nextDisplayName ? { displayName: nextDisplayName } : {}),
+        });
 
         if (!auth || !firestore) {
           return;
         }
 
+        let committedUpdates: Partial<UserProfile> = {};
+
         try {
-          const firestoreUpdates = Object.entries(updates).reduce<DocumentData>(
+          const updateEntries = Object.entries(updates).filter(
+            ([key]) => key !== "displayName",
+          );
+          const firestoreUpdates = updateEntries.reduce<DocumentData>(
             (accumulator, [key, value]) => {
               accumulator[key] = value === undefined ? deleteField() : value;
               return accumulator;
@@ -192,14 +229,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             { updatedAt: serverTimestamp() },
           );
 
-          await setDoc(
-            doc(firestore, "users", currentUser.id),
-            firestoreUpdates,
-            { merge: true },
-          );
+          if (updateEntries.length > 0) {
+            await setDoc(
+              doc(firestore, "users", currentUser.id),
+              firestoreUpdates,
+              { merge: true },
+            );
+            committedUpdates = Object.fromEntries(updateEntries) as Partial<UserProfile>;
+          }
+
+          const savedDisplayName =
+            nextDisplayName && nextDisplayName !== currentUser.displayName
+              ? await updateUserDisplayName(nextDisplayName)
+              : undefined;
+
+          if (savedDisplayName) {
+            committedUpdates = {
+              ...committedUpdates,
+              displayName: savedDisplayName,
+            };
+          }
+
+          if (savedDisplayName) {
+            setCurrentUser((profile) =>
+              profile ? { ...profile, displayName: savedDisplayName } : profile,
+            );
+          }
         } catch (error) {
-          // Roll back the optimistic update if the write fails.
-          setCurrentUser(previous);
+          // Keep any write that already succeeded, and roll back the rest.
+          setCurrentUser({ ...previous, ...committedUpdates });
           throw error;
         }
       },

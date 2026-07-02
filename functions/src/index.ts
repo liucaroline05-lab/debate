@@ -18,6 +18,11 @@ interface UploadProfilePhotoRequest {
   fileName?: unknown;
 }
 
+interface UpdateDisplayNameRequest {
+  displayName?: unknown;
+}
+
+const maxDisplayNameLength = 30;
 const sanitizeFileName = (fileName: string) =>
   fileName
     .toLowerCase()
@@ -57,6 +62,66 @@ const getAvatarDownloadUrl = (bucketName: string, storagePath: string, token: st
     storagePath,
   )}?alt=media&token=${token}`;
 
+const normalizeDisplayName = (displayName: unknown) =>
+  typeof displayName === "string" ? displayName.trim().replace(/\s+/g, " ") : "";
+
+const getDisplayNameInput = (data: UpdateDisplayNameRequest) => {
+  const displayName = normalizeDisplayName(data.displayName);
+
+  if (!displayName) {
+    throw new HttpsError("invalid-argument", "Display name is required.");
+  }
+
+  if (displayName.length > maxDisplayNameLength) {
+    throw new HttpsError(
+      "invalid-argument",
+      `Display name must be ${maxDisplayNameLength} characters or fewer.`,
+    );
+  }
+
+  return displayName;
+};
+
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
+const moderateProfilePhoto = async (openai: OpenAI, dataUrl: string) => {
+  try {
+    return await openai.moderations.create({
+      model: "omni-moderation-latest",
+      input: [
+        {
+          type: "image_url",
+          image_url: {
+            url: dataUrl,
+          },
+        },
+      ],
+    });
+  } catch (error) {
+    console.error("Profile photo moderation failed:", getErrorMessage(error));
+    throw new HttpsError(
+      "unavailable",
+      "Profile photo moderation is temporarily unavailable. Please try again later.",
+    );
+  }
+};
+
+const moderateDisplayName = async (openai: OpenAI, displayName: string) => {
+  try {
+    return await openai.moderations.create({
+      model: "omni-moderation-latest",
+      input: displayName,
+    });
+  } catch (error) {
+    console.error("Display name moderation failed:", getErrorMessage(error));
+    throw new HttpsError(
+      "unavailable",
+      "Display name moderation is temporarily unavailable. Please try again later.",
+    );
+  }
+};
+
 const deletePreviousAvatar = async (storagePath?: unknown) => {
   if (typeof storagePath !== "string" || !storagePath.startsWith("avatars/")) {
     return;
@@ -71,6 +136,7 @@ const deletePreviousAvatar = async (storagePath?: unknown) => {
 
 export const uploadProfilePhoto = onCall(
   {
+    invoker: "public",
     memory: "512MiB",
     secrets: [openAiApiKey],
     timeoutSeconds: 60,
@@ -83,18 +149,7 @@ export const uploadProfilePhoto = onCall(
     const uid = request.auth.uid;
     const uploadInput = getUploadInput(request.data as UploadProfilePhotoRequest);
     const openai = new OpenAI({ apiKey: openAiApiKey.value() });
-
-    const moderation = await openai.moderations.create({
-      model: "omni-moderation-latest",
-      input: [
-        {
-          type: "image_url",
-          image_url: {
-            url: uploadInput.dataUrl,
-          },
-        },
-      ],
-    });
+    const moderation = await moderateProfilePhoto(openai, uploadInput.dataUrl);
 
     const result = moderation.results[0];
     if (result?.flagged) {
@@ -111,39 +166,83 @@ export const uploadProfilePhoto = onCall(
     const storagePath = `avatars/${uid}/${Date.now()}-${uploadInput.fileName}`;
     const bucket = getStorage().bucket();
 
-    await bucket.file(storagePath).save(uploadInput.imageBuffer, {
-      contentType: uploadInput.contentType,
-      metadata: {
-        cacheControl: "public, max-age=3600",
+    try {
+      await bucket.file(storagePath).save(uploadInput.imageBuffer, {
+        contentType: uploadInput.contentType,
         metadata: {
-          firebaseStorageDownloadTokens: token,
-          moderationModel: moderation.model,
-          moderationRequestId: moderation.id,
-          uploadedBy: uid,
+          cacheControl: "public, max-age=3600",
+          metadata: {
+            firebaseStorageDownloadTokens: token,
+            moderationModel: moderation.model,
+            moderationRequestId: moderation.id,
+            uploadedBy: uid,
+          },
         },
-      },
-    });
+      });
 
-    const avatarUrl = getAvatarDownloadUrl(bucket.name, storagePath, token);
-    await userRef.set(
-      {
-        avatarStoragePath: storagePath,
+      const avatarUrl = getAvatarDownloadUrl(bucket.name, storagePath, token);
+      await userRef.set(
+        {
+          avatarStoragePath: storagePath,
+          avatarUrl,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      await deletePreviousAvatar(previousStoragePath);
+
+      return {
         avatarUrl,
+        storagePath,
+      };
+    } catch (error) {
+      console.error("Profile photo save failed:", getErrorMessage(error));
+      throw new HttpsError(
+        "internal",
+        "Unable to save your profile photo right now. Please try again later.",
+      );
+    }
+  },
+);
+
+export const updateDisplayName = onCall(
+  {
+    invoker: "public",
+    secrets: [openAiApiKey],
+    timeoutSeconds: 30,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in before changing your display name.");
+    }
+
+    const displayName = getDisplayNameInput(request.data as UpdateDisplayNameRequest);
+    const openai = new OpenAI({ apiKey: openAiApiKey.value() });
+    const moderation = await moderateDisplayName(openai, displayName);
+
+    const result = moderation.results[0];
+    if (result?.flagged) {
+      throw new HttpsError(
+        "failed-precondition",
+        "That display name could not be accepted. Please choose a different name.",
+      );
+    }
+
+    await getFirestore().doc(`users/${request.auth.uid}`).set(
+      {
+        displayName,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
     );
-    await deletePreviousAvatar(previousStoragePath);
 
-    return {
-      avatarUrl,
-      storagePath,
-    };
+    return { displayName };
   },
 );
 
 export const removeProfilePhoto = onCall(
   {
+    invoker: "public",
     timeoutSeconds: 30,
   },
   async (request) => {
