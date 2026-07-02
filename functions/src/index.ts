@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
+import { setGlobalOptions } from "firebase-functions/v2/options";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import OpenAI from "openai";
 
 initializeApp();
+setGlobalOptions({ invoker: "public", region: "us-central1" });
 
 const openAiApiKey = defineSecret("OPENAI_API_KEY");
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -136,6 +138,7 @@ const deletePreviousAvatar = async (storagePath?: unknown) => {
 
 export const uploadProfilePhoto = onCall(
   {
+    cors: true,
     invoker: "public",
     memory: "512MiB",
     secrets: [openAiApiKey],
@@ -207,6 +210,7 @@ export const uploadProfilePhoto = onCall(
 
 export const updateDisplayName = onCall(
   {
+    cors: true,
     invoker: "public",
     secrets: [openAiApiKey],
     timeoutSeconds: 30,
@@ -242,6 +246,7 @@ export const updateDisplayName = onCall(
 
 export const removeProfilePhoto = onCall(
   {
+    cors: true,
     invoker: "public",
     timeoutSeconds: 30,
   },

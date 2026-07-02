@@ -2266,6 +2266,13 @@ button {
   margin-top: 1rem;
 }
 
+.chart-empty-state {
+  min-height: 20rem;
+  display: grid;
+  align-content: center;
+  gap: 0.45rem;
+}
+
 .settings-avatar-panel {
   display: flex;
   flex-direction: column;
@@ -2325,6 +2332,18 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.settings-display-name-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.settings-display-name-save {
+  min-height: 3.2rem;
+  min-width: 6rem;
 }
 
 .settings-toggle-row {
@@ -2512,6 +2531,14 @@ button {
 
   .user-profile-hero {
     grid-template-columns: 1fr;
+  }
+
+  .settings-display-name-item {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-display-name-save {
+    width: 100%;
   }
 
   .debate-panel-header,

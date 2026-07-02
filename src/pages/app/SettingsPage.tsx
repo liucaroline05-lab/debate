@@ -8,6 +8,7 @@ import {
   removeProfilePhoto,
   uploadProfilePhoto,
 } from "@/features/profile/avatarService";
+import { maxDisplayNameLength } from "@/features/profile/profileService";
 import { defaultUserPreferences } from "@/features/users/defaultProfile";
 import type { UserRole } from "@/types/models";
 
@@ -36,6 +37,9 @@ export const SettingsPage = () => {
   const [debateDefaults, setDebateDefaults] = useState(resolvedPreferences.debateDefaults);
   const [roleMessage, setRoleMessage] = useState("");
   const [isSavingRole, setIsSavingRole] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState(profile?.displayName ?? "");
+  const [accountMessage, setAccountMessage] = useState("");
+  const [isSavingDisplayName, setIsSavingDisplayName] = useState(false);
 
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
   const [avatarMessage, setAvatarMessage] = useState("");
@@ -58,6 +62,7 @@ export const SettingsPage = () => {
       ...defaultUserPreferences.debateDefaults,
       ...profile.preferences?.debateDefaults,
     });
+    setDisplayNameDraft(profile.displayName ?? "");
     setBioDraft(profile.bio ?? "");
   }, [profile]);
 
@@ -170,6 +175,46 @@ export const SettingsPage = () => {
     }));
   };
 
+  const saveDisplayName = async () => {
+    if (isSavingDisplayName) {
+      return;
+    }
+
+    const nextDisplayName = displayNameDraft.trim();
+    if (!nextDisplayName) {
+      setAccountMessage("Add a display name before saving.");
+      return;
+    }
+
+    if (nextDisplayName.length > maxDisplayNameLength) {
+      setAccountMessage(`Display name must be ${maxDisplayNameLength} characters or fewer.`);
+      return;
+    }
+
+    if (nextDisplayName === profile.displayName) {
+      setAccountMessage("Display name is already up to date.");
+      return;
+    }
+
+    setAccountMessage("");
+    setIsSavingDisplayName(true);
+
+    try {
+      await updateProfile({ displayName: nextDisplayName });
+      setAccountMessage(
+        isDemoMode
+          ? "Saved for this session. Connect Firebase to save it to your account."
+          : "Display name saved.",
+      );
+    } catch (error) {
+      setAccountMessage(
+        error instanceof Error ? error.message : "Unable to update your display name right now.",
+      );
+    } finally {
+      setIsSavingDisplayName(false);
+    }
+  };
+
   const changeRole = async (nextRole: UserRole) => {
     if (nextRole === profile.role || isSavingRole) {
       return;
@@ -207,10 +252,33 @@ export const SettingsPage = () => {
         <article className="app-card">
           <h2 className="card-title">Account</h2>
           <div className="list" style={{ marginTop: "1rem" }}>
-            <div className="list-item">
-              <strong>Display name</strong>
-              <span className="meta-line">{profile.displayName}</span>
+            <div className="list-item settings-display-name-item">
+              <div className="form-field">
+                <label htmlFor="settingsDisplayName">Display name</label>
+                <input
+                  id="settingsDisplayName"
+                  value={displayNameDraft}
+                  maxLength={maxDisplayNameLength}
+                  onChange={(event) => setDisplayNameDraft(event.target.value)}
+                />
+                <span className="meta-line">
+                  {displayNameDraft.trim().length}/{maxDisplayNameLength} characters
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary settings-display-name-save"
+                disabled={isSavingDisplayName}
+                onClick={() => void saveDisplayName()}
+              >
+                {isSavingDisplayName ? "Saving..." : "Save"}
+              </button>
             </div>
+            {accountMessage ? (
+              <p className="meta-line" aria-live="polite" style={{ marginTop: "0.25rem" }}>
+                {accountMessage}
+              </p>
+            ) : null}
             <div className="list-item">
               <strong>Email</strong>
               <span className="meta-line">{profile.email}</span>

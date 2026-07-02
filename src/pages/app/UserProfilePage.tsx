@@ -1,8 +1,10 @@
 import { useParams } from "react-router-dom";
 import { UserProfileView } from "@/components/profile/UserProfileView";
+import { useAuth } from "@/features/auth/AuthContext";
 
 export const UserProfilePage = () => {
   const { userId } = useParams();
+  const { currentUser } = useAuth();
 
   if (!userId) {
     return (
@@ -12,5 +14,5 @@ export const UserProfilePage = () => {
     );
   }
 
-  return <UserProfileView userId={userId} isOwnProfile={false} />;
+  return <UserProfileView userId={userId} isOwnProfile={currentUser?.id === userId} />;
 };
