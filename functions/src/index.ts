@@ -25,6 +25,10 @@ interface UpdateDisplayNameRequest {
 }
 
 const maxDisplayNameLength = 30;
+const displayNameAllowedCharacters = /^[\p{L}\p{N} ._'-]+$/u;
+const displayNameUrlOrContactPattern = /https?:\/\/|www\.|\.com\b|\.net\b|\.org\b|@/i;
+const displayNameReservedPattern = /\b(admin|moderator|official|staff|support)\b/i;
+const displayNameProfanityPattern = /\b(fuck|shit|bitch|asshole|dick|pussy|cunt|slut|whore)\b/i;
 const sanitizeFileName = (fileName: string) =>
   fileName
     .toLowerCase()
@@ -81,6 +85,24 @@ const getDisplayNameInput = (data: UpdateDisplayNameRequest) => {
     );
   }
 
+  if (!displayNameAllowedCharacters.test(displayName)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Display name can use letters, numbers, spaces, periods, apostrophes, underscores, and hyphens.",
+    );
+  }
+
+  if (
+    displayNameUrlOrContactPattern.test(displayName)
+    || displayNameReservedPattern.test(displayName)
+    || displayNameProfanityPattern.test(displayName)
+  ) {
+    throw new HttpsError(
+      "failed-precondition",
+      "That display name could not be accepted. Please choose a different name.",
+    );
+  }
+
   return displayName;
 };
 
@@ -105,21 +127,6 @@ const moderateProfilePhoto = async (openai: OpenAI, dataUrl: string) => {
     throw new HttpsError(
       "unavailable",
       "Profile photo moderation is temporarily unavailable. Please try again later.",
-    );
-  }
-};
-
-const moderateDisplayName = async (openai: OpenAI, displayName: string) => {
-  try {
-    return await openai.moderations.create({
-      model: "omni-moderation-latest",
-      input: displayName,
-    });
-  } catch (error) {
-    console.error("Display name moderation failed:", getErrorMessage(error));
-    throw new HttpsError(
-      "unavailable",
-      "Display name moderation is temporarily unavailable. Please try again later.",
     );
   }
 };
@@ -212,7 +219,6 @@ export const updateDisplayName = onCall(
   {
     cors: true,
     invoker: "public",
-    secrets: [openAiApiKey],
     timeoutSeconds: 30,
   },
   async (request) => {
@@ -221,17 +227,6 @@ export const updateDisplayName = onCall(
     }
 
     const displayName = getDisplayNameInput(request.data as UpdateDisplayNameRequest);
-    const openai = new OpenAI({ apiKey: openAiApiKey.value() });
-    const moderation = await moderateDisplayName(openai, displayName);
-
-    const result = moderation.results[0];
-    if (result?.flagged) {
-      throw new HttpsError(
-        "failed-precondition",
-        "That display name could not be accepted. Please choose a different name.",
-      );
-    }
-
     await getFirestore().doc(`users/${request.auth.uid}`).set(
       {
         displayName,
