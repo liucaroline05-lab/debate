@@ -32,7 +32,14 @@ import {
 } from "@/features/profile/profileService";
 import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { TabroomImport, UserProfile, UserStats } from "@/types/models";
+import type {
+  PerformancePoint,
+  RadarPoint,
+  TabroomEvent,
+  TabroomImport,
+  UserProfile,
+  UserStats,
+} from "@/types/models";
 
 ChartJS.register(
   CategoryScale,
@@ -73,34 +80,75 @@ const defaultStats: ProfileStats = {
   topicStrengths: [],
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const toNumber = (value: unknown, fallback = 0) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+const toStringValue = (value: unknown, fallback = "") =>
+  typeof value === "string" ? value : fallback;
+
+const toStringArray = (value: unknown) =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+
+const normalizePerformancePoints = (value: unknown): PerformancePoint[] =>
+  Array.isArray(value)
+    ? value
+        .filter(isRecord)
+        .map((entry) => ({
+          label: toStringValue(entry.label, "Round"),
+          score: toNumber(entry.score),
+          wins: typeof entry.wins === "number" ? entry.wins : undefined,
+          losses: typeof entry.losses === "number" ? entry.losses : undefined,
+        }))
+    : [];
+
+const normalizeRadarPoints = (value: unknown): RadarPoint[] =>
+  Array.isArray(value)
+    ? value
+        .filter(isRecord)
+        .map((entry) => ({
+          skill: toStringValue(entry.skill, "Skill"),
+          value: toNumber(entry.value),
+        }))
+    : [];
+
 const normalizeProfileStats = (
   stats: Partial<UserStats> | null | undefined,
 ): ProfileStats => ({
-  wins: typeof stats?.wins === "number" ? stats.wins : defaultStats.wins,
-  losses: typeof stats?.losses === "number" ? stats.losses : defaultStats.losses,
-  averageScore:
-    typeof stats?.averageScore === "number"
-      ? stats.averageScore
-      : defaultStats.averageScore,
-  winRate:
-    typeof stats?.winRate === "number" ? stats.winRate : defaultStats.winRate,
-  totalRounds:
-    typeof stats?.totalRounds === "number"
-      ? stats.totalRounds
-      : defaultStats.totalRounds,
-  performanceOverTime: Array.isArray(stats?.performanceOverTime)
-    ? stats.performanceOverTime
-    : defaultStats.performanceOverTime,
-  formatBreakdown: Array.isArray(stats?.formatBreakdown)
-    ? stats.formatBreakdown
-    : defaultStats.formatBreakdown,
-  topicStrengths: Array.isArray(stats?.topicStrengths)
-    ? stats.topicStrengths
-    : defaultStats.topicStrengths,
+  wins: toNumber(stats?.wins, defaultStats.wins),
+  losses: toNumber(stats?.losses, defaultStats.losses),
+  averageScore: toNumber(stats?.averageScore, defaultStats.averageScore),
+  winRate: toNumber(stats?.winRate, defaultStats.winRate),
+  totalRounds: toNumber(stats?.totalRounds, defaultStats.totalRounds),
+  performanceOverTime: normalizePerformancePoints(stats?.performanceOverTime),
+  formatBreakdown: normalizePerformancePoints(stats?.formatBreakdown),
+  topicStrengths: normalizeRadarPoints(stats?.topicStrengths),
 });
 
-const getTabroomEvents = (tabroomImport: Partial<TabroomImport> | undefined) =>
-  Array.isArray(tabroomImport?.events) ? tabroomImport.events : [];
+const getTabroomEvents = (
+  tabroomImport: Partial<TabroomImport> | undefined,
+): TabroomEvent[] =>
+  Array.isArray(tabroomImport?.events)
+    ? tabroomImport.events.filter(isRecord).map((event, index) => ({
+        id: toStringValue(event.id, `tabroom-event-${index}`),
+        name: toStringValue(event.name, "Tabroom event"),
+        date: toStringValue(event.date),
+        result: toStringValue(event.result, "Imported result"),
+        sourceUrl: toStringValue(event.sourceUrl, "#"),
+      }))
+    : [];
+
+const normalizeProfileForView = (profile: UserProfile) => ({
+  ...profile,
+  focusAreas: toStringArray(profile.focusAreas),
+  organizationTags: toStringArray(profile.organizationTags),
+  recommendationSlots: toStringArray(profile.recommendationSlots),
+  activeChannelIds: toStringArray(profile.activeChannelIds),
+});
 
 const chartOptions = {
   responsive: true,
@@ -152,11 +200,13 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
 
     if (isOwnProfile) {
       return userFromCollection || currentUser
-        ? normalizeUserProfile(userFromCollection ?? currentUser)
+        ? normalizeProfileForView(normalizeUserProfile(userFromCollection ?? currentUser))
         : null;
     }
 
-    return userFromCollection ? normalizeUserProfile(userFromCollection) : null;
+    return userFromCollection
+      ? normalizeProfileForView(normalizeUserProfile(userFromCollection))
+      : null;
   }, [currentUser, isOwnProfile, userId, usersState.data]);
 
   const profileName = safeName(profile?.displayName);
@@ -190,7 +240,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const authoredDebates = useMemo(
     () =>
       debatesState.data.filter((debate) =>
-        debate.participantIds?.includes(userId),
+        Array.isArray(debate.participantIds) && debate.participantIds.includes(userId),
       ),
     [debatesState.data, userId],
   );
@@ -199,7 +249,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
       ...membershipsState.data
         .filter((membership) => membership.userId === userId)
         .map((membership) => membership.channelId),
-      ...(profile?.activeChannelIds ?? []),
+      ...toStringArray(profile?.activeChannelIds),
     ]),
   ];
   const activeChannels = channelsState.data.filter((channel) =>
@@ -262,6 +312,8 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     }),
     [],
   );
+  const hasPerformanceData = stats.performanceOverTime.length > 0;
+  const hasTopicStrengths = stats.topicStrengths.length > 0;
 
   if (usersState.isLoading && !profile) {
     return (
@@ -514,24 +566,38 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
           <article className="app-card">
             <h2 className="card-title">Performance over time</h2>
             <div className="chart-panel">
-              <Bar
-                key={`profile-performance-${userId}`}
-                redraw
-                data={performanceData}
-                options={chartOptions}
-              />
+              {hasPerformanceData ? (
+                <Bar
+                  key={`profile-performance-${userId}`}
+                  redraw
+                  data={performanceData}
+                  options={chartOptions}
+                />
+              ) : (
+                <div className="empty-state chart-empty-state">
+                  <h3 className="card-title">No performance data yet</h3>
+                  <p className="card-copy">Completed rounds will appear here once this profile has stats.</p>
+                </div>
+              )}
             </div>
           </article>
 
           <article className="app-card">
             <h2 className="card-title">Topic strengths</h2>
             <div className="chart-panel">
-              <Radar
-                key={`profile-radar-${userId}`}
-                redraw
-                data={radarData}
-                options={radarOptions}
-              />
+              {hasTopicStrengths ? (
+                <Radar
+                  key={`profile-radar-${userId}`}
+                  redraw
+                  data={radarData}
+                  options={radarOptions}
+                />
+              ) : (
+                <div className="empty-state chart-empty-state">
+                  <h3 className="card-title">No topic data yet</h3>
+                  <p className="card-copy">Topic strengths will appear here after more judged rounds.</p>
+                </div>
+              )}
             </div>
           </article>
         </section>
