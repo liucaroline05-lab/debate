@@ -70,3 +70,21 @@ Settings Page Improvements:
   - below the two buttons, include a multi-line textbox for the user to write whatever they want
   - make the debate preferences card shorter and use the reclaimed vertical space to give more room for the user bio
   - switch the two columns
+
+
+Async Debate Page:
+- If the user is participating in a debate, show the debate card at the top of the page with an option to listen to the other person's speech and a button to upload your own speech
+- If the user is not participating in a debate, My Debates is empty but they can join via Open Challenges or Spectate an ongoing one.
+- If they are participating in a debate but it is the other person's turn, it should have a status message about how they are waiting for the other person to upload their speech. There can also be a chat button that opens a chat window to communicate with the other person while they wait for them to upload their speech. The chat should be persistent and saved in the database so that they can come back to it later.
+- Pressing the New Debate button should open a modal with a form to create a new debate. The form should include fields for the topic, the type of debate (e.g. Lincoln-Douglas, Public Forum, etc), and the time limit for each speech. There should also be an option for private to invite a specific user via a code to join the debate or make it open for anyone to join.
+- Similar to the Community page, the public debates should have a like/dislike, favorite, share, and comment buttons. The comments should be persistent and saved in the database so that they can come back to it later. When a debate is still ongoing, the comments are not readable to the participants. Anyone can read but only spectators can comment. Once the debate is over, the comments are readable to everyone and anyone can comment. The comments should be sorted by most recent first.
+
+
+Additional TODOs:
+- Community Page: add option to upload media (images, video, etc) to posts
+  - Also option to upload other file types (e.g. PDF, Word, etc) to posts
+- Follow button when looking at a user's profile currently does not work. It should add them to your following list and show their posts in your Following feed.
+- Tabroom Sync is still broken. It should sync your Tabroom account with your debate account and pull in your stats, events, and other relevant information. This will require either an API or webscraping solution to get the data from Tabroom. There seems to be an official REST API: https://docs.debate.land/
+- Dashboard: make the Events/Debate Threads/Resource Library/Channels cards not hardcoded and actually function.
+- Community Page: make the Practice Groups/School & Tournament Channels listed on the right side real instead of hardcoded. At the top of the Practice Groups card, there should be a button to create a new practice group. Clicking it should open a modal with a form to create a new practice group. The form should include fields for the name, description, and an option to make it public or private. If it is private, there should be an option to invite specific users via a code to join the group. Visually it should be a green plus in the spot where the group icon would be and the name field should just say "Create Group"
+- Within the Record/Upload page, the right side void should be filled by a list of the user's past speeches as well as others after their own. Each entry should have the same format as a Dashboard speech entry. Click it should go to a subpage where the user can view the speech, see comments, and download the speech. Comments can be disabled similar to the async debates. Default is comments on.
