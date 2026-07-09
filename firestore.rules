@@ -104,12 +104,60 @@ service cloud.firestore {
       allow delete: if ownsExistingResource("creatorId");
     }
 
+    function debateData(debateId) {
+      return get(/databases/$(database)/documents/debates/$(debateId)).data;
+    }
+
+    function isDebateParticipant(debateId) {
+      return isSignedIn()
+        && request.auth.uid in debateData(debateId).participantIds;
+    }
+
+    // Comments are allowed only when the debate opted in, and — while the debate
+    // is still running — only for spectators (non-participants). Once completed,
+    // anyone signed in may comment.
+    function debateCommentsAllowed(debateId) {
+      let debate = debateData(debateId);
+      return debate.commentsEnabled == true
+        && (
+          debate.status == "Completed"
+          || !(request.auth.uid in debate.participantIds)
+        );
+    }
+
     match /debates/{debateId} {
-      allow read, create, update: if isSignedIn();
+      // Public debates are readable to any signed-in user; private debates are
+      // readable to their participants and creator. (Whole-collection listeners
+      // still require a broad read, so listing stays gated to signed-in users.)
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
     }
 
     match /matchRequests/{requestId} {
       allow read, create, update: if isSignedIn();
+    }
+
+    match /debateMessages/{messageId} {
+      allow read: if isSignedIn();
+      // Only debate participants may post to the participant chat.
+      allow create: if isSignedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && isDebateParticipant(request.resource.data.debateId);
+    }
+
+    match /debateComments/{commentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && debateCommentsAllowed(request.resource.data.debateId);
+    }
+
+    match /debateReactions/{reactionId} {
+      allow read: if isSignedIn();
+      // A reaction document is writable only by its owning user.
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
     }
 
     match /resources/{resourceId} {

@@ -58,6 +58,7 @@ export interface DebateMatchRequest {
   format: "Lincoln-Douglas" | "Public Forum" | "Policy" | "Async";
   skillLevel: "Novice" | "Intermediate" | "Advanced";
   requestedBy: string;
+  creatorId?: string;
   preferredSide: "Aff" | "Neg" | "Either";
   status: "Open" | "Matched" | "Closed";
   createdAt: string;
@@ -65,6 +66,9 @@ export interface DebateMatchRequest {
   responseWindowHours?: number;
   requesterSideLabel?: string;
   requesterGoal?: string;
+  visibility?: "public" | "private";
+  commentsEnabled?: boolean;
+  speechTimeLimit?: string;
 }
 
 export interface DebateParticipant {
@@ -72,6 +76,7 @@ export interface DebateParticipant {
   side: "Aff" | "Neg";
   label: string;
   partnerLabel?: string;
+  userId?: string;
 }
 
 export interface DebateTurn {
@@ -79,21 +84,42 @@ export interface DebateTurn {
   code?: string;
   title?: string;
   author: string;
+  authorId?: string;
   side: "Aff" | "Neg";
   submittedAt?: string;
   summary: string;
   durationLabel?: string;
   status: "submitted" | "current" | "locked";
   actionLabel?: string;
+  speechUrl?: string;
 }
+
+export type DebateStatus =
+  | "Awaiting Opponent"
+  | "Active"
+  | "Waiting on You"
+  | "Waiting on Opponent"
+  | "Completed";
 
 export interface DebateThread {
   id: string;
   topic: string;
   format: string;
-  status: "Waiting on You" | "Waiting on Opponent" | "Completed";
-  lane: "my-debates" | "completed" | "spectate";
-  partnerName: string;
+  status: DebateStatus;
+  /** Legacy static section marker; sections are now derived from the viewer. */
+  lane?: "my-debates" | "completed" | "spectate";
+  visibility?: "public" | "private";
+  inviteCode?: string;
+  creatorId?: string;
+  currentTurnUserId?: string | null;
+  commentsEnabled?: boolean;
+  commentCount?: number;
+  likeCount?: number;
+  dislikeCount?: number;
+  favoriteCount?: number;
+  shareCount?: number;
+  speechTimeLimit?: string;
+  partnerName?: string;
   nextDeadline: string;
   affirmative: DebateParticipant;
   negative: DebateParticipant;
@@ -110,7 +136,35 @@ export interface DebateThread {
     neg: number;
   };
   turns: DebateTurn[];
-  debatePartnerSuggestions: string[];
+  debatePartnerSuggestions?: string[];
+}
+
+export interface DebateMessage {
+  id: string;
+  debateId: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface DebateComment {
+  id: string;
+  debateId: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface DebateReaction {
+  id: string;
+  debateId: string;
+  userId: string;
+  like: boolean;
+  dislike: boolean;
+  favorite: boolean;
+  createdAt: string;
 }
 
 export interface ResourceItem {
