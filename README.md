@@ -81,6 +81,11 @@ Async Debate Page:
 
 
 Additional TODOs:
+- When creating a new debate, instead of a modal it should be an inline form just like how it is done for making a new community post.
+- Invite code text field style is out of place and should be fixed to match the rest of the form.
+- The padding of a debate entry is nonexistent when there is turn metadata present. It should be padded the same as when there is no turn metadata. Also the chat button should still be visible as it current diappears when it should not.
+- When there is a new chat message from the other debate partner, the chat button should have a notification badge to indicate that there is a new message. The badge should be a small red circle with a number indicating how many new messages there are.
+- The async debate entries should look like [INSERT IMAGE EXAMPLE HERE]
 - Community Page: add option to upload media (images, video, etc) to posts
   - Also option to upload other file types (e.g. PDF, Word, etc) to posts
 - Follow button when looking at a user's profile currently does not work. It should add them to your following list and show their posts in your Following feed.
