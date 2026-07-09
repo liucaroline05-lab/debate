@@ -1,0 +1,73 @@
+rules_version = '2';
+
+// Firebase Storage security rules for the debate app.
+//
+// Storage layout (see the client services and Cloud Functions for the writers):
+//   avatars/{userId}/{fileName}      -- profile photos, written ONLY by the
+//                                       uploadProfilePhoto Cloud Function
+//                                       (functions/src/index.ts). The Admin SDK
+//                                       bypasses these rules, so clients must not
+//                                       be allowed to write here directly --
+//                                       moderation happens server-side.
+//   speeches/{fileName}              -- speech recordings, uploaded directly by
+//                                       the signed-in user
+//                                       (features/speeches/speechService.ts).
+//   resources/{creatorId}/{fileName} -- resource media, uploaded directly by the
+//                                       signed-in creator
+//                                       (features/resources/resourceService.ts).
+//
+// Downloads happen through tokenized getDownloadURL()/download-token links, which
+// bypass read rules; the `read` rules below govern direct/list access only.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Client uploads are audio/video only (both upload UIs use
+    // accept="audio/*,video/*"). Cap the size so a single object can't blow up
+    // the bucket -- raise or lower to taste.
+    function isAllowedMedia(maxSizeMB) {
+      return request.resource != null
+        && request.resource.size < maxSizeMB * 1024 * 1024
+        && request.resource.contentType != null
+        && (
+          request.resource.contentType.matches('audio/.*')
+          || request.resource.contentType.matches('video/.*')
+        );
+    }
+
+    // Profile photos. Public read so avatars render anywhere in the app; all
+    // writes go through the Cloud Function (Admin SDK), never the client.
+    match /avatars/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Speech recordings. The client path is not namespaced by uid, so ownership
+    // can't be enforced by path -- require auth and validate the media instead.
+    // Objects are immutable once written; deletes are not performed client-side.
+    match /speeches/{fileName} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isAllowedMedia(500);
+      allow update, delete: if false;
+    }
+
+    // Resource media. Path is namespaced by creatorId, so we can require that you
+    // only write under your own folder. Resources are public, so read is open.
+    match /resources/{creatorId}/{fileName} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.auth.uid == creatorId
+        && isAllowedMedia(500);
+      allow update, delete: if false;
+    }
+
+    // Deny everything else by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -109,6 +109,25 @@ const getDisplayNameInput = (data: UpdateDisplayNameRequest) => {
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+// Condense a moderation result into something readable in Cloud Functions logs:
+// which categories tripped, plus the highest-confidence scores (even for
+// categories that didn't trip) so we can see how close a photo was to the line.
+const summarizeModeration = (result: OpenAI.Moderation) => {
+  const scores = result.category_scores as unknown as Record<string, number>;
+  const categories = result.categories as unknown as Record<string, boolean>;
+
+  return {
+    flagged: result.flagged,
+    flaggedCategories: Object.entries(categories)
+      .filter(([, tripped]) => tripped)
+      .map(([category]) => category),
+    topScores: Object.entries(scores)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([category, score]) => `${category}=${score.toFixed(4)}`),
+  };
+};
+
 const moderateProfilePhoto = async (openai: OpenAI, dataUrl: string) => {
   try {
     return await openai.moderations.create({
@@ -162,6 +181,13 @@ export const uploadProfilePhoto = onCall(
     const moderation = await moderateProfilePhoto(openai, uploadInput.dataUrl);
 
     const result = moderation.results[0];
+    if (result) {
+      console.info(
+        "Profile photo moderation result:",
+        JSON.stringify({ uid, ...summarizeModeration(result) }),
+      );
+    }
+
     if (result?.flagged) {
       throw new HttpsError(
         "failed-precondition",
