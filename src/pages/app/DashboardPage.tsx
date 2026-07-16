@@ -36,6 +36,24 @@ export const DashboardPage = () => {
   const resourceState = useSeededFirestoreCollection("resources", seededResources);
   const channelState = useSeededFirestoreCollection("channels", seededChannels);
   const eventState = useSeededFirestoreCollection("events", seededEvents);
+  const dashboardDebates = useMemo(
+    () => debateState.data.filter((debate) =>
+      (debate.participantIds ?? []).includes(currentUser?.id ?? ""),
+    ),
+    [currentUser?.id, debateState.data],
+  );
+  const savedResources = useMemo(
+    () => resourceState.data.filter((resource) => resource.saved),
+    [resourceState.data],
+  );
+  const followedChannels = useMemo(() => {
+    const ids = new Set(currentUser?.activeChannelIds ?? []);
+    return ids.size ? channelState.data.filter((channel) => ids.has(channel.id)) : channelState.data;
+  }, [channelState.data, currentUser?.activeChannelIds]);
+  const upcomingEvents = useMemo(
+    () => [...eventState.data].sort((left, right) => left.date.localeCompare(right.date)),
+    [eventState.data],
+  );
 
   const handleDeleteSpeech = async (speechId: string) => {
     await deleteSpeechRecord(speechId);
@@ -144,7 +162,7 @@ export const DashboardPage = () => {
             Events
           </h2>
           <div className="list" style={{ marginTop: "1rem" }}>
-            {eventState.data.map((event) => (
+            {upcomingEvents.map((event) => (
               <div key={event.id} className="list-item">
                 <strong>{event.name}</strong>
                 <span className="meta-line">
@@ -153,6 +171,8 @@ export const DashboardPage = () => {
               </div>
             ))}
           </div>
+          {upcomingEvents.length === 0 ? <p className="card-copy">No upcoming events. Sync Tabroom from your profile to import tournament data.</p> : null}
+          <NavLink to="/app/profile#tabroom" className="btn btn-ghost" style={{ marginTop: "1rem" }}>Manage synced events</NavLink>
         </article>
 
         <article className="app-card">
@@ -161,15 +181,16 @@ export const DashboardPage = () => {
             Debate threads
           </h2>
           <div className="list" style={{ marginTop: "1rem" }}>
-            {debateState.data.map((debate) => (
-              <div key={debate.id} className="list-item">
+            {dashboardDebates.map((debate) => (
+              <NavLink key={debate.id} to={`/app/debates/${debate.id}`} className="list-item dashboard-list-link">
                 <strong>{debate.topic}</strong>
                 <span className="meta-line">
                   {debate.status} • Due {formatDateTime(debate.nextDeadline)}
                 </span>
-              </div>
+              </NavLink>
             ))}
           </div>
+          {dashboardDebates.length === 0 ? <p className="card-copy">No debate threads yet. Create or join one from Async Debate.</p> : null}
         </article>
 
         <article className="app-card">
@@ -178,15 +199,16 @@ export const DashboardPage = () => {
             Resource library
           </h2>
           <div className="list" style={{ marginTop: "1rem" }}>
-            {resourceState.data.map((resource) => (
-              <div key={resource.id} className="list-item">
+            {savedResources.map((resource) => (
+              <NavLink key={resource.id} to={`/app/resources/${resource.slug ?? resource.id}`} className="list-item dashboard-list-link">
                 <strong>{resource.title}</strong>
                 <span className="meta-line">
                   {resource.category} • {resource.level} • Curated by {resource.curatedBy}
                 </span>
-              </div>
+              </NavLink>
             ))}
           </div>
+          {savedResources.length === 0 ? <p className="card-copy">Save resources to keep them close at hand.</p> : null}
         </article>
 
         <article className="app-card">
@@ -195,13 +217,13 @@ export const DashboardPage = () => {
             Channels
           </h2>
           <div className="list" style={{ marginTop: "1rem" }}>
-            {channelState.data.map((channel) => (
-              <div key={channel.id} className="list-item">
+            {followedChannels.map((channel) => (
+              <NavLink key={channel.id} to={`/app/community?channel=${channel.id}`} className="list-item dashboard-list-link">
                 <strong>{channel.name}</strong>
                 <span className="meta-line">
                   {channel.followers} members • {channel.topicTags.join(" • ")}
                 </span>
-              </div>
+              </NavLink>
             ))}
           </div>
         </article>

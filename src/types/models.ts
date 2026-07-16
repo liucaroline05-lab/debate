@@ -49,13 +49,23 @@ export interface SpeechRecord {
   tags: string[];
   organizationTags: string[];
   mediaPath?: string;
+  commentsEnabled?: boolean;
   reported?: boolean;
+}
+
+export interface SpeechComment {
+  id: string;
+  speechId: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+  createdAt: string;
 }
 
 export interface DebateMatchRequest {
   id: string;
   topic: string;
-  format: "Lincoln-Douglas" | "Public Forum" | "Policy" | "Async";
+  format: "Lincoln-Douglas" | "Public Forum" | "Policy" | "World Schools";
   skillLevel: "Novice" | "Intermediate" | "Advanced";
   requestedBy: string;
   creatorId?: string;
@@ -204,6 +214,26 @@ export interface CommunityChannel {
   memberCount?: number;
   activityLabel?: string;
   accent?: "sage" | "gold" | "terracotta" | "sand";
+  visibility?: "public" | "private";
+  creatorId?: string;
+  inviteCode?: string;
+  createdAt?: string;
+}
+
+export interface DebateChatRead {
+  id: string;
+  debateId: string;
+  userId: string;
+  lastReadAt: string;
+}
+
+export interface CommunityAttachment {
+  name: string;
+  url: string;
+  storagePath: string;
+  contentType: string;
+  size: number;
+  kind: "image" | "video" | "audio" | "document" | "file";
 }
 
 export interface CommunityPost {
@@ -224,6 +254,7 @@ export interface CommunityPost {
   dislikeCount?: number;
   favoriteCount?: number;
   shareCount?: number;
+  attachments?: CommunityAttachment[];
   attachmentTitle?: string;
   attachmentMeta?: string;
   aiScoreLabel?: string;
@@ -297,6 +328,10 @@ export interface TabroomLink {
   handle: string;
   status: "linked" | "syncing" | "error" | "unlinked";
   lastSyncedAt?: string;
+  format?: "PF" | "LD" | "CX";
+  circuit?: string;
+  year?: string;
+  teamId?: string;
 }
 
 export interface TabroomEvent {
@@ -315,6 +350,14 @@ export interface TabroomImport {
   lastSuccessfulAt?: string;
   errorMessage?: string;
   events: TabroomEvent[];
+  stats?: {
+    wins: number;
+    losses: number;
+    averageSpeakerPoints: number;
+    otrScore?: number;
+    goldBids?: number;
+    silverBids?: number;
+  };
 }
 
 export interface EventItem {
@@ -323,4 +366,5 @@ export interface EventItem {
   date: string;
   location: string;
   type: "Tournament" | "Scrimmage" | "Workshop";
+  externalUrl?: string;
 }

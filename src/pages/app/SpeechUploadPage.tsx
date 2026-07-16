@@ -1,6 +1,11 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
+import { NavLink } from "react-router-dom";
+import { where, type QueryConstraint } from "firebase/firestore";
 import { PageMeta } from "@/components/common/PageMeta";
+import { seededSpeeches } from "@/data/firestoreSeeds";
 import { createSpeechRecord } from "@/features/speeches/speechService";
+import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
+import { formatDateTime } from "@/lib/date";
 import type { SpeechRecord } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
 
@@ -13,6 +18,7 @@ const initialForm = {
   coachNotes: "",
   tags: "delivery, framing",
   organizationTags: "feedback-requested",
+  commentsEnabled: true,
 };
 
 export const SpeechUploadPage = () => {
@@ -22,6 +28,35 @@ export const SpeechUploadPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { currentUser } = useAuth();
+  const ownSpeechConstraints = useMemo<QueryConstraint[]>(
+    () => currentUser ? [where("creatorId", "==", currentUser.id)] : [],
+    [currentUser],
+  );
+  const publicSpeechConstraints = useMemo<QueryConstraint[]>(
+    () => [where("visibility", "==", "public")],
+    [],
+  );
+  const ownSpeeches = useSeededFirestoreCollection<SpeechRecord>(
+    "speeches",
+    seededSpeeches,
+    ownSpeechConstraints,
+    Boolean(currentUser),
+  );
+  const publicSpeeches = useSeededFirestoreCollection<SpeechRecord>(
+    "speeches",
+    seededSpeeches,
+    publicSpeechConstraints,
+  );
+  const speechHistory = useMemo(() => {
+    const newestFirst = (left: SpeechRecord, right: SpeechRecord) =>
+      right.uploadedAt.localeCompare(left.uploadedAt);
+    const mine = [...ownSpeeches.data].sort(newestFirst);
+    const mineIds = new Set(mine.map((speech) => speech.id));
+    return [
+      ...mine,
+      ...publicSpeeches.data.filter((speech) => !mineIds.has(speech.id)).sort(newestFirst),
+    ];
+  }, [ownSpeeches.data, publicSpeeches.data]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -166,6 +201,18 @@ export const SpeechUploadPage = () => {
                 placeholder="What should reviewers listen for?"
               />
             </div>
+            <label className="settings-toggle-row form-field full" htmlFor="speechCommentsEnabled">
+              <span>
+                <strong>Allow comments</strong>
+                <span className="meta-line">Let viewers leave feedback on the speech detail page.</span>
+              </span>
+              <input
+                id="speechCommentsEnabled"
+                type="checkbox"
+                checked={form.commentsEnabled}
+                onChange={(event) => setForm((current) => ({ ...current, commentsEnabled: event.target.checked }))}
+              />
+            </label>
             <div className="form-field">
               <label htmlFor="tags">Tags</label>
               <input
@@ -222,6 +269,27 @@ export const SpeechUploadPage = () => {
             </button>
           </div>
         </form>
+
+        <aside className="app-card speech-history-card">
+          <div className="row-between">
+            <div>
+              <span className="pill">Speech library</span>
+              <h2 className="card-title" style={{ marginTop: "0.75rem" }}>Past speeches</h2>
+            </div>
+            <span className="meta-line">Yours first</span>
+          </div>
+          <div className="list speech-history-list" style={{ marginTop: "1rem" }}>
+            {speechHistory.map((speech) => (
+              <NavLink key={speech.id} to={`/app/speeches/${speech.id}`} className="list-item speech-list-item speech-list-link">
+                <strong>{speech.title}</strong>
+                <span className="meta-line">
+                  {speech.creatorId === currentUser?.id ? "Your speech" : speech.speakerName} · {speech.format} · {formatDateTime(speech.uploadedAt)}
+                </span>
+              </NavLink>
+            ))}
+          </div>
+          {speechHistory.length === 0 ? <p className="card-copy">Your uploaded speeches and public community speeches will appear here.</p> : null}
+        </aside>
       </section>
     </>
   );

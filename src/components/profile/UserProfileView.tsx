@@ -52,6 +52,12 @@ ChartJS.register(
   Filler,
 );
 
+const currentSchoolYear = () => {
+  const now = new Date();
+  const startYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  return `SY_${String(startYear).slice(-2)}_${String(startYear + 1).slice(-2)}`;
+};
+
 interface UserProfileViewProps {
   userId: string;
   isOwnProfile: boolean;
@@ -219,6 +225,9 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const [handleDraft, setHandleDraft] = useState(
     safeHandle(profile?.username, profile?.displayName),
   );
+  const [tabroomFormat, setTabroomFormat] = useState<"PF" | "LD" | "CX">("PF");
+  const [tabroomCircuit, setTabroomCircuit] = useState("National");
+  const [tabroomYear, setTabroomYear] = useState(currentSchoolYear);
   const [message, setMessage] = useState("");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
@@ -392,8 +401,12 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     }
 
     try {
-      await requestTabroomSync(currentUser.id, tabroomDraft, handleDraft);
-      setMessage("Tabroom sync requested.");
+      await requestTabroomSync(tabroomDraft, handleDraft, {
+        format: tabroomFormat,
+        circuit: tabroomCircuit,
+        year: tabroomYear,
+      });
+      setMessage("Tabroom stats and tournament results synced.");
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Unable to request Tabroom sync.",
@@ -644,7 +657,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
             </div>
           </article>
 
-          <article className="app-card">
+          <article className="app-card" id="tabroom">
             <h2 className="card-title">Tabroom sync</h2>
             {isOwnProfile ? (
               <div className="form-grid" style={{ marginTop: "1rem" }}>
@@ -658,12 +671,42 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
                   />
                 </div>
                 <div className="form-field full">
-                  <label htmlFor="tabroomHandle">Tabroom handle</label>
+                  <label htmlFor="tabroomHandle">Debater or team name</label>
                   <input
                     id="tabroomHandle"
                     value={handleDraft}
                     onChange={(event) => setHandleDraft(event.target.value)}
-                    placeholder="your_tabroom_handle"
+                    placeholder="Name as listed on Tabroom"
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="tabroomFormat">Debate format</label>
+                  <select
+                    id="tabroomFormat"
+                    value={tabroomFormat}
+                    onChange={(event) => setTabroomFormat(event.target.value as "PF" | "LD" | "CX")}
+                  >
+                    <option value="PF">Public Forum</option>
+                    <option value="LD">Lincoln-Douglas</option>
+                    <option value="CX">Policy</option>
+                  </select>
+                </div>
+                <div className="form-field">
+                  <label htmlFor="tabroomYear">School year</label>
+                  <input
+                    id="tabroomYear"
+                    value={tabroomYear}
+                    onChange={(event) => setTabroomYear(event.target.value.toUpperCase())}
+                    placeholder="SY_25_26"
+                  />
+                </div>
+                <div className="form-field full">
+                  <label htmlFor="tabroomCircuit">Circuit</label>
+                  <input
+                    id="tabroomCircuit"
+                    value={tabroomCircuit}
+                    onChange={(event) => setTabroomCircuit(event.target.value)}
+                    placeholder="National"
                   />
                 </div>
                 <div className="button-row">
@@ -692,6 +735,16 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
                 </span>
               </div>
             </div>
+
+            {tabroomImport?.stats ? (
+              <div className="profile-detail-grid" style={{ marginTop: "1rem" }}>
+                <div className="profile-detail-item"><span>Imported record</span><strong>{tabroomImport.stats.wins}-{tabroomImport.stats.losses}</strong></div>
+                <div className="profile-detail-item"><span>Speaker points</span><strong>{tabroomImport.stats.averageSpeakerPoints || "—"}</strong></div>
+                <div className="profile-detail-item"><span>OTR score</span><strong>{tabroomImport.stats.otrScore || "—"}</strong></div>
+                <div className="profile-detail-item"><span>Bids</span><strong>{(tabroomImport.stats.goldBids ?? 0) + (tabroomImport.stats.silverBids ?? 0)}</strong></div>
+              </div>
+            ) : null}
+            {tabroomImport?.errorMessage ? <p className="meta-line is-error">{tabroomImport.errorMessage}</p> : null}
 
             <div className="list" style={{ marginTop: "1rem" }}>
               {tabroomEvents.map((event) => (

@@ -37,6 +37,7 @@ const service = vi.hoisted(() => ({
   createPrivateDebate: vi.fn(async () => ({ id: "new", inviteCode: "ABC123" })),
   incrementDebateShareCount: vi.fn(),
   joinDebateByInviteCode: vi.fn(),
+  markDebateChatRead: vi.fn(),
   submitDebateTurn: vi.fn(),
   toggleDebateReaction: vi.fn(),
 }));
@@ -101,11 +102,12 @@ describe("DebatesPage — My Debates", () => {
 
     // Your-turn action controls.
     expect(screen.getByText(/your turn — reply/i)).toBeInTheDocument();
-    expect(screen.getByText(/upload your speech/i)).toBeInTheDocument();
+    expect(screen.getByText(/record \/ upload/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/unlocks after the previous speech/i)).toHaveLength(6);
 
     // Waiting action controls.
     expect(screen.getByText(/waiting on opponent/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /chat/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /chat/i })).toHaveLength(2);
 
     // Your-turn debate is ordered before the waiting debate.
     const topics = screen
@@ -167,7 +169,7 @@ describe("DebatesPage — My Debates", () => {
   });
 });
 
-describe("DebatesPage — new debate modal", () => {
+describe("DebatesPage — inline debate composer", () => {
   it("defaults comments on and persists comments off when toggled", async () => {
     renderPage();
 

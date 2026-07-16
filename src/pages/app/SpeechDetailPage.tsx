@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
 import {
+  Download,
   FileAudio,
   Flag,
   MoreHorizontal,
@@ -14,12 +15,16 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { useAuth } from "@/features/auth/AuthContext";
 import {
   deleteSpeechRecord,
+  addSpeechComment,
   reportSpeechRecord,
   updateSpeechRecord,
 } from "@/features/speeches/speechService";
 import { formatDateTime } from "@/lib/date";
 import { firestore } from "@/lib/firebase";
-import type { SpeechRecord } from "@/types/models";
+import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
+import type { SpeechComment, SpeechRecord } from "@/types/models";
+
+const EMPTY_SPEECH_COMMENTS: SpeechComment[] = [];
 
 const toFormState = (speech: SpeechRecord) => ({
   title: speech.title,
@@ -30,6 +35,7 @@ const toFormState = (speech: SpeechRecord) => ({
   coachNotes: speech.coachNotes,
   tags: speech.tags.join(", "),
   organizationTags: speech.organizationTags.join(", "),
+  commentsEnabled: speech.commentsEnabled ?? true,
 });
 
 const getSpeechFileName = (speech: SpeechRecord) => {
@@ -59,6 +65,11 @@ export const SpeechDetailPage = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const commentsState = useSeededFirestoreCollection<SpeechComment>(
+    "speechComments",
+    EMPTY_SPEECH_COMMENTS,
+  );
 
   const isOwner = Boolean(speech?.creatorId && speech.creatorId === currentUser?.id);
   const isEditing = isOwner && searchParams.get("mode") === "edit";
@@ -148,6 +159,21 @@ export const SpeechDetailPage = () => {
     await reportSpeechRecord(speech.id);
     setMenuOpen(false);
     setMessage("Speech reported.");
+  };
+
+  const submitComment = async () => {
+    if (!speech || !currentUser || !commentDraft.trim()) return;
+    try {
+      await addSpeechComment(
+        speech.id,
+        currentUser.id,
+        currentUser.displayName?.trim() || "Debater",
+        commentDraft,
+      );
+      setCommentDraft("");
+    } catch (commentError) {
+      setMessage(commentError instanceof Error ? commentError.message : "Unable to add comment.");
+    }
   };
 
   if (isLoading) {
@@ -248,9 +274,14 @@ export const SpeechDetailPage = () => {
             </div>
             <div className="speech-player-divider" />
             {speech.mediaPath ? (
-              <audio className="speech-native-audio" controls src={speech.mediaPath}>
-                <a href={speech.mediaPath}>Open recording</a>
-              </audio>
+              <div className="speech-media-actions">
+                <audio className="speech-native-audio" controls src={speech.mediaPath}>
+                  <a href={speech.mediaPath}>Open recording</a>
+                </audio>
+                <a className="btn btn-secondary" href={speech.mediaPath} download={fileName} target="_blank" rel="noreferrer">
+                  <Download size={16} /> Download
+                </a>
+              </div>
             ) : null}
             <div className="speech-player-display" aria-hidden="true">
               <button type="button" className="speech-round-control" tabIndex={-1}>
@@ -364,6 +395,16 @@ export const SpeechDetailPage = () => {
               <label htmlFor="status">Status</label>
               <input id="status" value={speech.status} readOnly />
             </div>
+            <label className="settings-toggle-row form-field full" htmlFor="speechDetailCommentsEnabled">
+              <span><strong>Comments</strong><span className="meta-line">Allow viewers to leave feedback.</span></span>
+              <input
+                id="speechDetailCommentsEnabled"
+                type="checkbox"
+                checked={form.commentsEnabled}
+                disabled={!isEditing}
+                onChange={(event) => setForm((current) => current ? { ...current, commentsEnabled: event.target.checked } : current)}
+              />
+            </label>
             <div className="form-field">
               <label htmlFor="transcriptStatus">Transcript status</label>
               <input id="transcriptStatus" value={speech.transcriptStatus} readOnly />
@@ -438,6 +479,43 @@ export const SpeechDetailPage = () => {
             </div>
           ) : null}
         </form>
+
+        {speech.commentsEnabled ?? true ? (
+          <article className="app-card speech-comments-card">
+            <div className="row-between">
+              <h2 className="card-title">Comments</h2>
+              <span className="pill">{commentsState.data.filter((comment) => comment.speechId === speech.id).length} replies</span>
+            </div>
+            <div className="list" style={{ marginTop: "1rem" }}>
+              {commentsState.data
+                .filter((comment) => comment.speechId === speech.id)
+                .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+                .map((comment) => (
+                  <div key={comment.id} className="list-item">
+                    <strong>{comment.authorName}</strong>
+                    <span className="card-copy">{comment.content}</span>
+                    <span className="meta-line">{formatDateTime(comment.createdAt)}</span>
+                  </div>
+                ))}
+            </div>
+            <div className="forum-comment-form">
+              <input
+                value={commentDraft}
+                onChange={(event) => setCommentDraft(event.target.value)}
+                placeholder="Leave constructive feedback..."
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void submitComment();
+                  }
+                }}
+              />
+              <button type="button" className="btn btn-primary" onClick={() => void submitComment()}>Comment</button>
+            </div>
+          </article>
+        ) : (
+          <article className="app-card"><h2 className="card-title">Comments are off</h2><p className="card-copy">The uploader disabled comments for this speech.</p></article>
+        )}
       </section>
     </>
   );

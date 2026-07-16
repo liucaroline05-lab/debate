@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   runTransaction,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import {
@@ -437,6 +438,15 @@ export const addDebateMessage = async (
     content: content.trim(),
     createdAt: nowIso(),
   });
+};
+
+export const markDebateChatRead = async (debateId: string, userId: string) => {
+  const db = requireFirestore();
+  await setDoc(doc(db, "debateChatReads", `${debateId}-${userId}`), {
+    debateId,
+    userId,
+    lastReadAt: nowIso(),
+  }, { merge: true });
 };
 
 // ---------------------------------------------------------------------------

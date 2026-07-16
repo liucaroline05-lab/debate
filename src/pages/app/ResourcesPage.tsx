@@ -482,8 +482,8 @@ export const ResourcesPage = () => {
               <ChevronLeft size={18} />
             </button>
             <div className="resource-featured-row" ref={featuredTrackRef} onScroll={updateFeaturedScroll}>
-              {featuredResources.map((resource) => (
-                <Link key={resource.id} to={getResourcePath(resource)} className="resource-featured-card">
+              {featuredResources.map((resource, index) => (
+                <Link key={resource.id} to={getResourcePath(resource)} className={index === 1 ? "resource-featured-card is-center" : "resource-featured-card"}>
                   <span className="pill">{resource.category}</span>
                   <strong>{resource.title}</strong>
                   <span className="meta-line">

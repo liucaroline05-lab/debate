@@ -15,7 +15,7 @@ import {
   type UploadTaskSnapshot,
 } from "firebase/storage";
 import { firestore, storage } from "@/lib/firebase";
-import type { SpeechRecord } from "@/types/models";
+import type { SpeechComment, SpeechRecord } from "@/types/models";
 
 const UPLOAD_TIMEOUT_MS = 20_000;
 
@@ -29,6 +29,7 @@ interface NewSpeechInput {
   coachNotes: string;
   tags: string[];
   organizationTags: string[];
+  commentsEnabled: boolean;
   file?: File | null;
 }
 
@@ -42,6 +43,7 @@ export type SpeechUpdateInput = Pick<
   | "coachNotes"
   | "tags"
   | "organizationTags"
+  | "commentsEnabled"
 >;
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number) =>
@@ -164,6 +166,7 @@ export const createSpeechRecord = async (
     tags: input.tags,
     organizationTags: input.organizationTags,
     mediaPath: mediaPath ?? undefined,
+    commentsEnabled: input.commentsEnabled,
   };
 
   const docRef = await addDoc(collection(firestore, "speeches"), {
@@ -173,6 +176,25 @@ export const createSpeechRecord = async (
   speech.id = docRef.id;
 
   return speech;
+};
+
+export const addSpeechComment = async (
+  speechId: string,
+  authorId: string,
+  authorName: string,
+  content: string,
+) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const trimmedContent = content.trim();
+  if (!trimmedContent) return;
+
+  await addDoc(collection(firestore, "speechComments"), {
+    speechId,
+    authorId,
+    authorName,
+    content: trimmedContent,
+    createdAt: new Date().toISOString(),
+  } satisfies Omit<SpeechComment, "id">);
 };
 
 export const updateSpeechRecord = async (

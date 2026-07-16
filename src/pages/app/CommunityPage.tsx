@@ -1,12 +1,16 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Bookmark,
   Check,
+  Download,
+  FileText,
   Flag,
   MessageCircle,
   MoreHorizontal,
+  Paperclip,
   Pencil,
+  Plus,
   Search,
   Share2,
   ThumbsDown,
@@ -23,9 +27,11 @@ import {
 } from "@/data/firestoreSeeds";
 import {
   addCommentToPost,
+  createPracticeGroup,
   createPost,
   deletePostById,
   incrementPostShareCount,
+  joinPracticeGroupByCode,
   reportPostById,
   togglePostReaction,
   updatePostContent,
@@ -118,6 +124,8 @@ const ProfileHoverLink = ({
 );
 
 export const CommunityPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedChannelId = searchParams.get("channel");
   const { currentUser } = useAuth();
   const author = currentUser;
   if (!author) {
@@ -132,6 +140,15 @@ export const CommunityPage = () => {
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const [sharedPostId, setSharedPostId] = useState<string | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [composerFiles, setComposerFiles] = useState<File[]>([]);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [groupInviteNotice, setGroupInviteNotice] = useState("");
+  const [groupJoinCode, setGroupJoinCode] = useState("");
+  const [groupForm, setGroupForm] = useState({
+    name: "",
+    description: "",
+    visibility: "public" as "public" | "private",
+  });
   const [message, setMessage] = useState("");
   const [composer, setComposer] = useState({
     title: "",
@@ -174,6 +191,7 @@ export const CommunityPage = () => {
         feedScope === "all" ? true : followingIds.includes(post.authorId);
       const matchesCategory =
         activeTab === "All Posts" ? true : post.category === activeTab;
+      const matchesChannel = selectedChannelId ? post.channelId === selectedChannelId : true;
       const matchesQuery =
         loweredQuery.length === 0
           ? true
@@ -188,7 +206,7 @@ export const CommunityPage = () => {
               .filter(Boolean)
               .some((value) => value?.toLowerCase().includes(loweredQuery));
 
-      return matchesFeed && matchesCategory && matchesQuery;
+      return matchesFeed && matchesCategory && matchesChannel && matchesQuery;
     });
   }, [
     activeTab,
@@ -197,6 +215,7 @@ export const CommunityPage = () => {
     followingIds,
     postState.data,
     searchQuery,
+    selectedChannelId,
     usersState.data,
   ]);
 
@@ -262,6 +281,7 @@ export const CommunityPage = () => {
         channelId: composer.channelId,
         title: composer.title || "Community update",
         content: composer.content,
+        files: composerFiles,
       });
       setComposer((current) => ({
         ...current,
@@ -270,9 +290,38 @@ export const CommunityPage = () => {
         debateType: "",
       }));
       setIsComposerOpen(false);
+      setComposerFiles([]);
       setMessage("Post published.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to publish post.");
+    }
+  };
+
+  const submitPracticeGroup = async () => {
+    try {
+      const result = await createPracticeGroup({
+        ...groupForm,
+        creatorId: author.id,
+      });
+      setGroupInviteNotice(
+        result.inviteCode
+          ? `Group created. Share invite code ${result.inviteCode}.`
+          : "Practice group created.",
+      );
+      setGroupForm({ name: "", description: "", visibility: "public" });
+      setIsGroupModalOpen(false);
+    } catch (error) {
+      setGroupInviteNotice(error instanceof Error ? error.message : "Unable to create group.");
+    }
+  };
+
+  const joinPracticeGroup = async () => {
+    try {
+      const groupName = await joinPracticeGroupByCode(groupJoinCode, author.id);
+      setGroupInviteNotice(`Joined ${groupName}.`);
+      setGroupJoinCode("");
+    } catch (error) {
+      setGroupInviteNotice(error instanceof Error ? error.message : "Unable to join group.");
     }
   };
 
@@ -467,10 +516,36 @@ export const CommunityPage = () => {
                   ))}
                 </select>
               </div>
+              <div className="form-field full">
+                <label htmlFor="postFiles">Media and files</label>
+                <div className="file-input-shell forum-file-input">
+                  <input
+                    id="postFiles"
+                    type="file"
+                    multiple
+                    className="file-input-native"
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv"
+                    onChange={(event) => setComposerFiles(Array.from(event.target.files ?? []))}
+                  />
+                  <label htmlFor="postFiles" className="file-input-trigger">
+                    <Paperclip size={16} /> Add media or files
+                  </label>
+                  <span className={composerFiles.length ? "file-input-name has-file" : "file-input-name"}>
+                    {composerFiles.length
+                      ? `${composerFiles.length} file${composerFiles.length === 1 ? "" : "s"} selected`
+                      : "Images, video, audio, PDFs, Word files, and more"}
+                  </span>
+                </div>
+                {composerFiles.length ? (
+                  <div className="forum-selected-files">
+                    {composerFiles.map((file) => <span key={`${file.name}-${file.size}`} className="pill">{file.name}</span>)}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <div className="forum-composer-footer">
-              {message ? <span className="meta-line">{message}</span> : <span className="meta-line">placeholder.</span>}
+              {message ? <span className="meta-line">{message}</span> : <span className="meta-line">Attach media or files if they help tell the story.</span>}
               <div className="button-row">
                 <button type="button" className="btn btn-secondary" onClick={() => setIsComposerOpen(false)}>
                   Cancel
@@ -511,6 +586,12 @@ export const CommunityPage = () => {
               </button>
             </div>
           </div>
+          {selectedChannelId ? (
+            <div className="debate-banner">
+              Showing {channelState.data.find((channel) => channel.id === selectedChannelId)?.name ?? "selected channel"}
+              <button type="button" className="forum-icon-button" aria-label="Clear channel filter" onClick={() => setSearchParams({})}>×</button>
+            </div>
+          ) : null}
 
           <div className="forum-tabs" role="tablist" aria-label="Community feed filters">
             {forumTabs.map((tab) => (
@@ -640,6 +721,38 @@ export const CommunityPage = () => {
                       </div>
                     ) : null}
 
+                    {post.attachments?.length ? (
+                      <div className="forum-attachment-grid">
+                        {post.attachments.map((attachment) => (
+                          <div key={attachment.storagePath} className="forum-uploaded-attachment">
+                            {attachment.kind === "image" ? (
+                              <img src={attachment.url} alt={attachment.name} />
+                            ) : attachment.kind === "video" ? (
+                              <video controls preload="metadata" src={attachment.url} />
+                            ) : attachment.kind === "audio" ? (
+                              <audio controls preload="metadata" src={attachment.url} />
+                            ) : (
+                              <FileText size={28} aria-hidden="true" />
+                            )}
+                            <div>
+                              <strong>{attachment.name}</strong>
+                              <span className="meta-line">{Math.max(1, Math.round(attachment.size / 1024))} KB</span>
+                            </div>
+                            <a
+                              className="forum-icon-button"
+                              href={attachment.url}
+                              download={attachment.name}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Download ${attachment.name}`}
+                            >
+                              <Download size={17} />
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
                     <div className="forum-post-actions">
                       <button
                         type="button"
@@ -750,8 +863,19 @@ export const CommunityPage = () => {
           <article className="forum-sidebar-card">
             <h2>Practice Groups</h2>
             <div className="stack">
+              <button
+                type="button"
+                className="forum-channel-row forum-create-group-row"
+                onClick={() => {
+                  setGroupInviteNotice("");
+                  setIsGroupModalOpen(true);
+                }}
+              >
+                <span className="forum-channel-badge forum-create-group-icon"><Plus size={20} /></span>
+                <span><strong>Create Group</strong><span className="meta-line">Start a public or private practice space</span></span>
+              </button>
               {practiceGroups.map((channel) => (
-                <div key={channel.id} className="forum-channel-row">
+                <Link key={channel.id} to={`/app/community?channel=${channel.id}`} className="forum-channel-row dashboard-list-link">
                   <div className={channelAccentClass(channel.accent)}>{channel.shortCode ?? "DB"}</div>
                   <div>
                     <strong>{channel.name}</strong>
@@ -759,19 +883,26 @@ export const CommunityPage = () => {
                       {channel.memberCount ?? channel.followers} members • {channel.activityLabel ?? "Active recently"}
                     </span>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
-            <button type="button" className="btn btn-ghost forum-sidebar-button">
-              Browse All Groups
-            </button>
+            <div className="debate-join-row forum-group-join">
+              <input
+                aria-label="Practice group invite code"
+                value={groupJoinCode}
+                onChange={(event) => setGroupJoinCode(event.target.value.toUpperCase())}
+                placeholder="Private group code"
+              />
+              <button type="button" className="btn btn-ghost" onClick={() => void joinPracticeGroup()}>Join</button>
+            </div>
+            {groupInviteNotice ? <p className="meta-line" role="status">{groupInviteNotice}</p> : null}
           </article>
 
           <article className="forum-sidebar-card">
             <h2>School & Tournament Channels</h2>
             <div className="stack">
               {schoolAndTournamentChannels.map((channel) => (
-                <div key={channel.id} className="forum-channel-row">
+                <Link key={channel.id} to={`/app/community?channel=${channel.id}`} className="forum-channel-row dashboard-list-link">
                   <div className={channelAccentClass(channel.accent)}>{channel.shortCode ?? "CH"}</div>
                   <div>
                     <strong>{channel.name}</strong>
@@ -779,7 +910,7 @@ export const CommunityPage = () => {
                       {channel.category} • {channel.activityLabel}
                     </span>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </article>
@@ -822,6 +953,67 @@ export const CommunityPage = () => {
           </article>
         </aside>
       </div>
+
+      {isGroupModalOpen ? (
+        <div className="community-modal-overlay" role="presentation" onMouseDown={() => setIsGroupModalOpen(false)}>
+          <section
+            className="community-modal app-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="createGroupTitle"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="row-between">
+              <div>
+                <p className="eyebrow">Practice groups</p>
+                <h2 id="createGroupTitle" className="card-title">Create a practice group</h2>
+              </div>
+              <button type="button" className="forum-icon-button" aria-label="Close group form" onClick={() => setIsGroupModalOpen(false)}>×</button>
+            </div>
+            <div className="form-grid" style={{ marginTop: "1rem" }}>
+              <div className="form-field full">
+                <label htmlFor="practiceGroupName">Name</label>
+                <input
+                  id="practiceGroupName"
+                  value={groupForm.name}
+                  onChange={(event) => setGroupForm((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="Weekly PF drills"
+                />
+              </div>
+              <div className="form-field full">
+                <label htmlFor="practiceGroupDescription">Description</label>
+                <textarea
+                  id="practiceGroupDescription"
+                  value={groupForm.description}
+                  onChange={(event) => setGroupForm((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="What will members practice together?"
+                />
+              </div>
+              <div className="form-field full">
+                <label htmlFor="practiceGroupVisibility">Who can join?</label>
+                <select
+                  id="practiceGroupVisibility"
+                  value={groupForm.visibility}
+                  onChange={(event) => setGroupForm((current) => ({
+                    ...current,
+                    visibility: event.target.value as "public" | "private",
+                  }))}
+                >
+                  <option value="public">Public — anyone can discover it</option>
+                  <option value="private">Private — invite code required</option>
+                </select>
+              </div>
+            </div>
+            {groupForm.visibility === "private" ? (
+              <p className="helper-line">An invite code will be generated after the group is created.</p>
+            ) : null}
+            <div className="button-row community-modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setIsGroupModalOpen(false)}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={() => void submitPracticeGroup()}>Create group</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 };

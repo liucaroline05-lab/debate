@@ -24,6 +24,33 @@ interface UpdateDisplayNameRequest {
   displayName?: unknown;
 }
 
+interface SyncTabroomRequest {
+  profileUrl?: unknown;
+  handle?: unknown;
+  format?: unknown;
+  circuit?: unknown;
+  year?: unknown;
+}
+
+interface DebateLandTournament {
+  name?: unknown;
+  prelimRecord?: unknown;
+  breakRecord?: unknown;
+  speaks?: unknown;
+  goldBid?: unknown;
+  silverBid?: unknown;
+}
+
+interface DebateLandTeam {
+  id?: unknown;
+  otrScore?: unknown;
+  goldBids?: unknown;
+  silverBids?: unknown;
+  prelimRecord?: unknown;
+  breakRecord?: unknown;
+  tournaments?: unknown;
+}
+
 const maxDisplayNameLength = 30;
 const displayNameAllowedCharacters = /^[\p{L}\p{N} ._'-]+$/u;
 const displayNameUrlOrContactPattern = /https?:\/\/|www\.|\.com\b|\.net\b|\.org\b|@/i;
@@ -289,5 +316,151 @@ export const removeProfilePhoto = onCall(
     );
 
     return { removed: true };
+  },
+);
+
+const numberPair = (value: unknown): [number, number] => {
+  if (!Array.isArray(value)) return [0, 0];
+  return [Number(value[0]) || 0, Number(value[1]) || 0];
+};
+
+const tabroomInput = (data: SyncTabroomRequest) => {
+  const profileUrl = typeof data.profileUrl === "string" ? data.profileUrl.trim() : "";
+  const handle = typeof data.handle === "string" ? data.handle.trim() : "";
+  const format = typeof data.format === "string" ? data.format.toUpperCase() : "PF";
+  const circuit = typeof data.circuit === "string" ? data.circuit.trim() : "National";
+  const year = typeof data.year === "string" ? data.year.trim().toUpperCase() : "";
+
+  if (!handle || handle.length > 100) {
+    throw new HttpsError("invalid-argument", "Enter the debater or team name used on Tabroom.");
+  }
+  if (!new Set(["PF", "LD", "CX"]).has(format)) {
+    throw new HttpsError("invalid-argument", "Choose Public Forum, Lincoln-Douglas, or Policy.");
+  }
+  if (!/^SY_\d{2}_\d{2}$/.test(year)) {
+    throw new HttpsError("invalid-argument", "Enter a school year such as SY_25_26.");
+  }
+  if (profileUrl && !/^https:\/\/(www\.)?tabroom\.com\//i.test(profileUrl)) {
+    throw new HttpsError("invalid-argument", "Enter a valid tabroom.com profile URL.");
+  }
+
+  return { profileUrl, handle, format, circuit, year };
+};
+
+export const syncTabroom = onCall(
+  { cors: true, invoker: "public", timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in before syncing Tabroom.");
+    }
+
+    const input = tabroomInput(request.data as SyncTabroomRequest);
+    const uid = request.auth.uid;
+    const startedAt = new Date().toISOString();
+    const db = getFirestore();
+    const linkRef = db.doc(`tabroomLinks/tabroom-link-${uid}`);
+    const importRef = db.doc(`tabroomImports/tabroom-import-${uid}`);
+
+    await Promise.all([
+      linkRef.set({ userId: uid, ...input, status: "syncing" }, { merge: true }),
+      importRef.set({ userId: uid, status: "syncing", startedAt }, { merge: true }),
+    ]);
+
+    try {
+      const query = new URLSearchParams({
+        format: input.format,
+        circuit: input.circuit,
+        year: input.year,
+        term: input.handle,
+      });
+      const response = await fetch(`https://tournaments.tech/query?${query}`, {
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!response.ok) {
+        throw new Error(`Debate.land returned HTTP ${response.status}.`);
+      }
+
+      const payload = await response.json() as unknown;
+      const teams = Array.isArray(payload) ? payload as DebateLandTeam[] : [];
+      const team = teams[0];
+      if (!team) {
+        throw new HttpsError("not-found", "No matching Tabroom entry was found for that season and circuit.");
+      }
+
+      const [prelimWins, prelimLosses] = numberPair(team.prelimRecord);
+      const [breakWins, breakLosses] = numberPair(team.breakRecord);
+      const wins = prelimWins + breakWins;
+      const losses = prelimLosses + breakLosses;
+      const tournaments = Array.isArray(team.tournaments)
+        ? team.tournaments as DebateLandTournament[]
+        : [];
+      const speakerPoints = tournaments.flatMap((tournament) =>
+        Array.isArray(tournament.speaks)
+          ? tournament.speaks
+              .map((speech) => Number((speech as { adjAVG?: unknown }).adjAVG))
+              .filter(Number.isFinite)
+          : [],
+      );
+      const averageSpeakerPoints = speakerPoints.length
+        ? Number((speakerPoints.reduce((sum, score) => sum + score, 0) / speakerPoints.length).toFixed(2))
+        : 0;
+      const events = tournaments.map((tournament, index) => {
+        const [eventPrelimWins, eventPrelimLosses] = numberPair(tournament.prelimRecord);
+        const [eventBreakWins, eventBreakLosses] = numberPair(tournament.breakRecord);
+        return {
+          id: `tabroom-${index}-${String(tournament.name ?? "event").replace(/\W+/g, "-").toLowerCase()}`,
+          name: String(tournament.name ?? "Tabroom tournament"),
+          date: startedAt,
+          result: `${eventPrelimWins + eventBreakWins}-${eventPrelimLosses + eventBreakLosses}`,
+          sourceUrl: input.profileUrl || "https://www.tabroom.com/",
+        };
+      });
+      const stats = {
+        wins,
+        losses,
+        averageSpeakerPoints,
+        otrScore: Number(team.otrScore) || 0,
+        goldBids: Number(team.goldBids) || 0,
+        silverBids: Number(team.silverBids) || 0,
+      };
+
+      await Promise.all([
+        linkRef.set({
+          userId: uid,
+          ...input,
+          teamId: typeof team.id === "string" ? team.id : "",
+          status: "linked",
+          lastSyncedAt: startedAt,
+        }, { merge: true }),
+        importRef.set({
+          userId: uid,
+          status: "success",
+          startedAt,
+          lastSuccessfulAt: startedAt,
+          errorMessage: FieldValue.delete(),
+          events,
+          stats,
+        }, { merge: true }),
+        db.doc(`userStats/stats-${uid}`).set({
+          userId: uid,
+          wins,
+          losses,
+          averageScore: averageSpeakerPoints,
+          winRate: wins + losses ? Math.round((wins / (wins + losses)) * 100) : 0,
+          totalRounds: wins + losses,
+          tabroomSyncedAt: startedAt,
+        }, { merge: true }),
+      ]);
+
+      return { events, stats };
+    } catch (error) {
+      const message = error instanceof HttpsError ? error.message : getErrorMessage(error);
+      await Promise.all([
+        linkRef.set({ status: "error" }, { merge: true }),
+        importRef.set({ status: "error", errorMessage: message }, { merge: true }),
+      ]);
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("unavailable", `Unable to sync Tabroom: ${message}`);
+    }
   },
 );

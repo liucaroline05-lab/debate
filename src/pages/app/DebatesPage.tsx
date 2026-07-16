@@ -1,15 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Bookmark,
   Check,
+  Clock3,
+  Eye,
   Lock,
   MessageCircle,
+  Mic2,
+  Play,
   Send,
   Share2,
   ThumbsDown,
   ThumbsUp,
-  Upload,
   X,
 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
@@ -22,6 +25,7 @@ import {
   createPrivateDebate,
   incrementDebateShareCount,
   joinDebateByInviteCode,
+  markDebateChatRead,
   submitDebateTurn,
   toggleDebateReaction,
 } from "@/features/debates/debateService";
@@ -30,10 +34,12 @@ import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollecti
 import { formatDate, formatDateTime } from "@/lib/date";
 import type {
   DebateComment,
+  DebateChatRead,
   DebateMatchRequest,
   DebateMessage,
   DebateReaction,
   DebateThread,
+  DebateTurn,
 } from "@/types/models";
 
 type DebateTab = "my-debates" | "open-challenges" | "spectate" | "completed";
@@ -49,15 +55,77 @@ const tabs: Array<{ id: DebateTab; label: string }> = [
 const EMPTY_MESSAGES: DebateMessage[] = [];
 const EMPTY_COMMENTS: DebateComment[] = [];
 const EMPTY_REACTIONS: DebateReaction[] = [];
+const EMPTY_CHAT_READS: DebateChatRead[] = [];
 
-const debateFormats: DebateMatchRequest["format"][] = [
-  "Lincoln-Douglas",
-  "Public Forum",
-  "Policy",
-  "Async",
-];
+interface DebateFormatPreset {
+  speechTimeLimit: string;
+  rounds: number;
+  summary: string;
+  turns: Array<{ code: string; title: string; side: "Aff" | "Neg" }>;
+}
 
-const speechTimeLimits = ["3 minutes", "4 minutes", "5 minutes", "6 minutes", "8 minutes"];
+const debateFormatPresets: Record<DebateMatchRequest["format"], DebateFormatPreset> = {
+  "Lincoln-Douglas": {
+    speechTimeLimit: "6 minutes",
+    rounds: 5,
+    summary: "AC 6m · NC 7m · 1AR 4m · NR 6m · 2AR 3m",
+    turns: [
+      { code: "AC", title: "Affirmative Constructive", side: "Aff" },
+      { code: "NC", title: "Negative Constructive", side: "Neg" },
+      { code: "1AR", title: "First Affirmative Rebuttal", side: "Aff" },
+      { code: "NR", title: "Negative Rebuttal", side: "Neg" },
+      { code: "2AR", title: "Second Affirmative Rebuttal", side: "Aff" },
+    ],
+  },
+  "Public Forum": {
+    speechTimeLimit: "4 minutes",
+    rounds: 8,
+    summary: "Constructives 4m · Rebuttals 4m · Summaries 3m · Final Focus 2m",
+    turns: [
+      { code: "A1", title: "Affirmative Constructive", side: "Aff" },
+      { code: "N1", title: "Negative Constructive", side: "Neg" },
+      { code: "A2", title: "Affirmative Rebuttal", side: "Aff" },
+      { code: "N2", title: "Negative Rebuttal", side: "Neg" },
+      { code: "AS", title: "Affirmative Summary", side: "Aff" },
+      { code: "NS", title: "Negative Summary", side: "Neg" },
+      { code: "AFF", title: "Affirmative Final Focus", side: "Aff" },
+      { code: "NFF", title: "Negative Final Focus", side: "Neg" },
+    ],
+  },
+  Policy: {
+    speechTimeLimit: "8 minutes",
+    rounds: 8,
+    summary: "Constructives 8m · Rebuttals 5m",
+    turns: [
+      { code: "1AC", title: "First Affirmative Constructive", side: "Aff" },
+      { code: "1NC", title: "First Negative Constructive", side: "Neg" },
+      { code: "2AC", title: "Second Affirmative Constructive", side: "Aff" },
+      { code: "2NC", title: "Second Negative Constructive", side: "Neg" },
+      { code: "1NR", title: "First Negative Rebuttal", side: "Neg" },
+      { code: "1AR", title: "First Affirmative Rebuttal", side: "Aff" },
+      { code: "2NR", title: "Second Negative Rebuttal", side: "Neg" },
+      { code: "2AR", title: "Second Affirmative Rebuttal", side: "Aff" },
+    ],
+  },
+  "World Schools": {
+    speechTimeLimit: "8 minutes",
+    rounds: 8,
+    summary: "Six substantive speeches 8m · Two replies 4m",
+    turns: [
+      { code: "A1", title: "First Proposition Speech", side: "Aff" },
+      { code: "N1", title: "First Opposition Speech", side: "Neg" },
+      { code: "A2", title: "Second Proposition Speech", side: "Aff" },
+      { code: "N2", title: "Second Opposition Speech", side: "Neg" },
+      { code: "A3", title: "Third Proposition Speech", side: "Aff" },
+      { code: "N3", title: "Third Opposition Speech", side: "Neg" },
+      { code: "NR", title: "Opposition Reply", side: "Neg" },
+      { code: "AR", title: "Proposition Reply", side: "Aff" },
+    ],
+  },
+};
+
+const debateFormats = Object.keys(debateFormatPresets) as DebateMatchRequest["format"][];
+const speechTimeLimits = [...new Set(Object.values(debateFormatPresets).map((preset) => preset.speechTimeLimit))];
 
 const safeInitial = (value?: string | null) =>
   value?.trim()?.charAt(0).toUpperCase() || "D";
@@ -80,6 +148,28 @@ const shortTime = (value: string) =>
     month: "short",
     day: "numeric",
   });
+
+const DEFAULT_TURN_LABELS = [
+  { code: "1AC", title: "Affirmative Constructive", side: "Aff" as const },
+  { code: "1NC", title: "Negative Constructive", side: "Neg" as const },
+  { code: "1AR", title: "Affirmative Rebuttal", side: "Aff" as const },
+  { code: "2NR", title: "Negative Rebuttal", side: "Neg" as const },
+];
+
+const turnLabel = (format: string, index: number, turn?: DebateTurn) => {
+  const preset = debateFormatPresets[format as DebateMatchRequest["format"]];
+  const fallback = preset?.turns[index] ?? DEFAULT_TURN_LABELS[index] ?? {
+    code: `${Math.floor(index / 2) + 1}${index % 2 === 0 ? "A" : "N"}`,
+    title: `${index % 2 === 0 ? "Affirmative" : "Negative"} Speech`,
+    side: index % 2 === 0 ? ("Aff" as const) : ("Neg" as const),
+  };
+
+  return {
+    code: turn?.code ?? fallback.code,
+    title: turn?.title ?? fallback.title,
+    side: turn?.side ?? fallback.side,
+  };
+};
 
 export const DebatesPage = () => {
   const { currentUser } = useAuth();
@@ -104,10 +194,10 @@ export const DebatesPage = () => {
   const [debateForm, setDebateForm] = useState({
     topic: "",
     format: "Lincoln-Douglas" as DebateMatchRequest["format"],
-    speechTimeLimit: "5 minutes",
+    speechTimeLimit: debateFormatPresets["Lincoln-Douglas"].speechTimeLimit,
     visibility: "public" as "public" | "private",
     preferredSide: "Aff" as "Aff" | "Neg" | "Either",
-    rounds: 4,
+    rounds: debateFormatPresets["Lincoln-Douglas"].rounds,
     responseWindowHours: 48,
     commentsEnabled: true,
   });
@@ -125,6 +215,10 @@ export const DebatesPage = () => {
   const reactionState = useSeededFirestoreCollection<DebateReaction>(
     "debateReactions",
     EMPTY_REACTIONS,
+  );
+  const chatReadState = useSeededFirestoreCollection<DebateChatRead>(
+    "debateChatReads",
+    EMPTY_CHAT_READS,
   );
 
   const myReactions = useMemo(() => {
@@ -197,19 +291,14 @@ export const DebatesPage = () => {
     return !isParticipant(debate);
   };
 
-  const latestOpponentSpeech = (debate: DebateThread) =>
-    [...(debate.turns ?? [])]
-      .reverse()
-      .find((turn) => turn.authorId !== user.id && Boolean(turn.speechUrl));
-
   const resetForm = () => {
     setDebateForm({
       topic: "",
       format: "Lincoln-Douglas",
-      speechTimeLimit: "5 minutes",
+      speechTimeLimit: debateFormatPresets["Lincoln-Douglas"].speechTimeLimit,
       visibility: "public",
       preferredSide: "Aff",
-      rounds: 4,
+      rounds: debateFormatPresets["Lincoln-Douglas"].rounds,
       responseWindowHours: 48,
       commentsEnabled: true,
     });
@@ -484,78 +573,98 @@ export const DebatesPage = () => {
     );
   };
 
-  const renderMyDebateAction = (debate: DebateThread) => {
+  const renderDebateTurns = (debate: DebateThread) => {
     if (debate.status === "Awaiting Opponent") {
       return (
-        <div className="debate-turn-action is-waiting">
-          <span className="debate-status-badge">Awaiting opponent</span>
-          {debate.inviteCode ? (
+        <div className="debate-awaiting-card">
+          <div className="debate-awaiting-icon"><Clock3 size={20} /></div>
+          <div>
+            <strong>Waiting for an opponent to join</strong>
             <span className="meta-line">
-              Invite code: <strong>{debate.inviteCode}</strong>
+              {debate.inviteCode ? <>Share invite code <strong>{debate.inviteCode}</strong></> : "Your challenge is ready to be accepted."}
             </span>
-          ) : null}
+          </div>
         </div>
       );
     }
 
-    if (debate.status === "Completed") {
+    if (debate.status === "Completed" && (debate.turns?.length ?? 0) === 0) {
       return (
-        <div className="debate-turn-action">
-          <span className="debate-status-badge is-complete">
-            Completed{debate.winner ? ` • ${debate.winner} won` : ""}
-          </span>
-          <Link className="btn btn-ghost" to={`/app/debates/${debate.id}`}>
-            Review debate
-          </Link>
+        <div className="debate-completed-summary">
+          <Check size={20} />
+          <div>
+            <strong>All speeches submitted</strong>
+            <span className="meta-line">
+              {debate.winner ? `${debate.winner === "Aff" ? "Affirmative" : "Negative"} won this debate.` : "This debate is ready to review."}
+            </span>
+          </div>
         </div>
       );
     }
 
-    if (isMyTurn(debate, user.id)) {
-      const opponentSpeech = latestOpponentSpeech(debate);
-      const busy = busyDebateId === debate.id;
-
-      return (
-        <div className="debate-turn-action is-your-turn">
-          <span className="debate-status-badge is-current">Your turn — reply</span>
-          {opponentSpeech ? (
-            <div className="debate-speech-player">
-              <span className="meta-line">Latest opponent speech</span>
-              <audio controls preload="none" src={opponentSpeech.speechUrl} />
-              <a href={opponentSpeech.speechUrl} target="_blank" rel="noreferrer">
-                Open speech
-              </a>
-            </div>
-          ) : (
-            <span className="meta-line">No opponent speech yet — you may open.</span>
-          )}
-          <label className="btn btn-primary debate-upload">
-            <Upload size={16} /> {busy ? "Uploading..." : "Upload your speech"}
-            <input
-              type="file"
-              accept="audio/*,video/*"
-              disabled={busy}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                void handleTurnUpload(debate, file);
-              }}
-            />
-          </label>
-        </div>
-      );
-    }
+    const visibleTurnCount = debate.status === "Completed"
+      ? debate.turns.length
+      : Math.max(debate.totalRounds, debate.turns?.length ?? 0);
+    const busy = busyDebateId === debate.id;
 
     return (
-      <div className="debate-turn-action is-waiting">
-        <span className="debate-status-badge">Waiting on opponent</span>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => setChatDebateId(debate.id)}
-        >
-          <MessageCircle size={16} /> Chat
-        </button>
+      <div className="debate-entry-turns" aria-label="Debate speech sequence">
+        {Array.from({ length: visibleTurnCount }, (_, index) => {
+          const turn = debate.turns?.[index];
+          const label = turnLabel(debate.format, index, turn);
+          const isSubmitted = Boolean(turn);
+          const isCurrent = !isSubmitted && debate.status === "Active" && index === (debate.turns?.length ?? 0);
+          const isCurrentUser = isCurrent && isMyTurn(debate, user.id);
+          const sideClass = label.side === "Aff" ? "is-aff" : "is-neg";
+
+          return (
+            <div
+              key={turn?.id ?? `${debate.id}-turn-${index}`}
+              className={`debate-entry-turn ${sideClass}${isCurrent ? " is-current" : ""}${!isSubmitted && !isCurrent ? " is-locked" : ""}`}
+            >
+              <span className={`turn-badge ${sideClass}`}>{label.side.toUpperCase()}</span>
+              <div className="turn-main">
+                <strong><span className="turn-code">{label.code}</span> — {label.title}</strong>
+                {turn ? (
+                  <span className="meta-line">
+                    {turn.durationLabel ? `${turn.durationLabel} · ` : ""}
+                    {turn.submittedAt ? `Submitted ${formatDateTime(turn.submittedAt)}` : turn.summary}
+                  </span>
+                ) : isCurrentUser ? (
+                  <span className="meta-line is-current-copy">Your turn to respond · {debate.speechTimeLimit ?? "5 minutes"} time limit</span>
+                ) : isCurrent ? (
+                  <span className="meta-line">Waiting for {label.side === "Aff" ? debate.affirmative.name : debate.negative.name} to submit</span>
+                ) : (
+                  <span className="meta-line">Unlocks after the previous speech is submitted</span>
+                )}
+              </div>
+              <div className="turn-actions">
+                {turn?.speechUrl ? (
+                  <a className={`debate-play-button ${sideClass}`} href={turn.speechUrl} target="_blank" rel="noreferrer" aria-label={`Play ${label.title}`}>
+                    <Play size={17} fill="currentColor" />
+                  </a>
+                ) : isCurrentUser ? (
+                  <label className="btn btn-primary debate-upload debate-record-button">
+                    <Mic2 size={16} /> {busy ? "Uploading..." : "Record / Upload"}
+                    <input
+                      type="file"
+                      accept="audio/*,video/*"
+                      disabled={busy}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        void handleTurnUpload(debate, file);
+                      }}
+                    />
+                  </label>
+                ) : (
+                  <Lock className="debate-lock-icon" size={18} aria-label={isCurrent ? "Waiting" : "Locked"} />
+                )}
+                {isSubmitted ? <span className="debate-submitted-badge"><Check size={14} /> Submitted</span> : null}
+              </div>
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -563,6 +672,21 @@ export const DebatesPage = () => {
   const activeChatDebate = chatDebateId
     ? debateState.data.find((debate) => debate.id === chatDebateId)
     : undefined;
+
+  const unreadChatCount = (debateId: string) => {
+    const lastReadAt = chatReadState.data.find(
+      (read) => read.debateId === debateId && read.userId === user.id,
+    )?.lastReadAt ?? "";
+    return debateMessages(debateId).filter(
+      (message) => message.authorId !== user.id && message.createdAt > lastReadAt,
+    ).length;
+  };
+
+  const activeUnreadCount = activeChatDebate ? unreadChatCount(activeChatDebate.id) : 0;
+  useEffect(() => {
+    if (!activeChatDebate || activeUnreadCount === 0) return;
+    void markDebateChatRead(activeChatDebate.id, user.id);
+  }, [activeChatDebate, activeUnreadCount, user.id]);
 
   return (
     <>
@@ -595,6 +719,7 @@ export const DebatesPage = () => {
         <div className="debate-join-row">
           <input
             aria-label="Join with invite code"
+            className="debate-invite-input"
             value={joinCode}
             onChange={(event) => setJoinCode(event.target.value)}
             placeholder="Have an invite code? Enter it to join"
@@ -604,6 +729,74 @@ export const DebatesPage = () => {
           </button>
         </div>
       </header>
+
+      {isModalOpen ? (
+        <section className="app-card debate-inline-composer composer-slide-down" aria-label="Create a new debate">
+          <div className="row-between">
+            <div>
+              <p className="eyebrow">New async debate</p>
+              <h2 className="card-title">Create a new debate</h2>
+            </div>
+            <button type="button" className="forum-icon-button" aria-label="Close debate form" onClick={() => setIsModalOpen(false)}>
+              <X size={18} />
+            </button>
+          </div>
+          <div className="form-grid" style={{ marginTop: "1rem" }}>
+            <div className="form-field full">
+              <label htmlFor="inlineDebateTopic">Topic</label>
+              <input id="inlineDebateTopic" value={debateForm.topic} onChange={(event) => setDebateForm((current) => ({ ...current, topic: event.target.value }))} placeholder="Resolved: ..." autoFocus />
+            </div>
+            <div className="form-field">
+              <label htmlFor="inlineDebateType">Debate type</label>
+              <select
+                id="inlineDebateType"
+                value={debateForm.format}
+                onChange={(event) => {
+                  const format = event.target.value as DebateMatchRequest["format"];
+                  const preset = debateFormatPresets[format];
+                  setDebateForm((current) => ({
+                    ...current,
+                    format,
+                    speechTimeLimit: preset.speechTimeLimit,
+                    rounds: preset.rounds,
+                  }));
+                }}
+              >
+                {debateFormats.map((format) => <option key={format}>{format}</option>)}
+              </select>
+            </div>
+            <div className="form-field">
+              <label htmlFor="inlineDebateTime">Format and limits</label>
+              <input id="inlineDebateTime" value={debateFormatPresets[debateForm.format].summary} readOnly />
+              <span className="meta-line">Sequence and speech limits are set automatically.</span>
+            </div>
+            <div className="form-field">
+              <label htmlFor="inlineDebateVisibility">Visibility</label>
+              <select id="inlineDebateVisibility" value={debateForm.visibility} onChange={(event) => setDebateForm((current) => ({ ...current, visibility: event.target.value as "public" | "private" }))}>
+                <option value="public">Public — open challenge</option>
+                <option value="private">Private — invite only</option>
+              </select>
+            </div>
+            <div className="form-field">
+              <label htmlFor="inlineDebateSide">Preferred side</label>
+              <select id="inlineDebateSide" value={debateForm.preferredSide} onChange={(event) => setDebateForm((current) => ({ ...current, preferredSide: event.target.value as "Aff" | "Neg" | "Either" }))}>
+                <option value="Aff">Affirmative</option><option value="Neg">Negative</option><option value="Either">Either side</option>
+              </select>
+            </div>
+            <label className="settings-toggle-row form-field full" htmlFor="inlineDebateComments">
+              <span><strong>Allow spectator comments</strong><span className="meta-line">Participants can read comments after the debate ends.</span></span>
+              <input id="inlineDebateComments" type="checkbox" checked={debateForm.commentsEnabled} onChange={(event) => setDebateForm((current) => ({ ...current, commentsEnabled: event.target.checked }))} />
+            </label>
+          </div>
+          <div className="forum-composer-footer">
+            <span className="meta-line">{modalMessage || (debateForm.visibility === "private" ? "A shareable invite code is generated when you create the debate." : "Your debate will appear in Open Challenges.")}</span>
+            <div className="button-row">
+              <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={() => void submitNewDebate()}>Create Debate</button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {banner ? (
         <div className="debate-banner" role="status">
@@ -654,13 +847,38 @@ export const DebatesPage = () => {
                     <h2 className="debate-topic">{debate.topic}</h2>
                     <span className="pill debate-format-pill">{debate.format}</span>
                   </div>
-                  <span className="meta-line">
-                    Round {debate.currentRound} of {debate.totalRounds}
-                  </span>
+                  <div className="debate-entry-status">
+                    <span className={`debate-status-badge${isMyTurn(debate, user.id) ? " is-current" : debate.status === "Completed" ? " is-complete" : ""}`}>
+                      {isMyTurn(debate, user.id) ? "Your turn — reply" : debate.status === "Active" ? "Waiting on opponent" : debate.status}
+                    </span>
+                    <span className="meta-line">Round {debate.currentRound} of {debate.totalRounds}</span>
+                  </div>
                 </div>
 
                 {renderMatchup(debate)}
-                {renderMyDebateAction(debate)}
+                {renderDebateTurns(debate)}
+
+                <div className="debate-entry-footer">
+                  <div className="debate-entry-meta">
+                    <span><Clock3 size={15} /> Deadline {formatDateTime(debate.nextDeadline)}</span>
+                    <span><Eye size={15} /> {debate.spectators} spectators</span>
+                  </div>
+                  <div className="button-row">
+                    {(debate.participantIds?.length ?? 0) > 1 ? (
+                      <button type="button" className="btn btn-ghost debate-chat-button" onClick={() => setChatDebateId(debate.id)}>
+                        <MessageCircle size={16} /> Chat
+                        {unreadChatCount(debate.id) > 0 ? (
+                          <span className="debate-chat-badge" aria-label={`${unreadChatCount(debate.id)} unread messages`}>
+                            {unreadChatCount(debate.id) > 99 ? "99+" : unreadChatCount(debate.id)}
+                          </span>
+                        ) : null}
+                      </button>
+                    ) : null}
+                    <Link className="btn btn-secondary" to={`/app/debates/${debate.id}`}>
+                      {debate.status === "Completed" ? "Review debate" : "View debate"}
+                    </Link>
+                  </div>
+                </div>
 
                 {canViewComments(debate) ? (
                   <>
@@ -857,7 +1075,7 @@ export const DebatesPage = () => {
         </section>
       ) : null}
 
-      {isModalOpen ? (
+      {false && isModalOpen ? (
         <div className="debate-modal-overlay" role="dialog" aria-modal="true" aria-label="Create a new debate">
           <div className="debate-modal">
             <div className="row-between">

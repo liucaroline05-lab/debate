@@ -3,13 +3,22 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   getDoc,
+  query,
   runTransaction,
   setDoc,
   updateDoc,
+  where,
 } from "firebase/firestore";
-import { firestore } from "@/lib/firebase";
-import type { CommunityPost, PostComment } from "@/types/models";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { firestore, storage } from "@/lib/firebase";
+import type {
+  CommunityAttachment,
+  CommunityChannel,
+  CommunityPost,
+  PostComment,
+} from "@/types/models";
 
 interface NewPostInput {
   channelId: string;
@@ -20,7 +29,63 @@ interface NewPostInput {
   authorId: string;
   author: string;
   authorRole?: string;
+  files?: File[];
 }
+
+const maxPostFileSize = 100 * 1024 * 1024;
+
+const getAttachmentKind = (contentType: string): CommunityAttachment["kind"] => {
+  if (contentType.startsWith("image/")) return "image";
+  if (contentType.startsWith("video/")) return "video";
+  if (contentType.startsWith("audio/")) return "audio";
+  if (
+    contentType === "application/pdf" ||
+    contentType.includes("word") ||
+    contentType.includes("document") ||
+    contentType.includes("presentation") ||
+    contentType.includes("sheet") ||
+    contentType.startsWith("text/")
+  ) {
+    return "document";
+  }
+  return "file";
+};
+
+const safeFileName = (fileName: string) =>
+  fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-120) || "attachment";
+
+const uploadPostAttachments = async (
+  authorId: string,
+  files: File[],
+): Promise<CommunityAttachment[]> => {
+  if (files.length === 0) return [];
+  if (!storage) throw new Error("Firebase Storage is not configured.");
+  const configuredStorage = storage;
+
+  return Promise.all(
+    files.map(async (file, index) => {
+      if (file.size > maxPostFileSize) {
+        throw new Error(`${file.name} is larger than the 100 MB upload limit.`);
+      }
+
+      const storagePath = `posts/${authorId}/${Date.now()}-${index}-${safeFileName(file.name)}`;
+      const assetRef = ref(configuredStorage, storagePath);
+      await uploadBytes(assetRef, file, {
+        contentType: file.type || "application/octet-stream",
+        customMetadata: { authorId, originalName: file.name },
+      });
+
+      return {
+        name: file.name,
+        url: await getDownloadURL(assetRef),
+        storagePath,
+        contentType: file.type || "application/octet-stream",
+        size: file.size,
+        kind: getAttachmentKind(file.type),
+      };
+    }),
+  );
+};
 
 export const createPost = async (input: NewPostInput) => {
   if (!firestore) {
@@ -28,6 +93,7 @@ export const createPost = async (input: NewPostInput) => {
   }
 
   const createdAt = new Date().toISOString();
+  const attachments = await uploadPostAttachments(input.authorId, input.files ?? []);
 
   await addDoc(collection(firestore, "posts"), {
     channelId: input.channelId,
@@ -46,7 +112,83 @@ export const createPost = async (input: NewPostInput) => {
     dislikeCount: 0,
     favoriteCount: 0,
     shareCount: 0,
+    attachments,
   } satisfies Omit<CommunityPost, "id">);
+};
+
+interface NewPracticeGroupInput {
+  name: string;
+  description: string;
+  visibility: "public" | "private";
+  creatorId: string;
+}
+
+const generateInviteCode = () => {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const values = new Uint32Array(8);
+  crypto.getRandomValues(values);
+  return Array.from(values, (value) => alphabet[value % alphabet.length]).join("");
+};
+
+export const createPracticeGroup = async (input: NewPracticeGroupInput) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  if (!input.name.trim()) throw new Error("Add a group name before creating it.");
+
+  const inviteCode = input.visibility === "private" ? generateInviteCode() : undefined;
+  const createdAt = new Date().toISOString();
+  const channel: Omit<CommunityChannel, "id"> = {
+    name: input.name.trim(),
+    summary: input.description.trim(),
+    followers: 1,
+    memberCount: 1,
+    topicTags: ["Practice"],
+    shortCode: input.name.trim().slice(0, 2).toUpperCase(),
+    category: "Practice Group",
+    activityLabel: "Created just now",
+    accent: "sage",
+    visibility: input.visibility,
+    creatorId: input.creatorId,
+    inviteCode,
+    createdAt,
+  };
+
+  const channelRef = await addDoc(collection(firestore, "channels"), channel);
+  await setDoc(doc(firestore, "channelMemberships", `${channelRef.id}-${input.creatorId}`), {
+    channelId: channelRef.id,
+    userId: input.creatorId,
+    role: "Moderator",
+    lastActiveAt: createdAt,
+  });
+
+  return { id: channelRef.id, inviteCode };
+};
+
+export const joinPracticeGroupByCode = async (inviteCode: string, userId: string) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const normalizedCode = inviteCode.trim().toUpperCase();
+  if (!normalizedCode) throw new Error("Enter an invite code first.");
+
+  const snapshot = await getDocs(
+    query(collection(firestore, "channels"), where("inviteCode", "==", normalizedCode)),
+  );
+  const channel = snapshot.docs[0];
+  if (!channel) throw new Error("No practice group uses that invite code.");
+
+  const membershipRef = doc(firestore, "channelMemberships", `${channel.id}-${userId}`);
+  if ((await getDoc(membershipRef)).exists()) return channel.data().name as string;
+
+  await setDoc(membershipRef, {
+    channelId: channel.id,
+    userId,
+    role: "Member",
+    lastActiveAt: new Date().toISOString(),
+  });
+  await updateDoc(channel.ref, {
+    memberCount: ((channel.data().memberCount as number | undefined) ?? 0) + 1,
+    followers: ((channel.data().followers as number | undefined) ?? 0) + 1,
+    activityLabel: "New member joined",
+  });
+  return channel.data().name as string;
 };
 
 export const updatePostContent = async (

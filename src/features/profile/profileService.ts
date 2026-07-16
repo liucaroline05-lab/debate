@@ -1,7 +1,7 @@
 import {
   deleteDoc,
   doc,
-  runTransaction,
+  getDoc,
   setDoc,
   updateDoc,
 } from "firebase/firestore";
@@ -94,77 +94,57 @@ export const toggleFollowUser = async (
   }
 
   const followRef = doc(firestore, "follows", `${followerId}-${followingId}`);
-  const followerRef = doc(firestore, "users", followerId);
-  const followingRef = doc(firestore, "users", followingId);
+  const followSnapshot = await getDoc(followRef);
 
-  await runTransaction(firestore, async (transaction) => {
-    const followSnapshot = await transaction.get(followRef);
-    const followerSnapshot = await transaction.get(followerRef);
-    const followingSnapshot = await transaction.get(followingRef);
+  // Follower counters are derived from the follows collection in the UI. The
+  // previous transaction also updated the target user's profile, which is
+  // correctly rejected by the users/{userId} ownership rule.
+  if (followSnapshot.exists()) {
+    await deleteDoc(followRef);
+    return false;
+  }
 
-    const followerCount =
-      (followerSnapshot.data()?.followingCount as number | undefined) ?? 0;
-    const followingCount =
-      (followingSnapshot.data()?.followersCount as number | undefined) ?? 0;
-
-    if (followSnapshot.exists()) {
-      transaction.delete(followRef);
-      transaction.update(followerRef, {
-        followingCount: Math.max(0, followerCount - 1),
-      });
-      transaction.update(followingRef, {
-        followersCount: Math.max(0, followingCount - 1),
-      });
-      return;
-    }
-
-    transaction.set(followRef, {
-      followerId,
-      followingId,
-      createdAt: new Date().toISOString(),
-    });
-    transaction.update(followerRef, {
-      followingCount: followerCount + 1,
-    });
-    transaction.update(followingRef, {
-      followersCount: followingCount + 1,
-    });
+  await setDoc(followRef, {
+    followerId,
+    followingId,
+    createdAt: new Date().toISOString(),
   });
+  return true;
 };
 
 export const requestTabroomSync = async (
-  userId: string,
   profileUrl: string,
   handle: string,
+  options: {
+    format: "PF" | "LD" | "CX";
+    circuit: string;
+    year: string;
+  },
 ) => {
-  if (!firestore) {
-    throw new Error("Firestore is not configured.");
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  if (!profileUrl.trim() || !handle.trim()) {
+    throw new Error("Add both your Tabroom profile URL and debater/team name.");
   }
 
-  const timestamp = new Date().toISOString();
-
-  await setDoc(
-    doc(firestore, "tabroomLinks", `tabroom-link-${userId}`),
+  const sync = httpsCallable<
     {
-      userId,
-      profileUrl,
-      handle,
-      status: "syncing",
-      lastSyncedAt: timestamp,
+      profileUrl: string;
+      handle: string;
+      format: "PF" | "LD" | "CX";
+      circuit: string;
+      year: string;
     },
-    { merge: true },
-  );
+    { events: unknown[]; stats: unknown }
+  >(functions, "syncTabroom");
 
-  await setDoc(
-    doc(firestore, "tabroomImports", `tabroom-import-${userId}`),
-    {
-      userId,
-      status: "queued",
-      startedAt: timestamp,
-      events: [],
-    },
-    { merge: true },
-  );
+  try {
+    return (await sync({ profileUrl, handle, ...options })).data;
+  } catch (error) {
+    if (error instanceof FirebaseError) {
+      throw new Error(error.message.replace(/^Firebase:\s*/i, ""));
+    }
+    throw error;
+  }
 };
 
 export const clearTabroomLink = async (userId: string) => {
