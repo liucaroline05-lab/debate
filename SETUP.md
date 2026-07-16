@@ -19,6 +19,11 @@
 - Storage path pattern: `speeches/<timestamp>-<filename>`
 - Optional emulator toggle: set `VITE_USE_FIREBASE_EMULATORS=true`
 
+## Tabroom session linking
+- Create a high-entropy secret of at least 32 characters and run `firebase functions:secrets:set TABROOM_SESSION_ENCRYPTION_KEY`.
+- Deploy Functions and Firestore rules after setting the secret: `firebase deploy --only functions,firestore:rules`.
+- Tabroom passwords are sent only to the link callable and are never stored. The resulting `TabroomToken` cookie is encrypted with AES-256-GCM in `tabroomSessions/{userId}`, which client Firestore rules deny access to.
+
 ## Local Storage CORS
 - If browser uploads fail from `http://localhost:5173` with a CORS preflight error, apply the bucket CORS policy in [firebase.storage.cors.json](/Users/carolineliu/Documents/GitHub/debate/firebase.storage.cors.json).
 - Example command: `gcloud storage buckets update gs://debate-b4abe.firebasestorage.app --cors-file=firebase.storage.cors.json`

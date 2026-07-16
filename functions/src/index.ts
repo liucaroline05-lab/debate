@@ -1,4 +1,10 @@
-import { randomUUID } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+  randomUUID,
+} from "node:crypto";
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
@@ -11,6 +17,7 @@ initializeApp();
 setGlobalOptions({ invoker: "public", region: "us-central1" });
 
 const openAiApiKey = defineSecret("OPENAI_API_KEY");
+const tabroomSessionEncryptionKey = defineSecret("TABROOM_SESSION_ENCRYPTION_KEY");
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxImageSizeBytes = 5 * 1024 * 1024;
 
@@ -24,31 +31,16 @@ interface UpdateDisplayNameRequest {
   displayName?: unknown;
 }
 
-interface SyncTabroomRequest {
-  profileUrl?: unknown;
-  handle?: unknown;
-  format?: unknown;
-  circuit?: unknown;
-  year?: unknown;
+interface LinkTabroomSessionRequest {
+  email?: unknown;
+  password?: unknown;
 }
 
-interface DebateLandTournament {
-  name?: unknown;
-  prelimRecord?: unknown;
-  breakRecord?: unknown;
-  speaks?: unknown;
-  goldBid?: unknown;
-  silverBid?: unknown;
-}
-
-interface DebateLandTeam {
-  id?: unknown;
-  otrScore?: unknown;
-  goldBids?: unknown;
-  silverBids?: unknown;
-  prelimRecord?: unknown;
-  breakRecord?: unknown;
-  tournaments?: unknown;
+interface EncryptedTabroomSession {
+  ciphertext: string;
+  iv: string;
+  authTag: string;
+  version: 1;
 }
 
 const maxDisplayNameLength = 30;
@@ -135,6 +127,14 @@ const getDisplayNameInput = (data: UpdateDisplayNameRequest) => {
 
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
+
+const getNetworkErrorCode = (error: unknown) => {
+  if (!(error instanceof Error) || typeof error.cause !== "object" || error.cause === null) {
+    return undefined;
+  }
+  const code = (error.cause as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+};
 
 // Condense a moderation result into something readable in Cloud Functions logs:
 // which categories tripped, plus the highest-confidence scores (even for
@@ -319,10 +319,22 @@ export const removeProfilePhoto = onCall(
   },
 );
 
+/* Legacy Debate.land importer retained below for reference while migrating existing data.
 const numberPair = (value: unknown): [number, number] => {
   if (!Array.isArray(value)) return [0, 0];
   return [Number(value[0]) || 0, Number(value[1]) || 0];
 };
+
+const debateLandSupportedYears = new Set(["SY_20_21", "SY_21_22"]);
+
+class DebateLandHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly responseBody: string,
+  ) {
+    super(`Debate.land returned HTTP ${status}.`);
+  }
+}
 
 const tabroomInput = (data: SyncTabroomRequest) => {
   const profileUrl = typeof data.profileUrl === "string" ? data.profileUrl.trim() : "";
@@ -338,10 +350,16 @@ const tabroomInput = (data: SyncTabroomRequest) => {
     throw new HttpsError("invalid-argument", "Choose Public Forum, Lincoln-Douglas, or Policy.");
   }
   if (!/^SY_\d{2}_\d{2}$/.test(year)) {
-    throw new HttpsError("invalid-argument", "Enter a school year such as SY_25_26.");
+    throw new HttpsError("invalid-argument", "Enter a school year such as SY_21_22.");
   }
   if (profileUrl && !/^https:\/\/(www\.)?tabroom\.com\//i.test(profileUrl)) {
     throw new HttpsError("invalid-argument", "Enter a valid tabroom.com profile URL.");
+  }
+  if (format !== "PF" || circuit.toLowerCase() !== "national" || !debateLandSupportedYears.has(year)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "The Debate.land service only publishes Public Forum / National data for SY_20_21 and SY_21_22. It cannot import current Tabroom seasons.",
+    );
   }
 
   return { profileUrl, handle, format, circuit, year };
@@ -377,7 +395,8 @@ export const syncTabroom = onCall(
         signal: AbortSignal.timeout(20_000),
       });
       if (!response.ok) {
-        throw new Error(`Debate.land returned HTTP ${response.status}.`);
+        const responseBody = (await response.text()).slice(0, 500);
+        throw new DebateLandHttpError(response.status, responseBody);
       }
 
       const payload = await response.json() as unknown;
@@ -455,12 +474,329 @@ export const syncTabroom = onCall(
       return { events, stats };
     } catch (error) {
       const message = error instanceof HttpsError ? error.message : getErrorMessage(error);
+      console.error("Tabroom sync failed", {
+        uid,
+        format: input.format,
+        circuit: input.circuit,
+        year: input.year,
+        upstreamStatus: error instanceof DebateLandHttpError ? error.status : undefined,
+        upstreamResponse: error instanceof DebateLandHttpError ? error.responseBody : undefined,
+        networkCode: getNetworkErrorCode(error),
+        error: message,
+      });
       await Promise.all([
         linkRef.set({ status: "error" }, { merge: true }),
         importRef.set({ status: "error", errorMessage: message }, { merge: true }),
       ]);
       if (error instanceof HttpsError) throw error;
+      if (error instanceof DebateLandHttpError) {
+        if (error.status === 400) {
+          throw new HttpsError(
+            "failed-precondition",
+            `Debate.land rejected this format, circuit, or season.${error.responseBody ? ` ${error.responseBody}` : ""}`,
+          );
+        }
+        if (error.status === 404) {
+          throw new HttpsError("not-found", "The Debate.land query endpoint is unavailable.");
+        }
+        if (error.status === 429) {
+          throw new HttpsError("resource-exhausted", "Debate.land is rate limiting requests. Try again later.");
+        }
+      }
+      if (getNetworkErrorCode(error) === "ENOTFOUND") {
+        throw new HttpsError(
+          "failed-precondition",
+          "The legacy Debate.land host is offline. Current Tabroom account sync requires an authenticated Tabroom connection.",
+        );
+      }
       throw new HttpsError("unavailable", `Unable to sync Tabroom: ${message}`);
     }
+  },
+);
+*/
+
+const tabroomWebBaseUrl = "https://www.tabroom.com";
+const tabroomApiBaseUrl = "https://api.tabroom.com/v1";
+
+interface TabroomProfileSummary {
+  officialUserId: number | null;
+  handle: string;
+  nsdaId: number | null;
+}
+
+const getTabroomSecretKey = () => {
+  const secret = tabroomSessionEncryptionKey.value();
+  if (secret.length < 32) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Tabroom session encryption is not configured. Ask an administrator to set TABROOM_SESSION_ENCRYPTION_KEY.",
+    );
+  }
+  return createHash("sha256").update(secret, "utf8").digest();
+};
+
+const encryptTabroomToken = (token: string): EncryptedTabroomSession => {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", getTabroomSecretKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+
+  return {
+    ciphertext: ciphertext.toString("base64"),
+    iv: iv.toString("base64"),
+    authTag: cipher.getAuthTag().toString("base64"),
+    version: 1,
+  };
+};
+
+const decryptTabroomToken = (session: EncryptedTabroomSession) => {
+  if (session.version !== 1) {
+    throw new Error("Unsupported Tabroom session encryption version.");
+  }
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    getTabroomSecretKey(),
+    Buffer.from(session.iv, "base64"),
+  );
+  decipher.setAuthTag(Buffer.from(session.authTag, "base64"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(session.ciphertext, "base64")),
+    decipher.final(),
+  ]).toString("utf8");
+};
+
+const extractTabroomToken = (response: Response) => {
+  const cookieHeader = response.headers.get("set-cookie") ?? "";
+  const match = cookieHeader.match(/(?:^|[,;]\s*)TabroomToken=([^;,\s]+)/i);
+  return match?.[1] ?? "";
+};
+
+const tabroomCredentials = (data: LinkTabroomSessionRequest) => {
+  const email = typeof data.email === "string" ? data.email.trim() : "";
+  const password = typeof data.password === "string" ? data.password : "";
+
+  if (!/^\S+@\S+\.\S+$/.test(email) || email.length > 254) {
+    throw new HttpsError("invalid-argument", "Enter the email address used for Tabroom.");
+  }
+  if (!password || password.length > 500) {
+    throw new HttpsError("invalid-argument", "Enter your Tabroom password.");
+  }
+  return { email, password };
+};
+
+const loginToTabroom = async (email: string, password: string) => {
+  let response: Response;
+  try {
+    response = await fetch(`${tabroomWebBaseUrl}/user/login/login_save.mhtml`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ username: email, password }),
+      redirect: "manual",
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (error) {
+    console.error("Tabroom login request failed", { networkCode: getNetworkErrorCode(error) });
+    throw new HttpsError("unavailable", "Tabroom could not be reached. Try again shortly.");
+  }
+
+  if (response.status >= 500) {
+    throw new HttpsError("unavailable", "Tabroom is temporarily unavailable.");
+  }
+
+  const token = extractTabroomToken(response);
+  if (!token) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Tabroom rejected those credentials. Check your email and password and try again.",
+    );
+  }
+  return token;
+};
+
+const normalizeTabroomProfile = (value: unknown): TabroomProfileSummary => {
+  const profile = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const id = Number(profile.id);
+  const nsda = Number(profile.nsda);
+  const first = typeof profile.first === "string" ? profile.first.trim() : "";
+  const last = typeof profile.last === "string" ? profile.last.trim() : "";
+  return {
+    officialUserId: Number.isFinite(id) && id > 0 ? id : null,
+    handle: [first, last].filter(Boolean).join(" ") || "Tabroom account",
+    nsdaId: Number.isFinite(nsda) && nsda > 0 ? nsda : null,
+  };
+};
+
+const fetchTabroomProfile = async (token: string) => {
+  let response: Response;
+  try {
+    response = await fetch(`${tabroomApiBaseUrl}/user/profile`, {
+      headers: {
+        accept: "application/json",
+        cookie: `TabroomToken=${token}`,
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (error) {
+    console.error("Tabroom profile request failed", { networkCode: getNetworkErrorCode(error) });
+    throw new HttpsError("unavailable", "Tabroom could not be reached. Try again shortly.");
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Your Tabroom session has expired. Link your account again.",
+    );
+  }
+  if (!response.ok) {
+    throw new HttpsError("unavailable", "Tabroom could not validate this account.");
+  }
+
+  return normalizeTabroomProfile(await response.json() as unknown);
+};
+
+const tabroomProfileFields = (profile: TabroomProfileSummary) => ({
+  handle: profile.handle,
+  ...(profile.officialUserId ? { officialUserId: profile.officialUserId } : {}),
+  ...(profile.nsdaId ? { nsdaId: profile.nsdaId } : {}),
+});
+
+export const linkTabroomSession = onCall(
+  {
+    cors: true,
+    invoker: "public",
+    timeoutSeconds: 30,
+    secrets: [tabroomSessionEncryptionKey],
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in before linking Tabroom.");
+    }
+
+    const { email, password } = tabroomCredentials(request.data as LinkTabroomSessionRequest);
+    const token = await loginToTabroom(email, password);
+    const profile = await fetchTabroomProfile(token);
+    const encryptedSession = encryptTabroomToken(token);
+    const uid = request.auth.uid;
+    const linkedAt = new Date().toISOString();
+    const db = getFirestore();
+
+    await Promise.all([
+      db.doc(`tabroomSessions/${uid}`).set({
+        userId: uid,
+        ...encryptedSession,
+        createdAt: linkedAt,
+        validatedAt: linkedAt,
+      }),
+      db.doc(`tabroomLinks/tabroom-link-${uid}`).set({
+        userId: uid,
+        provider: "tabroom",
+        status: "linked",
+        linkedAt,
+        lastSyncedAt: linkedAt,
+        ...tabroomProfileFields(profile),
+      }, { merge: true }),
+      db.doc(`tabroomImports/tabroom-import-${uid}`).set({
+        userId: uid,
+        status: "success",
+        startedAt: linkedAt,
+        lastSuccessfulAt: linkedAt,
+        source: "official-profile",
+        errorMessage: FieldValue.delete(),
+      }, { merge: true }),
+    ]);
+
+    return { profile };
+  },
+);
+
+export const syncTabroomSession = onCall(
+  {
+    cors: true,
+    invoker: "public",
+    timeoutSeconds: 30,
+    secrets: [tabroomSessionEncryptionKey],
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in before syncing Tabroom.");
+    }
+
+    const uid = request.auth.uid;
+    const db = getFirestore();
+    const sessionRef = db.doc(`tabroomSessions/${uid}`);
+    const linkRef = db.doc(`tabroomLinks/tabroom-link-${uid}`);
+    const importRef = db.doc(`tabroomImports/tabroom-import-${uid}`);
+    const sessionSnapshot = await sessionRef.get();
+
+    if (!sessionSnapshot.exists) {
+      throw new HttpsError("failed-precondition", "Link your Tabroom account before syncing.");
+    }
+
+    const syncedAt = new Date().toISOString();
+    await Promise.all([
+      linkRef.set({ status: "syncing" }, { merge: true }),
+      importRef.set({ userId: uid, status: "syncing", startedAt: syncedAt }, { merge: true }),
+    ]);
+
+    try {
+      const token = decryptTabroomToken(sessionSnapshot.data() as EncryptedTabroomSession);
+      const profile = await fetchTabroomProfile(token);
+      await Promise.all([
+        sessionRef.set({ validatedAt: syncedAt }, { merge: true }),
+        linkRef.set({
+          userId: uid,
+          provider: "tabroom",
+          status: "linked",
+          lastSyncedAt: syncedAt,
+          ...tabroomProfileFields(profile),
+        }, { merge: true }),
+        importRef.set({
+          userId: uid,
+          status: "success",
+          lastSuccessfulAt: syncedAt,
+          source: "official-profile",
+          errorMessage: FieldValue.delete(),
+        }, { merge: true }),
+      ]);
+      return { profile };
+    } catch (error) {
+      const isExpired = error instanceof HttpsError && error.code === "unauthenticated";
+      const message = error instanceof Error ? error.message : "Unable to sync Tabroom.";
+      await Promise.all([
+        linkRef.set({ status: "error" }, { merge: true }),
+        importRef.set({ status: "error", errorMessage: message }, { merge: true }),
+        ...(isExpired ? [sessionRef.delete()] : []),
+      ]);
+      if (error instanceof HttpsError) throw error;
+      console.error("Stored Tabroom session could not be decrypted", { uid });
+      throw new HttpsError(
+        "failed-precondition",
+        "The saved Tabroom session is invalid. Link your account again.",
+      );
+    }
+  },
+);
+
+export const unlinkTabroomSession = onCall(
+  { cors: true, invoker: "public", timeoutSeconds: 15 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in before unlinking Tabroom.");
+    }
+
+    const uid = request.auth.uid;
+    const db = getFirestore();
+    await Promise.all([
+      db.doc(`tabroomSessions/${uid}`).delete(),
+      db.doc(`tabroomLinks/tabroom-link-${uid}`).set({
+        userId: uid,
+        status: "unlinked",
+        unlinkedAt: new Date().toISOString(),
+        provider: FieldValue.delete(),
+        handle: FieldValue.delete(),
+        officialUserId: FieldValue.delete(),
+        nsdaId: FieldValue.delete(),
+      }, { merge: true }),
+    ]);
+    return { unlinked: true };
   },
 );

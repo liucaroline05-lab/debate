@@ -324,10 +324,15 @@ export interface UserStats {
 export interface TabroomLink {
   id: string;
   userId: string;
-  profileUrl: string;
-  handle: string;
+  profileUrl?: string;
+  handle?: string;
   status: "linked" | "syncing" | "error" | "unlinked";
   lastSyncedAt?: string;
+  linkedAt?: string;
+  unlinkedAt?: string;
+  provider?: "tabroom" | "debate-land";
+  officialUserId?: number;
+  nsdaId?: number;
   format?: "PF" | "LD" | "CX";
   circuit?: string;
   year?: string;

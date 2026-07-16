@@ -26,9 +26,11 @@ import {
 } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
 import {
+  linkTabroomSession,
   maxDisplayNameLength,
-  requestTabroomSync,
+  syncTabroomSession,
   toggleFollowUser,
+  unlinkTabroomSession,
 } from "@/features/profile/profileService";
 import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
@@ -51,12 +53,6 @@ ChartJS.register(
   Legend,
   Filler,
 );
-
-const currentSchoolYear = () => {
-  const now = new Date();
-  const startYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-  return `SY_${String(startYear).slice(-2)}_${String(startYear + 1).slice(-2)}`;
-};
 
 interface UserProfileViewProps {
   userId: string;
@@ -180,9 +176,6 @@ const safeName = (value?: string | null, fallback = "Unknown Speaker") => {
 };
 
 const safeInitial = (value?: string | null) => safeName(value).charAt(0).toUpperCase();
-const safeHandle = (username?: string | null, displayName?: string | null) =>
-  username?.trim() || safeName(displayName).toLowerCase().replace(/\s+/g, "_");
-
 export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) => {
   const { currentUser, isDemoMode, updateProfile } = useAuth();
   const usersState = useSeededFirestoreCollection("users", seededUsers);
@@ -219,15 +212,9 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
 
   const [displayNameDraft, setDisplayNameDraft] = useState(profileName);
   const [bioDraft, setBioDraft] = useState(profile?.bio ?? "");
-  const [tabroomDraft, setTabroomDraft] = useState(
-    profile?.tabroomProfileUrl ?? "",
-  );
-  const [handleDraft, setHandleDraft] = useState(
-    safeHandle(profile?.username, profile?.displayName),
-  );
-  const [tabroomFormat, setTabroomFormat] = useState<"PF" | "LD" | "CX">("PF");
-  const [tabroomCircuit, setTabroomCircuit] = useState("National");
-  const [tabroomYear, setTabroomYear] = useState(currentSchoolYear);
+  const [tabroomEmail, setTabroomEmail] = useState(profile?.email ?? "");
+  const [tabroomPassword, setTabroomPassword] = useState("");
+  const [isTabroomBusy, setIsTabroomBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
@@ -238,8 +225,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
 
     setDisplayNameDraft(safeName(profile.displayName));
     setBioDraft(profile.bio ?? "");
-    setTabroomDraft(profile.tabroomProfileUrl ?? "");
-    setHandleDraft(safeHandle(profile.username, profile.displayName));
+    setTabroomEmail((current) => current || profile.email || "");
   }, [profile]);
 
   const authoredPosts = useMemo(
@@ -271,6 +257,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const tabroomLink = tabroomLinksState.data.find((entry) => entry.userId === userId);
   const tabroomImport = tabroomImportsState.data.find((entry) => entry.userId === userId);
   const tabroomEvents = getTabroomEvents(tabroomImport);
+  const isTabroomLinked = tabroomLink?.status === "linked" || tabroomLink?.status === "syncing";
   const isFollowing = followsState.data.some(
     (follow) =>
       follow.followerId === currentUser?.id && follow.followingId === userId,
@@ -395,22 +382,52 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     }
   };
 
-  const syncTabroom = async () => {
-    if (!currentUser || !tabroomDraft.trim()) {
+  const linkTabroom = async () => {
+    if (!currentUser || isTabroomBusy) return;
+    if (!tabroomEmail.trim() || !tabroomPassword) {
+      setMessage("Enter your Tabroom email and password.");
       return;
     }
 
+    setIsTabroomBusy(true);
+    setMessage("");
     try {
-      await requestTabroomSync(tabroomDraft, handleDraft, {
-        format: tabroomFormat,
-        circuit: tabroomCircuit,
-        year: tabroomYear,
-      });
-      setMessage("Tabroom stats and tournament results synced.");
+      await linkTabroomSession(tabroomEmail, tabroomPassword);
+      setMessage("Tabroom account linked. Future syncs will reuse the saved session.");
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Unable to request Tabroom sync.",
-      );
+      setMessage(error instanceof Error ? error.message : "Unable to link Tabroom.");
+    } finally {
+      setTabroomPassword("");
+      setIsTabroomBusy(false);
+    }
+  };
+
+  const syncTabroom = async () => {
+    if (!currentUser || isTabroomBusy) return;
+    setIsTabroomBusy(true);
+    setMessage("");
+    try {
+      await syncTabroomSession();
+      setMessage("Tabroom account data synced.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to sync Tabroom.");
+    } finally {
+      setIsTabroomBusy(false);
+    }
+  };
+
+  const unlinkTabroom = async () => {
+    if (!currentUser || isTabroomBusy) return;
+    setIsTabroomBusy(true);
+    setMessage("");
+    try {
+      await unlinkTabroomSession();
+      setMessage("Tabroom account unlinked and its saved session removed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to unlink Tabroom.");
+    } finally {
+      setTabroomPassword("");
+      setIsTabroomBusy(false);
     }
   };
 
@@ -661,63 +678,75 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
             <h2 className="card-title">Tabroom sync</h2>
             {isOwnProfile ? (
               <div className="form-grid" style={{ marginTop: "1rem" }}>
-                <div className="form-field full">
-                  <label htmlFor="tabroomProfileUrl">Tabroom profile URL</label>
-                  <input
-                    id="tabroomProfileUrl"
-                    value={tabroomDraft}
-                    onChange={(event) => setTabroomDraft(event.target.value)}
-                    placeholder="https://www.tabroom.com/user/profile/..."
-                  />
-                </div>
-                <div className="form-field full">
-                  <label htmlFor="tabroomHandle">Debater or team name</label>
-                  <input
-                    id="tabroomHandle"
-                    value={handleDraft}
-                    onChange={(event) => setHandleDraft(event.target.value)}
-                    placeholder="Name as listed on Tabroom"
-                  />
-                </div>
-                <div className="form-field">
-                  <label htmlFor="tabroomFormat">Debate format</label>
-                  <select
-                    id="tabroomFormat"
-                    value={tabroomFormat}
-                    onChange={(event) => setTabroomFormat(event.target.value as "PF" | "LD" | "CX")}
-                  >
-                    <option value="PF">Public Forum</option>
-                    <option value="LD">Lincoln-Douglas</option>
-                    <option value="CX">Policy</option>
-                  </select>
-                </div>
-                <div className="form-field">
-                  <label htmlFor="tabroomYear">School year</label>
-                  <input
-                    id="tabroomYear"
-                    value={tabroomYear}
-                    onChange={(event) => setTabroomYear(event.target.value.toUpperCase())}
-                    placeholder="SY_25_26"
-                  />
-                </div>
-                <div className="form-field full">
-                  <label htmlFor="tabroomCircuit">Circuit</label>
-                  <input
-                    id="tabroomCircuit"
-                    value={tabroomCircuit}
-                    onChange={(event) => setTabroomCircuit(event.target.value)}
-                    placeholder="National"
-                  />
-                </div>
-                <div className="button-row">
-                  <button type="button" className="btn btn-primary" onClick={() => void syncTabroom()}>
-                    Sync Tabroom
-                  </button>
-                </div>
+                {isTabroomLinked ? (
+                  <>
+                    <div className="debate-banner is-invite form-field full">
+                      <strong>{tabroomLink?.handle ?? "Tabroom account"}</strong>
+                      <span className="meta-line">
+                        Authenticated session saved securely
+                      </span>
+                    </div>
+                    <div className="button-row full">
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={isTabroomBusy}
+                        onClick={() => void syncTabroom()}
+                      >
+                        {isTabroomBusy ? "Syncing..." : "Sync now"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={isTabroomBusy}
+                        onClick={() => void unlinkTabroom()}
+                      >
+                        Unlink
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="form-field full">
+                      <label htmlFor="tabroomEmail">Tabroom email</label>
+                      <input
+                        id="tabroomEmail"
+                        type="email"
+                        autoComplete="username"
+                        value={tabroomEmail}
+                        onChange={(event) => setTabroomEmail(event.target.value)}
+                        placeholder="you@example.com"
+                      />
+                    </div>
+                    <div className="form-field full">
+                      <label htmlFor="tabroomPassword">Tabroom password</label>
+                      <input
+                        id="tabroomPassword"
+                        type="password"
+                        autoComplete="current-password"
+                        value={tabroomPassword}
+                        onChange={(event) => setTabroomPassword(event.target.value)}
+                      />
+                      <span className="meta-line">
+                        Your password is used once to sign in and is never stored. Only an encrypted Tabroom session is retained.
+                      </span>
+                    </div>
+                    <div className="button-row full">
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={isTabroomBusy}
+                        onClick={() => void linkTabroom()}
+                      >
+                        {isTabroomBusy ? "Linking..." : "Link Tabroom"}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               <p className="card-copy">
-                Linked account: {tabroomLink?.handle ?? "Not linked"}
+                Linked account: {tabroomLink?.status === "linked" ? tabroomLink.handle : "Not linked"}
               </p>
             )}
 

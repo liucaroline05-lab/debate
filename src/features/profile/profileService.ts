@@ -112,45 +112,66 @@ export const toggleFollowUser = async (
   return true;
 };
 
-export const requestTabroomSync = async (
-  profileUrl: string,
-  handle: string,
-  options: {
-    format: "PF" | "LD" | "CX";
-    circuit: string;
-    year: string;
-  },
-) => {
-  if (!functions) throw new Error("Firebase Functions is not configured.");
-  if (!profileUrl.trim() || !handle.trim()) {
-    throw new Error("Add both your Tabroom profile URL and debater/team name.");
+interface TabroomProfileSummary {
+  officialUserId: number | null;
+  handle: string;
+  nsdaId: number | null;
+}
+
+const formatTabroomFunctionError = (error: unknown) => {
+  if (!(error instanceof FirebaseError)) {
+    return error instanceof Error ? error : new Error("Unable to connect to Tabroom.");
   }
 
-  const sync = httpsCallable<
-    {
-      profileUrl: string;
-      handle: string;
-      format: "PF" | "LD" | "CX";
-      circuit: string;
-      year: string;
-    },
-    { events: unknown[]; stats: unknown }
-  >(functions, "syncTabroom");
+  const message = error.message.replace(/^Firebase:\s*/i, "");
+  if (error.code === "functions/unavailable") {
+    return new Error("Tabroom is temporarily unavailable. Try again shortly.");
+  }
+  if (error.code === "functions/unauthenticated") {
+    return new Error(message || "Your Tabroom credentials or saved session are no longer valid.");
+  }
+  return new Error(message || "Unable to connect to Tabroom.");
+};
 
+export const linkTabroomSession = async (email: string, password: string) => {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  if (!email.trim() || !password) {
+    throw new Error("Enter your Tabroom email and password.");
+  }
+
+  const link = httpsCallable<
+    { email: string; password: string },
+    { profile: TabroomProfileSummary }
+  >(functions, "linkTabroomSession");
   try {
-    return (await sync({ profileUrl, handle, ...options })).data;
+    return (await link({ email: email.trim(), password })).data;
   } catch (error) {
-    if (error instanceof FirebaseError) {
-      throw new Error(error.message.replace(/^Firebase:\s*/i, ""));
-    }
-    throw error;
+    throw formatTabroomFunctionError(error);
   }
 };
 
-export const clearTabroomLink = async (userId: string) => {
-  if (!firestore) {
-    throw new Error("Firestore is not configured.");
+export const syncTabroomSession = async () => {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  const sync = httpsCallable<Record<string, never>, { profile: TabroomProfileSummary }>(
+    functions,
+    "syncTabroomSession",
+  );
+  try {
+    return (await sync({})).data;
+  } catch (error) {
+    throw formatTabroomFunctionError(error);
   }
+};
 
-  await deleteDoc(doc(firestore, "tabroomLinks", `tabroom-link-${userId}`));
+export const unlinkTabroomSession = async () => {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  const unlink = httpsCallable<Record<string, never>, { unlinked: boolean }>(
+    functions,
+    "unlinkTabroomSession",
+  );
+  try {
+    return (await unlink({})).data;
+  } catch (error) {
+    throw formatTabroomFunctionError(error);
+  }
 };

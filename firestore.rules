@@ -61,14 +61,19 @@ service cloud.firestore {
     }
 
     match /tabroomLinks/{linkId} {
-      allow read, create, update: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
-      allow delete: if ownsExistingResource("userId");
+      allow read: if isSignedIn();
+      allow create, update, delete: if false;
     }
 
     match /tabroomImports/{importId} {
-      allow read, create, update: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn();
+      allow create, update, delete: if false;
+    }
+
+    // Authentication cookies are encrypted and managed exclusively by Admin SDK
+    // callables. They must never be exposed through the client Firestore SDK.
+    match /tabroomSessions/{userId} {
+      allow read, write: if false;
     }
 
     match /posts/{postId} {
