@@ -175,13 +175,14 @@ describe("DebatesPage — inline debate composer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /\+ new debate/i }));
 
-    const commentsToggle = screen.getByLabelText(/allow spectator comments/i) as HTMLInputElement;
-    expect(commentsToggle.checked).toBe(true);
+    const commentsOn = screen.getByRole("button", { name: /comments on/i });
+    const commentsOff = screen.getByRole("button", { name: /comments off/i });
+    expect(commentsOn).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.change(screen.getByLabelText(/^topic$/i), {
       target: { value: "Resolved: toggled off" },
     });
-    fireEvent.click(commentsToggle);
+    fireEvent.click(commentsOff);
     // Wrap in act so the async create's trailing state updates settle.
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /create debate/i }));

@@ -2970,6 +2970,24 @@ button {
   background: linear-gradient(180deg, rgba(255, 253, 248, 0.98), rgba(245, 239, 230, 0.9));
 }
 
+.debate-comment-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-top: 1px solid rgba(53, 47, 42, 0.08);
+}
+
+.debate-comment-control > span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.debate-comment-control .settings-segment-option {
+  min-width: 4.75rem;
+}
+
 .debate-invite-input,
 .forum-group-join input {
   min-width: 0;
@@ -3187,6 +3205,11 @@ button {
 }
 
 @media (max-width: 720px) {
+  .debate-comment-control {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .debate-join-row,
   .forum-group-join,
   .speech-media-actions {

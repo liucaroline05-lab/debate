@@ -783,10 +783,32 @@ export const DebatesPage = () => {
                 <option value="Aff">Affirmative</option><option value="Neg">Negative</option><option value="Either">Either side</option>
               </select>
             </div>
-            <label className="settings-toggle-row form-field full" htmlFor="inlineDebateComments">
-              <span><strong>Allow spectator comments</strong><span className="meta-line">Participants can read comments after the debate ends.</span></span>
-              <input id="inlineDebateComments" type="checkbox" checked={debateForm.commentsEnabled} onChange={(event) => setDebateForm((current) => ({ ...current, commentsEnabled: event.target.checked }))} />
-            </label>
+            <div className="debate-comment-control form-field full">
+              <span>
+                <strong>Spectator comments</strong>
+                <span className="meta-line">Participants can read comments after the debate ends.</span>
+              </span>
+              <div className="settings-segment" role="group" aria-label="Spectator comments">
+                <button
+                  type="button"
+                  className={debateForm.commentsEnabled ? "settings-segment-option is-on" : "settings-segment-option"}
+                  aria-label="Comments on"
+                  aria-pressed={debateForm.commentsEnabled}
+                  onClick={() => setDebateForm((current) => ({ ...current, commentsEnabled: true }))}
+                >
+                  On
+                </button>
+                <button
+                  type="button"
+                  className={!debateForm.commentsEnabled ? "settings-segment-option is-on" : "settings-segment-option"}
+                  aria-label="Comments off"
+                  aria-pressed={!debateForm.commentsEnabled}
+                  onClick={() => setDebateForm((current) => ({ ...current, commentsEnabled: false }))}
+                >
+                  Off
+                </button>
+              </div>
+            </div>
           </div>
           <div className="forum-composer-footer">
             <span className="meta-line">{modalMessage || (debateForm.visibility === "private" ? "A shareable invite code is generated when you create the debate." : "Your debate will appear in Open Challenges.")}</span>
