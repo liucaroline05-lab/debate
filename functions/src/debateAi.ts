@@ -523,7 +523,7 @@ const maybeGenerateDebateSummary = async (
 
 export const transcribeDebateSpeech = onObjectFinalized(
   {
-    region: "us-central1",
+    region: "us-west1",
     memory: "1GiB",
     timeoutSeconds: 540,
     retry: true,
