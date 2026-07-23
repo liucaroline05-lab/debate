@@ -159,6 +159,17 @@ service cloud.firestore {
       ]);
     }
 
+    function canVoteForDebate(debateId) {
+      let debate = debateData(debateId);
+      return isSignedIn()
+        && debate.status == "Completed"
+        && debate.visibility == "public"
+        && (
+          !("participantIds" in debate)
+          || !(request.auth.uid in debate.participantIds)
+        );
+    }
+
     match /debates/{debateId} {
       // Public debates are readable to any signed-in user; private debates are
       // readable to their participants and creator. (Whole-collection listeners
@@ -198,6 +209,25 @@ service cloud.firestore {
       // A reaction document is writable only by its owning user.
       allow create, update: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /debateWinnerVotes/{voteId} {
+      allow read: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.side in ["Aff", "Neg"]
+        && canVoteForDebate(request.resource.data.debateId);
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.debateId == resource.data.debateId
+        && request.resource.data.side in ["Aff", "Neg"]
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "side",
+          "updatedAt"
+        ])
+        && canVoteForDebate(resource.data.debateId);
     }
 
     match /resources/{resourceId} {

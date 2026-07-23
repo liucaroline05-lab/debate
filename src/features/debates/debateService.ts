@@ -623,3 +623,69 @@ export const incrementDebateShareCount = async (
     updatedAt: nowIso(),
   });
 };
+
+export const voteForDebateWinner = async (
+  debateId: string,
+  userId: string,
+  side: "Aff" | "Neg",
+) => {
+  const db = requireFirestore();
+  const debateRef = doc(db, "debates", debateId);
+  const voteRef = doc(db, "debateWinnerVotes", `${debateId}-${userId}`);
+
+  await runTransaction(db, async (transaction) => {
+    const debateSnapshot = await transaction.get(debateRef);
+    const voteSnapshot = await transaction.get(voteRef);
+
+    if (!debateSnapshot.exists()) {
+      throw new Error("This debate is no longer available.");
+    }
+
+    const debate = debateSnapshot.data() as Partial<DebateThread>;
+    if (
+      debate.status !== "Completed"
+      || debate.visibility !== "public"
+      || (debate.participantIds ?? []).includes(userId)
+    ) {
+      throw new Error("Only spectators can vote on completed public debates.");
+    }
+
+    const previousSide = voteSnapshot.exists()
+      ? (voteSnapshot.data().side as "Aff" | "Neg" | undefined)
+      : undefined;
+    if (previousSide === side) {
+      return;
+    }
+
+    const currentCounts = debate.communityVoteCounts ?? { aff: 0, neg: 0 };
+    const nextCounts = {
+      aff: Math.max(
+        0,
+        currentCounts.aff + Number(side === "Aff") - Number(previousSide === "Aff"),
+      ),
+      neg: Math.max(
+        0,
+        currentCounts.neg + Number(side === "Neg") - Number(previousSide === "Neg"),
+      ),
+    };
+    const updatedAt = nowIso();
+
+    transaction.set(
+      voteRef,
+      {
+        debateId,
+        userId,
+        side,
+        createdAt: voteSnapshot.exists()
+          ? voteSnapshot.data().createdAt ?? updatedAt
+          : updatedAt,
+        updatedAt,
+      },
+      { merge: true },
+    );
+    transaction.update(debateRef, {
+      communityVoteCounts: nextCounts,
+      updatedAt,
+    });
+  });
+};

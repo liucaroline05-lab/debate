@@ -208,6 +208,42 @@ describe("DebatesPage — My Debates", () => {
   });
 });
 
+describe("DebatesPage — Completed", () => {
+  it("separates the current user's completed debates from public community debates", () => {
+    mocks.collections.debates = [
+      baseDebate({
+        id: "mine-complete",
+        topic: "My finished round",
+        status: "Completed",
+        participantIds: ["me", "opp"],
+      }),
+      baseDebate({
+        id: "public-complete",
+        topic: "Public finished round",
+        status: "Completed",
+        participantIds: ["other-a", "other-b"],
+      }),
+    ];
+
+    renderPage();
+    fireEvent.click(screen.getByRole("tab", { name: /^completed$/i }));
+
+    const myColumn = screen
+      .getByRole("heading", { name: "My completed debates" })
+      .closest(".completed-debates-column");
+    const publicColumn = screen
+      .getByRole("heading", { name: "Public completed debates" })
+      .closest(".completed-debates-column");
+
+    expect(myColumn).not.toBeNull();
+    expect(publicColumn).not.toBeNull();
+    expect(within(myColumn as HTMLElement).getByText("My finished round")).toBeInTheDocument();
+    expect(within(myColumn as HTMLElement).queryByText("Public finished round")).not.toBeInTheDocument();
+    expect(within(publicColumn as HTMLElement).getByText("Public finished round")).toBeInTheDocument();
+    expect(within(publicColumn as HTMLElement).queryByText("My finished round")).not.toBeInTheDocument();
+  });
+});
+
 describe("DebatesPage — inline debate composer", () => {
   it("defaults comments on and persists comments off when toggled", async () => {
     renderPage();

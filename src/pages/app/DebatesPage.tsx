@@ -280,13 +280,23 @@ export const DebatesPage = () => {
     [debates, user.id],
   );
 
-  const completedDebates = useMemo(
+  const myCompletedDebates = useMemo(
     () =>
       debates.filter(
         (debate) =>
           debate.status === "Completed" &&
-          (debate.visibility === "public" ||
-            (debate.participantIds ?? []).includes(user.id)),
+          (debate.participantIds ?? []).includes(user.id),
+      ),
+    [debates, user.id],
+  );
+
+  const publicCompletedDebates = useMemo(
+    () =>
+      debates.filter(
+        (debate) =>
+          debate.status === "Completed"
+          && debate.visibility === "public"
+          && !(debate.participantIds ?? []).includes(user.id),
       ),
     [debates, user.id],
   );
@@ -971,71 +981,141 @@ export const DebatesPage = () => {
       ) : null}
 
       {activeTab === "completed" ? (
-        <section className="stack">
-          {completedDebates.length > 0 ? (
-            completedDebates.map((debate) => (
-              <article key={debate.id} className="debate-panel">
-                <div className="debate-panel-header">
-                  <div className="cluster">
-                    <span className="debate-dot" />
-                    <h2 className="debate-topic">{debate.topic}</h2>
-                    <span className="pill debate-format-pill">{debate.format}</span>
-                  </div>
-                  <span className="debate-status-badge is-complete">
-                    Completed {debate.aiJudged ? "• AI Judged" : ""}
-                  </span>
-                </div>
-
-                <div className="debate-scoreboard">
-                  <div className="debater-card">
-                    <div className="debater-avatar">{safeInitial(debate.affirmative.name)}</div>
-                    <div>
-                      <strong>{debate.affirmative.name}</strong>
-                      <span className="debater-side is-aff">{debate.affirmative.label}</span>
-                    </div>
-                  </div>
-
-                  <div className="score-pill">
-                    <strong className="score aff">{debate.score?.aff ?? "--"}</strong>
-                    <span className="score-winner">
-                      {debate.winner === "Aff" ? "AFF WINS" : debate.winner === "Neg" ? "NEG WINS" : "FINAL"}
-                    </span>
-                    <strong className="score neg">{debate.score?.neg ?? "--"}</strong>
-                  </div>
-
-                  <div className="debater-card is-right">
-                    <div>
-                      <strong>{debate.negative.name}</strong>
-                      <span className="debater-side is-neg">{debate.negative.label}</span>
-                    </div>
-                    <div className="debater-avatar is-neg">{safeInitial(debate.negative.name)}</div>
-                  </div>
-                </div>
-
-                <div className="debate-panel-footer">
-                  <span className="meta-line">
-                    {debate.totalRounds} rounds • {formatDate(debate.nextDeadline)} • {debate.spectators} spectators
-                  </span>
-                  <div className="button-row">
-                    <Link className="btn btn-secondary" to={`/app/debates/${debate.id}`}>
-                      View Debate
-                    </Link>
-                    <Link className="btn btn-ghost" to={`/app/debates/${debate.id}?view=summary`}>
-                      View Summary
-                    </Link>
-                  </div>
-                </div>
-
-                {renderReactions(debate)}
-                {renderComments(debate)}
-              </article>
-            ))
-          ) : (
-            <div className="empty-state">
-              <h2 className="card-title">No completed debates yet</h2>
-              <p className="card-copy">Finished rounds you can review will appear here.</p>
+        <section className="completed-debates-layout">
+          <div className="completed-debates-column">
+            <div className="completed-section-heading">
+              <div>
+                <p className="eyebrow">Your rounds</p>
+                <h2>My completed debates</h2>
+              </div>
+              <span className="pill">{myCompletedDebates.length}</span>
             </div>
-          )}
+
+            <div className="stack">
+              {myCompletedDebates.length > 0 ? (
+                myCompletedDebates.map((debate) => (
+                  <article key={debate.id} className="debate-panel">
+                    <div className="debate-panel-header">
+                      <div className="cluster">
+                        <span className="debate-dot" />
+                        <h2 className="debate-topic">{debate.topic}</h2>
+                        <span className="pill debate-format-pill">{debate.format}</span>
+                      </div>
+                      <span className="debate-status-badge is-complete">
+                        Completed {debate.aiJudged ? "• AI Judged" : ""}
+                      </span>
+                    </div>
+
+                    <div className="debate-scoreboard">
+                      <div className="debater-card">
+                        <div className="debater-avatar">{safeInitial(debate.affirmative.name)}</div>
+                        <div>
+                          <strong>{debate.affirmative.name}</strong>
+                          <span className="debater-side is-aff">{debate.affirmative.label}</span>
+                        </div>
+                      </div>
+
+                      <div className="score-pill">
+                        <strong className="score aff">{debate.score?.aff ?? "--"}</strong>
+                        <span className="score-winner">
+                          {debate.winner === "Aff" ? "AFF WINS" : debate.winner === "Neg" ? "NEG WINS" : "FINAL"}
+                        </span>
+                        <strong className="score neg">{debate.score?.neg ?? "--"}</strong>
+                      </div>
+
+                      <div className="debater-card is-right">
+                        <div>
+                          <strong>{debate.negative.name}</strong>
+                          <span className="debater-side is-neg">{debate.negative.label}</span>
+                        </div>
+                        <div className="debater-avatar is-neg">{safeInitial(debate.negative.name)}</div>
+                      </div>
+                    </div>
+
+                    <div className="debate-panel-footer">
+                      <span className="meta-line">
+                        {debate.totalRounds} rounds • {formatDate(debate.nextDeadline)} • {debate.spectators} spectators
+                      </span>
+                      <div className="button-row">
+                        <Link className="btn btn-secondary" to={`/app/debates/${debate.id}`}>
+                          View Debate
+                        </Link>
+                        <Link className="btn btn-ghost" to={`/app/debates/${debate.id}?view=summary`}>
+                          View Summary
+                        </Link>
+                      </div>
+                    </div>
+
+                    {renderReactions(debate)}
+                    {renderComments(debate)}
+                  </article>
+                ))
+              ) : (
+                <div className="empty-state completed-empty-state">
+                  <h2 className="card-title">No completed debates yet</h2>
+                  <p className="card-copy">Your finished rounds will appear here.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <aside className="completed-debates-column is-public">
+            <div className="completed-section-heading">
+              <div>
+                <p className="eyebrow">Community rounds</p>
+                <h2>Public completed debates</h2>
+              </div>
+              <span className="pill">{publicCompletedDebates.length}</span>
+            </div>
+
+            <div className="stack">
+              {publicCompletedDebates.length > 0 ? (
+                publicCompletedDebates.map((debate) => (
+                  <article key={debate.id} className="public-completed-card">
+                    <div className="public-completed-header">
+                      <h3>{debate.topic}</h3>
+                      <span className="pill debate-format-pill">{debate.format}</span>
+                    </div>
+
+                    <div className="public-completed-matchup">
+                      <div className="public-completed-speaker">
+                        <div className="debater-avatar">{safeInitial(debate.affirmative.name)}</div>
+                        <div>
+                          <strong>{debate.affirmative.name}</strong>
+                          <span className="debater-side is-aff">{debate.affirmative.label}</span>
+                        </div>
+                      </div>
+                      <span className="debate-vs">VS</span>
+                      <div className="public-completed-speaker is-neg">
+                        <div>
+                          <strong>{debate.negative.name}</strong>
+                          <span className="debater-side is-neg">{debate.negative.label}</span>
+                        </div>
+                        <div className="debater-avatar is-neg">{safeInitial(debate.negative.name)}</div>
+                      </div>
+                    </div>
+
+                    <div className="public-completed-footer">
+                      <span className="meta-line">
+                        {debate.totalRounds} rounds • {debate.spectators} spectators
+                      </span>
+                      <Link className="btn btn-secondary" to={`/app/debates/${debate.id}`}>
+                        View Debate
+                      </Link>
+                    </div>
+
+                    {renderReactions(debate)}
+                    {renderComments(debate)}
+                  </article>
+                ))
+              ) : (
+                <div className="empty-state completed-empty-state">
+                  <h2 className="card-title">No public completed debates</h2>
+                  <p className="card-copy">Community rounds will appear here once they finish.</p>
+                </div>
+              )}
+            </div>
+          </aside>
         </section>
       ) : null}
 

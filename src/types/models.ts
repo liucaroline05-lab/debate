@@ -198,8 +198,21 @@ export interface DebateThread {
     aff: number;
     neg: number;
   };
+  communityVoteCounts?: {
+    aff: number;
+    neg: number;
+  };
   turns: DebateTurn[];
   debatePartnerSuggestions?: string[];
+}
+
+export interface DebateWinnerVote {
+  id: string;
+  debateId: string;
+  userId: string;
+  side: "Aff" | "Neg";
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface DebateMessage {

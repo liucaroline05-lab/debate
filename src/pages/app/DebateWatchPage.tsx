@@ -1,13 +1,19 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { where, type QueryConstraint } from "firebase/firestore";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { PageMeta } from "@/components/common/PageMeta";
 import { DebateTurnSequence } from "@/components/debates/DebateTurnSequence";
 import { seededDebates } from "@/data/firestoreSeeds";
+import { useAuth } from "@/features/auth/AuthContext";
+import { voteForDebateWinner } from "@/features/debates/debateService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type {
   DebateSideSummary,
   DebateSummaryStatus,
+  DebateWinnerVote,
 } from "@/types/models";
+
+const EMPTY_WINNER_VOTES: DebateWinnerVote[] = [];
 
 const summaryStatusCopy: Record<DebateSummaryStatus, string> = {
   waiting_for_transcripts:
@@ -77,12 +83,36 @@ const SideSummary = ({
 export const DebateWatchPage = () => {
   const { debateId } = useParams();
   const location = useLocation();
+  const { currentUser } = useAuth();
+  const [voteBusy, setVoteBusy] = useState(false);
+  const [voteError, setVoteError] = useState("");
+  const [selectedVoteSide, setSelectedVoteSide] = useState<"Aff" | "Neg" | null>(null);
   const debatesState = useSeededFirestoreCollection("debates", seededDebates);
+  const voteConstraints = useMemo<QueryConstraint[]>(
+    () => currentUser ? [where("userId", "==", currentUser.id)] : [],
+    [currentUser],
+  );
+  const votesState = useSeededFirestoreCollection<DebateWinnerVote>(
+    "debateWinnerVotes",
+    EMPTY_WINNER_VOTES,
+    voteConstraints,
+    Boolean(currentUser),
+    currentUser ? `debate-winner-votes:${currentUser.id}` : undefined,
+  );
 
   const debate = useMemo(
     () => debatesState.data.find((entry) => entry.id === debateId),
     [debateId, debatesState.data],
   );
+  const persistedVote = useMemo(
+    () => votesState.data.find((vote) => vote.debateId === debateId),
+    [debateId, votesState.data],
+  );
+
+  useEffect(() => {
+    setSelectedVoteSide(null);
+    setVoteError("");
+  }, [debateId]);
 
   if (!debate) {
     return (
@@ -100,6 +130,44 @@ export const DebateWatchPage = () => {
     ?? (debate.summaryStatus ? summaryStatusCopy[debate.summaryStatus] : undefined)
     ?? debate.summary
     ?? "An AI summary will appear here after the debate has been processed.";
+  const isParticipant = Boolean(
+    currentUser
+    && (
+      (debate.participantIds ?? []).includes(currentUser.id)
+      || debate.affirmative.userId === currentUser.id
+      || debate.negative.userId === currentUser.id
+    ),
+  );
+  const canVote =
+    Boolean(currentUser)
+    && debate.status === "Completed"
+    && debate.visibility === "public"
+    && !isParticipant;
+  const selectedVote = selectedVoteSide ?? persistedVote?.side;
+  const voteCounts = debate.communityVoteCounts ?? { aff: 0, neg: 0 };
+  const totalCommunityVotes = voteCounts.aff + voteCounts.neg;
+
+  const handleWinnerVote = async (side: "Aff" | "Neg") => {
+    if (!currentUser || !canVote || voteBusy || selectedVote === side) {
+      return;
+    }
+
+    const previousSide = selectedVote ?? null;
+    setSelectedVoteSide(side);
+    setVoteError("");
+    setVoteBusy(true);
+
+    try {
+      await voteForDebateWinner(debate.id, currentUser.id, side);
+    } catch (error) {
+      setSelectedVoteSide(previousSide);
+      setVoteError(
+        error instanceof Error ? error.message : "Your vote could not be saved.",
+      );
+    } finally {
+      setVoteBusy(false);
+    }
+  };
 
   return (
     <>
@@ -218,7 +286,10 @@ export const DebateWatchPage = () => {
             </article>
           </section>
 
-          <article className="debate-panel" aria-label="Completed debate round">
+          <article
+            className="debate-panel"
+            aria-label={debate.status === "Completed" ? "Completed debate round" : "Debate round"}
+          >
             <div className="debate-panel-header">
               <div className="cluster">
                 <span className="debate-dot" />
@@ -233,23 +304,70 @@ export const DebateWatchPage = () => {
               </div>
             </div>
 
-            <div className="debate-matchup">
-              <div className="debater-card">
-                <div className="debater-avatar">{safeInitial(debate.affirmative.name)}</div>
-                <div>
-                  <strong>{debate.affirmative.name}</strong>
-                  <span className="debater-side is-aff">{debate.affirmative.label}</span>
+            <div className="debate-scoreboard debate-review-scoreboard">
+              <div className="debate-vote-side is-aff">
+                <div className="debater-card">
+                  <div className="debater-avatar">{safeInitial(debate.affirmative.name)}</div>
+                  <div>
+                    <strong>{debate.affirmative.name}</strong>
+                    <span className="debater-side is-aff">{debate.affirmative.label}</span>
+                  </div>
                 </div>
+                {canVote ? (
+                  <button
+                    type="button"
+                    className={`debate-winner-vote is-aff${selectedVote === "Aff" ? " is-selected" : ""}`}
+                    aria-pressed={selectedVote === "Aff"}
+                    disabled={voteBusy || selectedVote === "Aff"}
+                    onClick={() => void handleWinnerVote("Aff")}
+                  >
+                    Vote {debate.affirmative.name}
+                    <span>{voteCounts.aff} {voteCounts.aff === 1 ? "vote" : "votes"}</span>
+                  </button>
+                ) : null}
               </div>
-              <div className="debate-vs">VS</div>
-              <div className="debater-card is-right">
-                <div>
-                  <strong>{debate.negative.name}</strong>
-                  <span className="debater-side is-neg">{debate.negative.label}</span>
+
+              <div className="score-pill debate-final-marker">
+                <strong className="score aff">{debate.score?.aff ?? "--"}</strong>
+                <span className="score-winner">
+                  {debate.winner === "Aff"
+                    ? "AFF WINS"
+                    : debate.winner === "Neg"
+                      ? "NEG WINS"
+                      : "FINAL"}
+                </span>
+                <strong className="score neg">{debate.score?.neg ?? "--"}</strong>
+                <span className="meta-line">
+                  {totalCommunityVotes} community {totalCommunityVotes === 1 ? "vote" : "votes"}
+                </span>
+              </div>
+
+              <div className="debate-vote-side is-neg">
+                <div className="debater-card is-right">
+                  <div>
+                    <strong>{debate.negative.name}</strong>
+                    <span className="debater-side is-neg">{debate.negative.label}</span>
+                  </div>
+                  <div className="debater-avatar is-neg">{safeInitial(debate.negative.name)}</div>
                 </div>
-                <div className="debater-avatar is-neg">{safeInitial(debate.negative.name)}</div>
+                {canVote ? (
+                  <button
+                    type="button"
+                    className={`debate-winner-vote is-neg${selectedVote === "Neg" ? " is-selected" : ""}`}
+                    aria-pressed={selectedVote === "Neg"}
+                    disabled={voteBusy || selectedVote === "Neg"}
+                    onClick={() => void handleWinnerVote("Neg")}
+                  >
+                    Vote {debate.negative.name}
+                    <span>{voteCounts.neg} {voteCounts.neg === 1 ? "vote" : "votes"}</span>
+                  </button>
+                ) : null}
               </div>
             </div>
+
+            {voteError ? (
+              <p className="form-error debate-vote-error" role="alert">{voteError}</p>
+            ) : null}
 
             <DebateTurnSequence debate={debate} />
 

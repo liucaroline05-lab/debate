@@ -1,32 +1,50 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DebateWatchPage } from "@/pages/app/DebateWatchPage";
-import type { DebateThread } from "@/types/models";
+import type { DebateThread, DebateWinnerVote } from "@/types/models";
 
 const mocks = vi.hoisted(() => ({
   debates: [] as DebateThread[],
+  winnerVotes: [] as DebateWinnerVote[],
+  currentUser: { id: "viewer", displayName: "Viewer", role: "student" },
+}));
+
+vi.mock("@/features/auth/AuthContext", () => ({
+  useAuth: () => ({
+    currentUser: mocks.currentUser,
+    authReady: true,
+    isDemoMode: false,
+  }),
 }));
 
 vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
-  useSeededFirestoreCollection: () => ({
-    data: mocks.debates,
+  useSeededFirestoreCollection: (collectionName: string) => ({
+    data: collectionName === "debates" ? mocks.debates : mocks.winnerVotes,
     isLoading: false,
     error: null,
   }),
 }));
+
+const service = vi.hoisted(() => ({
+  voteForDebateWinner: vi.fn(async () => {}),
+}));
+
+vi.mock("@/features/debates/debateService", () => service);
 
 const completedDebate = (overrides: Partial<DebateThread> = {}): DebateThread => ({
   id: "complete",
   topic: "Resolved: public transit should be fare-free",
   format: "Public Forum",
   status: "Completed",
+  visibility: "public",
   nextDeadline: "2026-07-20T00:00:00.000Z",
   affirmative: { name: "Avery", side: "Aff", label: "Affirmative", userId: "aff" },
   negative: { name: "Noah", side: "Neg", label: "Negative", userId: "neg" },
   currentRound: 2,
   totalRounds: 2,
   spectators: 3,
+  participantIds: ["aff", "neg"],
   turns: [
     {
       id: "turn-aff",
@@ -59,6 +77,13 @@ const renderPage = (entry = "/app/debates/complete?view=summary") =>
 
 const renderSummary = () => renderPage();
 
+beforeEach(() => {
+  mocks.debates = [];
+  mocks.winnerVotes = [];
+  mocks.currentUser = { id: "viewer", displayName: "Viewer", role: "student" };
+  service.voteForDebateWinner.mockClear();
+});
+
 describe("DebateWatchPage debate view", () => {
   it("keeps the overview cards and renders the completed debate widget below them", () => {
     mocks.debates = [completedDebate()];
@@ -82,6 +107,42 @@ describe("DebateWatchPage debate view", () => {
     expect(
       within(debateWidget).getByRole("link", { name: "View Summary" }),
     ).toHaveAttribute("href", "/app/debates/complete?view=summary");
+  });
+
+  it("lets a spectator vote for either speaker and persists one winner choice", async () => {
+    mocks.debates = [
+      completedDebate({
+        communityVoteCounts: { aff: 2, neg: 4 },
+      }),
+    ];
+
+    renderPage("/app/debates/complete");
+
+    const affirmativeVote = screen.getByRole("button", { name: /vote avery/i });
+    const negativeVote = screen.getByRole("button", { name: /vote noah/i });
+    expect(affirmativeVote).toHaveAttribute("aria-pressed", "false");
+    expect(negativeVote).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(affirmativeVote);
+
+    await waitFor(() => {
+      expect(service.voteForDebateWinner).toHaveBeenCalledWith(
+        "complete",
+        "viewer",
+        "Aff",
+      );
+    });
+    expect(affirmativeVote).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("does not offer winner voting to either debate participant", () => {
+    mocks.currentUser = { id: "aff", displayName: "Avery", role: "student" };
+    mocks.debates = [completedDebate()];
+
+    renderPage("/app/debates/complete");
+
+    expect(screen.queryByRole("button", { name: /vote avery/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /vote noah/i })).not.toBeInTheDocument();
   });
 });
 
