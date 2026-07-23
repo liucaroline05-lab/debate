@@ -1,6 +1,7 @@
 import { useMemo } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { PageMeta } from "@/components/common/PageMeta";
+import { DebateTurnSequence } from "@/components/debates/DebateTurnSequence";
 import { seededDebates } from "@/data/firestoreSeeds";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type {
@@ -16,6 +17,9 @@ const summaryStatusCopy: Record<DebateSummaryStatus, string> = {
   failed:
     "The AI summary could not be generated. An administrator can check the function logs and retry processing.",
 };
+
+const safeInitial = (value?: string | null) =>
+  value?.trim()?.charAt(0).toUpperCase() || "D";
 
 const EmptySummaryList = () => (
   <p className="meta-line">Nothing in the transcript supported this category.</p>
@@ -179,39 +183,89 @@ export const DebateWatchPage = () => {
           </article>
         </section>
       ) : (
-      <section className="settings-grid">
-        <article className="app-card">
-          <h2 className="card-title">Matchup</h2>
-          <div className="list" style={{ marginTop: "1rem" }}>
-            <div className="list-item">
-              <strong>{debate.affirmative.name}</strong>
-              <span className="meta-line">{debate.affirmative.label}</span>
-            </div>
-            <div className="list-item">
-              <strong>{debate.negative.name}</strong>
-              <span className="meta-line">{debate.negative.label}</span>
-            </div>
-          </div>
-        </article>
+        <section className="stack">
+          <section className="settings-grid">
+            <article className="app-card">
+              <h2 className="card-title">Matchup</h2>
+              <div className="list" style={{ marginTop: "1rem" }}>
+                <div className="list-item">
+                  <strong>{debate.affirmative.name}</strong>
+                  <span className="meta-line">{debate.affirmative.label}</span>
+                </div>
+                <div className="list-item">
+                  <strong>{debate.negative.name}</strong>
+                  <span className="meta-line">{debate.negative.label}</span>
+                </div>
+              </div>
+            </article>
 
-        <article className="app-card">
-          <h2 className="card-title">Round summary</h2>
-          <div className="list" style={{ marginTop: "1rem" }}>
-            <div className="list-item">
-              <strong>Status</strong>
-              <span className="meta-line">{debate.status}</span>
+            <article className="app-card">
+              <h2 className="card-title">Round summary</h2>
+              <div className="list" style={{ marginTop: "1rem" }}>
+                <div className="list-item">
+                  <strong>Status</strong>
+                  <span className="meta-line">{debate.status}</span>
+                </div>
+                <div className="list-item">
+                  <strong>Spectators</strong>
+                  <span className="meta-line">{debate.spectators}</span>
+                </div>
+                <div className="list-item">
+                  <strong>AI judged</strong>
+                  <span className="meta-line">{debate.aiJudged ? "Yes" : "No"}</span>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <article className="debate-panel" aria-label="Completed debate round">
+            <div className="debate-panel-header">
+              <div className="cluster">
+                <span className="debate-dot" />
+                <h2 className="debate-topic">{debate.topic}</h2>
+                <span className="pill debate-format-pill">{debate.format}</span>
+              </div>
+              <div className="debate-entry-status">
+                <span className="debate-status-badge is-complete">{debate.status}</span>
+                <span className="meta-line">
+                  {submittedTurns.length} of {debate.totalRounds} speeches
+                </span>
+              </div>
             </div>
-            <div className="list-item">
-              <strong>Spectators</strong>
-              <span className="meta-line">{debate.spectators}</span>
+
+            <div className="debate-matchup">
+              <div className="debater-card">
+                <div className="debater-avatar">{safeInitial(debate.affirmative.name)}</div>
+                <div>
+                  <strong>{debate.affirmative.name}</strong>
+                  <span className="debater-side is-aff">{debate.affirmative.label}</span>
+                </div>
+              </div>
+              <div className="debate-vs">VS</div>
+              <div className="debater-card is-right">
+                <div>
+                  <strong>{debate.negative.name}</strong>
+                  <span className="debater-side is-neg">{debate.negative.label}</span>
+                </div>
+                <div className="debater-avatar is-neg">{safeInitial(debate.negative.name)}</div>
+              </div>
             </div>
-            <div className="list-item">
-              <strong>AI judged</strong>
-              <span className="meta-line">{debate.aiJudged ? "Yes" : "No"}</span>
+
+            <DebateTurnSequence debate={debate} />
+
+            <div className="debate-entry-footer">
+              <span className="meta-line">
+                {submittedTurns.length} submitted • {debate.spectators} spectators
+              </span>
+              <Link
+                className="btn btn-secondary"
+                to={`/app/debates/${debate.id}?view=summary`}
+              >
+                View Summary
+              </Link>
             </div>
-          </div>
-        </article>
-      </section>
+          </article>
+        </section>
       )}
     </>
   );

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { DebateWatchPage } from "@/pages/app/DebateWatchPage";
@@ -34,6 +34,7 @@ const completedDebate = (overrides: Partial<DebateThread> = {}): DebateThread =>
       side: "Aff",
       summary: "Affirmative speech submitted.",
       status: "submitted",
+      speechUrl: "https://example.com/affirmative.webm",
     },
     {
       id: "turn-neg",
@@ -41,19 +42,48 @@ const completedDebate = (overrides: Partial<DebateThread> = {}): DebateThread =>
       side: "Neg",
       summary: "Negative speech submitted.",
       status: "submitted",
+      speechUrl: "https://example.com/negative.webm",
     },
   ],
   ...overrides,
 });
 
-const renderSummary = () =>
+const renderPage = (entry = "/app/debates/complete?view=summary") =>
   render(
-    <MemoryRouter initialEntries={["/app/debates/complete?view=summary"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/app/debates/:debateId" element={<DebateWatchPage />} />
       </Routes>
     </MemoryRouter>,
   );
+
+const renderSummary = () => renderPage();
+
+describe("DebateWatchPage debate view", () => {
+  it("keeps the overview cards and renders the completed debate widget below them", () => {
+    mocks.debates = [completedDebate()];
+
+    renderPage("/app/debates/complete");
+
+    expect(screen.getByRole("heading", { name: "Matchup" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Round summary" })).toBeInTheDocument();
+
+    const debateWidget = screen.getByRole("article", {
+      name: "Completed debate round",
+    });
+    expect(within(debateWidget).getByText("A1")).toBeInTheDocument();
+    expect(within(debateWidget).getByText("N1")).toBeInTheDocument();
+    expect(within(debateWidget).getAllByText("Submitted")).toHaveLength(2);
+    expect(
+      within(debateWidget).getByRole("link", {
+        name: "Play Affirmative Constructive",
+      }),
+    ).toHaveAttribute("href", "https://example.com/affirmative.webm");
+    expect(
+      within(debateWidget).getByRole("link", { name: "View Summary" }),
+    ).toHaveAttribute("href", "/app/debates/complete?view=summary");
+  });
+});
 
 describe("DebateWatchPage summary", () => {
   it("renders the persisted structured summary and transcript-grounded highlights", () => {

@@ -5,10 +5,7 @@ import {
   Check,
   Clock3,
   Eye,
-  Lock,
   MessageCircle,
-  Mic2,
-  Play,
   Send,
   Share2,
   ThumbsDown,
@@ -16,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
+import { DebateTurnSequence } from "@/components/debates/DebateTurnSequence";
 import { seededDebates, seededMatchRequests } from "@/data/firestoreSeeds";
 import {
   acceptOpenChallenge,
@@ -40,7 +38,6 @@ import type {
   DebateMessage,
   DebateReaction,
   DebateThread,
-  DebateTurn,
 } from "@/types/models";
 
 type DebateTab = "my-debates" | "open-challenges" | "spectate" | "completed";
@@ -149,28 +146,6 @@ const shortTime = (value: string) =>
     month: "short",
     day: "numeric",
   });
-
-const DEFAULT_TURN_LABELS = [
-  { code: "1AC", title: "Affirmative Constructive", side: "Aff" as const },
-  { code: "1NC", title: "Negative Constructive", side: "Neg" as const },
-  { code: "1AR", title: "Affirmative Rebuttal", side: "Aff" as const },
-  { code: "2NR", title: "Negative Rebuttal", side: "Neg" as const },
-];
-
-const turnLabel = (format: string, index: number, turn?: DebateTurn) => {
-  const preset = debateFormatPresets[format as DebateMatchRequest["format"]];
-  const fallback = preset?.turns[index] ?? DEFAULT_TURN_LABELS[index] ?? {
-    code: `${Math.floor(index / 2) + 1}${index % 2 === 0 ? "A" : "N"}`,
-    title: `${index % 2 === 0 ? "Affirmative" : "Negative"} Speech`,
-    side: index % 2 === 0 ? ("Aff" as const) : ("Neg" as const),
-  };
-
-  return {
-    code: turn?.code ?? fallback.code,
-    title: turn?.title ?? fallback.title,
-    side: turn?.side ?? fallback.side,
-  };
-};
 
 export const DebatesPage = () => {
   const { currentUser } = useAuth();
@@ -621,98 +596,13 @@ export const DebatesPage = () => {
   };
 
   const renderDebateTurns = (debate: DebateThread) => {
-    if (debate.status === "Awaiting Opponent") {
-      return (
-        <div className="debate-awaiting-card">
-          <div className="debate-awaiting-icon"><Clock3 size={20} /></div>
-          <div>
-            <strong>Waiting for an opponent to join</strong>
-            <span className="meta-line">
-              {debate.inviteCode ? <>Share invite code <strong>{debate.inviteCode}</strong></> : "Your challenge is ready to be accepted."}
-            </span>
-          </div>
-        </div>
-      );
-    }
-
-    if (debate.status === "Completed" && (debate.turns?.length ?? 0) === 0) {
-      return (
-        <div className="debate-completed-summary">
-          <Check size={20} />
-          <div>
-            <strong>All speeches submitted</strong>
-            <span className="meta-line">
-              {debate.winner ? `${debate.winner === "Aff" ? "Affirmative" : "Negative"} won this debate.` : "This debate is ready to review."}
-            </span>
-          </div>
-        </div>
-      );
-    }
-
-    const visibleTurnCount = debate.status === "Completed"
-      ? debate.turns.length
-      : Math.max(debate.totalRounds, debate.turns?.length ?? 0);
-    const busy = busyDebateId === debate.id;
-
     return (
-      <div className="debate-entry-turns" aria-label="Debate speech sequence">
-        {Array.from({ length: visibleTurnCount }, (_, index) => {
-          const turn = debate.turns?.[index];
-          const label = turnLabel(debate.format, index, turn);
-          const isSubmitted = Boolean(turn);
-          const isCurrent = !isSubmitted && debate.status === "Active" && index === (debate.turns?.length ?? 0);
-          const isCurrentUser = isCurrent && isMyTurn(debate, user.id);
-          const sideClass = label.side === "Aff" ? "is-aff" : "is-neg";
-
-          return (
-            <div
-              key={turn?.id ?? `${debate.id}-turn-${index}`}
-              className={`debate-entry-turn ${sideClass}${isCurrent ? " is-current" : ""}${!isSubmitted && !isCurrent ? " is-locked" : ""}`}
-            >
-              <span className={`turn-badge ${sideClass}`}>{label.side.toUpperCase()}</span>
-              <div className="turn-main">
-                <strong><span className="turn-code">{label.code}</span> — {label.title}</strong>
-                {turn ? (
-                  <span className="meta-line">
-                    {turn.durationLabel ? `${turn.durationLabel} · ` : ""}
-                    {turn.submittedAt ? `Submitted ${formatDateTime(turn.submittedAt)}` : turn.summary}
-                  </span>
-                ) : isCurrentUser ? (
-                  <span className="meta-line is-current-copy">Your turn to respond · {debate.speechTimeLimit ?? "5 minutes"} time limit</span>
-                ) : isCurrent ? (
-                  <span className="meta-line">Waiting for {label.side === "Aff" ? debate.affirmative.name : debate.negative.name} to submit</span>
-                ) : (
-                  <span className="meta-line">Unlocks after the previous speech is submitted</span>
-                )}
-              </div>
-              <div className="turn-actions">
-                {turn?.speechUrl ? (
-                  <a className={`debate-play-button ${sideClass}`} href={turn.speechUrl} target="_blank" rel="noreferrer" aria-label={`Play ${label.title}`}>
-                    <Play size={17} fill="currentColor" />
-                  </a>
-                ) : isCurrentUser ? (
-                  <label className="btn btn-primary debate-upload debate-record-button">
-                    <Mic2 size={16} /> {busy ? "Uploading..." : "Record / Upload"}
-                    <input
-                      type="file"
-                      accept="audio/*,video/*"
-                      disabled={busy}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        event.target.value = "";
-                        void handleTurnUpload(debate, file);
-                      }}
-                    />
-                  </label>
-                ) : (
-                  <Lock className="debate-lock-icon" size={18} aria-label={isCurrent ? "Waiting" : "Locked"} />
-                )}
-                {isSubmitted ? <span className="debate-submitted-badge"><Check size={14} /> Submitted</span> : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <DebateTurnSequence
+        debate={debate}
+        currentUserId={user.id}
+        busy={busyDebateId === debate.id}
+        onUpload={(file) => void handleTurnUpload(debate, file)}
+      />
     );
   };
 
