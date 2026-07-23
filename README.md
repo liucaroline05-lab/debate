@@ -114,3 +114,24 @@ When creating a group, there should also be an optional field to set the image f
 The speech library page under "Record/Upload" currently does not work. Clicking on a past speech entry takes me to a "Speech not found" page. Once I go back all past speech entries are gone and only show up again after refreshing the page. This needs to be fixed so that the speech library works properly and all past speeches are accessible. Also the checkbox for allow comments should instead be a toggle switch that is on by default like what you did before. The toggle switch should also be present on the speech library page so that users can change the setting for past speeches.
 
 Next up, when clicking a group, it goes to a dedicated group page where you can see every post/entry related to that group. Once you are in a group, it can show up on the dashboard in the channels section where the user can click to also be taken to the group page. The group page should also list who is part of that group. Users can only post in a group once they are a member. When users try to join, the creators should be able to kick/permaban users. Anyone can join a public group. If a user makes a post in a private group, their post should ONLY be visible to members of said private group.
+
+
+Implemented and verified.
+
+- Finished participant debates now leave **My Debates** and appear only in **Completed**.
+- Completed cards now show **View Debate** and **View Summary** side by side.
+- The summary view shows the saved debate summary plus submitted-speech highlights, with a clear placeholder until AI processing is added.
+- Added regression coverage; `npm test -- --run src/pages/app/DebatesPage.test.tsx` and `npm run build` pass.
+
+For AI summaries, use a two-step server-side pipeline:
+
+1. Transcribe each audio upload with `gpt-4o-mini-transcribe`.
+2. After the final turn, send the combined transcripts to a text model with a strict JSON schema: resolution, each side’s claims, evidence, rebuttals, clashes, and neutral outcome—explicitly requiring it not to invent evidence.
+
+My cost/quality recommendation:
+
+- Best inexpensive default: `gpt-4o-mini-transcribe` ($0.003/min) + `gpt-5.4-mini` for the final debate summary.
+- Cheapest plausible option: `gpt-4o-mini-transcribe` + `gpt-5.4-nano`; evaluate carefully, since debate summaries need reliable attribution and nuance.
+- Use the summary model only once, after all transcripts are complete—not once per audio file—then persist the result, prompt/model version, and transcript references in Firestore. Run it from a Cloud Function, not the browser, so the API key stays private.
+
+Current transcription and text-model pricing is in the [official OpenAI pricing docs](https://developers.openai.com/api/docs/pricing).
