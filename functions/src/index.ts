@@ -12,14 +12,19 @@ import { setGlobalOptions } from "firebase-functions/v2/options";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import OpenAI from "openai";
+import { openAiApiKey } from "./secrets";
 
 initializeApp();
 setGlobalOptions({ invoker: "public", region: "us-central1" });
 
-const openAiApiKey = defineSecret("OPENAI_API_KEY");
 const tabroomSessionEncryptionKey = defineSecret("TABROOM_SESSION_ENCRYPTION_KEY");
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxImageSizeBytes = 5 * 1024 * 1024;
+
+export {
+  summarizeCompletedDebate,
+  transcribeDebateSpeech,
+} from "./debateAi";
 
 interface UploadProfilePhotoRequest {
   contentType?: unknown;

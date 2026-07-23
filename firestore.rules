@@ -142,13 +142,36 @@ service cloud.firestore {
         );
     }
 
+    function keepsServerManagedDebateSummary() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "aiSummary",
+        "summary",
+        "summaryStatus",
+        "summaryModel",
+        "summaryPromptVersion",
+        "summaryTranscriptRefs",
+        "summaryResponseId",
+        "summaryGeneratedAt",
+        "summaryPendingTurnIds",
+        "summaryError",
+        "summaryProcessingStartedAt",
+        "summaryProcessingEventId"
+      ]);
+    }
+
     match /debates/{debateId} {
       // Public debates are readable to any signed-in user; private debates are
       // readable to their participants and creator. (Whole-collection listeners
       // still require a broad read, so listing stays gated to signed-in users.)
       allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update: if isSignedIn();
+      allow update: if isSignedIn() && keepsServerManagedDebateSummary();
+    }
+
+    // Raw debate transcripts are written by Cloud Functions and are not exposed
+    // to clients. The generated, student-facing summary is stored on the debate.
+    match /debateTranscripts/{transcriptId} {
+      allow read, write: if false;
     }
 
     match /matchRequests/{requestId} {
