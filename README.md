@@ -80,12 +80,15 @@ Async Debate Page:
 - Similar to the Community page, the public debates should have a like/dislike, favorite, share, and comment buttons. The comments should be persistent and saved in the database so that they can come back to it later. When a debate is still ongoing, the comments are not readable to the participants. Anyone can read but only spectators can comment. Once the debate is over, the comments are readable to everyone and anyone can comment. The comments should be sorted by most recent first.
 
 
+- The async debate entries should look like [INSERT IMAGE EXAMPLE HERE]
+
+
 Additional TODOs:
 - When creating a new debate, instead of a modal it should be an inline form just like how it is done for making a new community post.
 - Invite code text field style is out of place and should be fixed to match the rest of the form.
 - The padding of a debate entry is nonexistent when there is turn metadata present. It should be padded the same as when there is no turn metadata. Also the chat button should still be visible as it current diappears when it should not.
 - When there is a new chat message from the other debate partner, the chat button should have a notification badge to indicate that there is a new message. The badge should be a small red circle with a number indicating how many new messages there are.
-- The async debate entries should look like [INSERT IMAGE EXAMPLE HERE]
+
 - Community Page: add option to upload media (images, video, etc) to posts
   - Also option to upload other file types (e.g. PDF, Word, etc) to posts
 - Follow button when looking at a user's profile currently does not work. It should add them to your following list and show their posts in your Following feed.
@@ -93,3 +96,21 @@ Additional TODOs:
 - Dashboard: make the Events/Debate Threads/Resource Library/Channels cards not hardcoded and actually function.
 - Community Page: make the Practice Groups/School & Tournament Channels listed on the right side real instead of hardcoded. At the top of the Practice Groups card, there should be a button to create a new practice group. Clicking it should open a modal with a form to create a new practice group. The form should include fields for the name, description, and an option to make it public or private. If it is private, there should be an option to invite specific users via a code to join the group. Visually it should be a green plus in the spot where the group icon would be and the name field should just say "Create Group"
 - Within the Record/Upload page, the right side void should be filled by a list of the user's past speeches as well as others after their own. Each entry should have the same format as a Dashboard speech entry. Click it should go to a subpage where the user can view the speech, see comments, and download the speech. Comments can be disabled similar to the async debates. Default is comments on.
+- async debate invite code bar reformatted to look like the rest of the website
+- in resources, reformat the "reccomended to you" quick reads so that the middle card is slightly bigger than the ones next to it, and the arrows on the left and right are more visible
+- in async debate, fix the debate types and make the speech limits and format automatically based on the debate type
+
+
+
+
+July 15, 2026:
+
+In Async debate, the profile of each participant should be clickable and take you to their profile page. The profile page should show their bio, list of their posts, and list of their debates, stats, etc. There should also be a follow button on their profile page to follow them and see their posts in your feed.
+
+In Community, there should be an option to see saved posts. It can be activated via a choice button sitting next to "tips & Strategies"
+
+When creating a group, there should also be an optional field to set the image for the group. It should have the same moderation guardrails as the profile picture upload system.
+
+The speech library page under "Record/Upload" currently does not work. Clicking on a past speech entry takes me to a "Speech not found" page. Once I go back all past speech entries are gone and only show up again after refreshing the page. This needs to be fixed so that the speech library works properly and all past speeches are accessible. Also the checkbox for allow comments should instead be a toggle switch that is on by default like what you did before. The toggle switch should also be present on the speech library page so that users can change the setting for past speeches.
+
+Next up, when clicking a group, it goes to a dedicated group page where you can see every post/entry related to that group. Once you are in a group, it can show up on the dashboard in the channels section where the user can click to also be taken to the group page. The group page should also list who is part of that group. Users can only post in a group once they are a member. When users try to join, the creators should be able to kick/permaban users. Anyone can join a public group. If a user makes a post in a private group, their post should ONLY be visible to members of said private group.
