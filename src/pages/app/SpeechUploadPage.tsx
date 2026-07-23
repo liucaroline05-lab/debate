@@ -2,7 +2,6 @@ import { useMemo, useState, type FormEvent } from "react";
 import { NavLink } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
 import { PageMeta } from "@/components/common/PageMeta";
-import { seededSpeeches } from "@/data/firestoreSeeds";
 import { createSpeechRecord } from "@/features/speeches/speechService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDateTime } from "@/lib/date";
@@ -20,6 +19,7 @@ const initialForm = {
   organizationTags: "feedback-requested",
   commentsEnabled: true,
 };
+const EMPTY_SPEECH_SEEDS: SpeechRecord[] = [];
 
 export const SpeechUploadPage = () => {
   const [form, setForm] = useState(initialForm);
@@ -28,9 +28,10 @@ export const SpeechUploadPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { currentUser } = useAuth();
+  const currentUserId = currentUser?.id;
   const ownSpeechConstraints = useMemo<QueryConstraint[]>(
-    () => currentUser ? [where("creatorId", "==", currentUser.id)] : [],
-    [currentUser],
+    () => currentUserId ? [where("creatorId", "==", currentUserId)] : [],
+    [currentUserId],
   );
   const publicSpeechConstraints = useMemo<QueryConstraint[]>(
     () => [where("visibility", "==", "public")],
@@ -38,14 +39,17 @@ export const SpeechUploadPage = () => {
   );
   const ownSpeeches = useSeededFirestoreCollection<SpeechRecord>(
     "speeches",
-    seededSpeeches,
+    EMPTY_SPEECH_SEEDS,
     ownSpeechConstraints,
-    Boolean(currentUser),
+    Boolean(currentUserId),
+    currentUserId ? `speeches:owner:${currentUserId}` : undefined,
   );
   const publicSpeeches = useSeededFirestoreCollection<SpeechRecord>(
     "speeches",
-    seededSpeeches,
+    EMPTY_SPEECH_SEEDS,
     publicSpeechConstraints,
+    true,
+    "speeches:public",
   );
   const speechHistory = useMemo(() => {
     const newestFirst = (left: SpeechRecord, right: SpeechRecord) =>
@@ -288,7 +292,13 @@ export const SpeechUploadPage = () => {
               </NavLink>
             ))}
           </div>
-          {speechHistory.length === 0 ? <p className="card-copy">Your uploaded speeches and public community speeches will appear here.</p> : null}
+          {speechHistory.length === 0 ? (
+            <p className="card-copy">
+              {ownSpeeches.isLoading || publicSpeeches.isLoading
+                ? "Loading your speech library..."
+                : "Your uploaded speeches and public community speeches will appear here."}
+            </p>
+          ) : null}
         </aside>
       </section>
     </>

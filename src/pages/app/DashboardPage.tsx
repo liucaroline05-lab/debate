@@ -18,19 +18,23 @@ import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollecti
 import { formatDate, formatDateTime } from "@/lib/date";
 import type { SpeechRecord } from "@/types/models";
 
+const EMPTY_SPEECH_SEEDS: SpeechRecord[] = [];
+
 export const DashboardPage = () => {
   const { currentUser } = useAuth();
+  const currentUserId = currentUser?.id;
   const [menuSpeechId, setMenuSpeechId] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState("");
   const speechConstraints = useMemo<QueryConstraint[]>(
-    () => (currentUser ? [where("creatorId", "==", currentUser.id)] : []),
-    [currentUser],
+    () => (currentUserId ? [where("creatorId", "==", currentUserId)] : []),
+    [currentUserId],
   );
   const speechState = useSeededFirestoreCollection<SpeechRecord>(
     "speeches",
-    [],
+    EMPTY_SPEECH_SEEDS,
     speechConstraints,
-    Boolean(currentUser),
+    Boolean(currentUserId),
+    currentUserId ? `speeches:owner:${currentUserId}` : undefined,
   );
   const debateState = useSeededFirestoreCollection("debates", seededDebates);
   const resourceState = useSeededFirestoreCollection("resources", seededResources);

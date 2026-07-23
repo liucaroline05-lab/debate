@@ -151,8 +151,7 @@ export const createSpeechRecord = async (
 
   const mediaPath = await uploadSpeechAsset(input);
 
-  const speech: SpeechRecord = {
-    id: `speech-${Date.now()}`,
+  const speech: Omit<SpeechRecord, "id"> = {
     creatorId: input.userId,
     title: input.title,
     eventName: input.eventName,
@@ -173,9 +172,11 @@ export const createSpeechRecord = async (
     ...speech,
     createdAt: serverTimestamp(),
   });
-  speech.id = docRef.id;
 
-  return speech;
+  return {
+    id: docRef.id,
+    ...speech,
+  };
 };
 
 export const addSpeechComment = async (
