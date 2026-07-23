@@ -23,6 +23,7 @@ import {
   addDebateMessage,
   createOpenChallenge,
   createPrivateDebate,
+  finalizeDebateIfComplete,
   incrementDebateShareCount,
   joinDebateByInviteCode,
   markDebateChatRead,
@@ -221,6 +222,39 @@ export const DebatesPage = () => {
     EMPTY_CHAT_READS,
   );
 
+  const debates = useMemo(
+    () => debateState.data.map((debate) => {
+      const hasAllTurns =
+        debate.status !== "Awaiting Opponent"
+        && debate.totalRounds > 0
+        && (debate.turns?.length ?? 0) >= debate.totalRounds;
+      return hasAllTurns && debate.status !== "Completed"
+        ? {
+            ...debate,
+            status: "Completed" as const,
+            currentRound: debate.totalRounds,
+            currentTurnUserId: null,
+          }
+        : debate;
+    }),
+    [debateState.data],
+  );
+
+  useEffect(() => {
+    debateState.data.forEach((debate) => {
+      const isStaleCompletedDebate =
+        debate.status !== "Completed"
+        && debate.status !== "Awaiting Opponent"
+        && debate.totalRounds > 0
+        && (debate.turns?.length ?? 0) >= debate.totalRounds;
+      if (isStaleCompletedDebate) {
+        void finalizeDebateIfComplete(debate).catch(() => {
+          // The derived status still keeps the completed debate in the right tab.
+        });
+      }
+    });
+  }, [debateState.data]);
+
   const myReactions = useMemo(() => {
     const map = new Map<string, DebateReaction>();
     reactionState.data.forEach((reaction) => {
@@ -243,7 +277,7 @@ export const DebatesPage = () => {
       return 3;
     };
 
-    return debateState.data
+    return debates
       .filter(
         (debate) =>
           (debate.participantIds ?? []).includes(user.id) &&
@@ -253,7 +287,7 @@ export const DebatesPage = () => {
         const byRank = rank(left) - rank(right);
         return byRank !== 0 ? byRank : left.nextDeadline.localeCompare(right.nextDeadline);
       });
-  }, [debateState.data, user.id]);
+  }, [debates, user.id]);
 
   const openChallenges = useMemo(
     () => matchState.data.filter((match) => match.status === "Open"),
@@ -262,24 +296,24 @@ export const DebatesPage = () => {
 
   const spectateDebates = useMemo(
     () =>
-      debateState.data.filter(
+      debates.filter(
         (debate) =>
           debate.visibility === "public" &&
           debate.status === "Active" &&
           !(debate.participantIds ?? []).includes(user.id),
       ),
-    [debateState.data, user.id],
+    [debates, user.id],
   );
 
   const completedDebates = useMemo(
     () =>
-      debateState.data.filter(
+      debates.filter(
         (debate) =>
           debate.status === "Completed" &&
           (debate.visibility === "public" ||
             (debate.participantIds ?? []).includes(user.id)),
       ),
-    [debateState.data, user.id],
+    [debates, user.id],
   );
 
   const debateComments = (debateId: string) =>
@@ -355,7 +389,7 @@ export const DebatesPage = () => {
       await joinDebateByInviteCode(
         joinCode,
         { id: user.id, name: userName },
-        debateState.data,
+        debates,
       );
       setJoinCode("");
       setBanner("You joined the debate. It is now active.");
@@ -383,8 +417,17 @@ export const DebatesPage = () => {
     setBusyDebateId(debate.id);
     setBanner("");
     try {
-      await submitDebateTurn(debate, { id: user.id, name: userName }, file);
-      setBanner("Speech submitted. It is now your opponent's turn.");
+      const result = await submitDebateTurn(
+        debate,
+        { id: user.id, name: userName },
+        file,
+      );
+      if (result.completed) {
+        setBanner("Final speech submitted. The debate is now complete.");
+        setActiveTab("completed");
+      } else {
+        setBanner("Speech submitted. It is now your opponent's turn.");
+      }
     } catch (error) {
       setBanner(error instanceof Error ? error.message : "Unable to upload the speech.");
     } finally {
@@ -674,7 +717,7 @@ export const DebatesPage = () => {
   };
 
   const activeChatDebate = chatDebateId
-    ? debateState.data.find((debate) => debate.id === chatDebateId)
+    ? debates.find((debate) => debate.id === chatDebateId)
     : undefined;
 
   const unreadChatCount = (debateId: string) => {

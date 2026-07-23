@@ -39,6 +39,15 @@ service firebase.storage {
         );
     }
 
+    function isValidDebateTurnUpload() {
+      return request.resource.metadata.sourceType == "debate-turn"
+        && request.resource.metadata.debateId is string
+        && request.resource.metadata.turnId is string
+        && request.resource.metadata.userId == request.auth.uid
+        && request.resource.metadata.side in ["Aff", "Neg"]
+        && request.resource.size <= 25 * 1024 * 1024;
+    }
+
     // Profile photos. Public read so avatars render anywhere in the app; all
     // writes go through the Cloud Function (Admin SDK), never the client.
     match /avatars/{userId}/{fileName} {
@@ -51,7 +60,13 @@ service firebase.storage {
     // Objects are immutable once written; deletes are not performed client-side.
     match /speeches/{fileName} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isAllowedMedia(500);
+      allow create: if isSignedIn()
+        && isAllowedMedia(500)
+        && (
+          !("sourceType" in request.resource.metadata)
+          || request.resource.metadata.sourceType != "debate-turn"
+          || isValidDebateTurnUpload()
+        );
       allow update, delete: if false;
     }
 

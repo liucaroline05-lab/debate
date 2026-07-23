@@ -102,7 +102,55 @@ export interface DebateTurn {
   status: "submitted" | "current" | "locked";
   actionLabel?: string;
   speechUrl?: string;
+  speechStoragePath?: string;
 }
+
+export interface DebateSummaryPoint {
+  text: string;
+  turnIds: string[];
+}
+
+export interface DebateSummaryEvidence {
+  description: string;
+  sourceAsStated: string;
+  turnIds: string[];
+}
+
+export interface DebateSideSummary {
+  claims: DebateSummaryPoint[];
+  evidence: DebateSummaryEvidence[];
+  rebuttals: DebateSummaryPoint[];
+}
+
+export interface DebateAiSummary {
+  resolution: string;
+  affirmative: DebateSideSummary;
+  negative: DebateSideSummary;
+  clashes: Array<{
+    topic: string;
+    affirmativePosition: string;
+    negativePosition: string;
+    neutralAssessment: string;
+    turnIds: string[];
+  }>;
+  neutralOutcome: {
+    summary: string;
+    reasoning: string;
+    unresolvedQuestions: string[];
+  };
+  speechHighlights: Array<{
+    turnId: string;
+    speaker: string;
+    side: "Aff" | "Neg";
+    highlight: string;
+  }>;
+}
+
+export type DebateSummaryStatus =
+  | "waiting_for_transcripts"
+  | "processing"
+  | "completed"
+  | "failed";
 
 export type DebateStatus =
   | "Awaiting Opponent"
@@ -141,6 +189,11 @@ export interface DebateThread {
   participantIds?: string[];
   watchPath?: string;
   summary?: string;
+  aiSummary?: DebateAiSummary;
+  summaryStatus?: DebateSummaryStatus;
+  summaryModel?: string;
+  summaryPromptVersion?: string;
+  summaryTranscriptRefs?: string[];
   score?: {
     aff: number;
     neg: number;

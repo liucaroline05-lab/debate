@@ -16,6 +16,7 @@ import {
   type UploadTaskSnapshot,
 } from "firebase/storage";
 import { firestore, storage } from "@/lib/firebase";
+import { getDebateTurnProgress } from "@/features/debates/debateProgress";
 import type {
   DebateMatchRequest,
   DebateParticipant,
@@ -24,6 +25,16 @@ import type {
 } from "@/types/models";
 
 const UPLOAD_TIMEOUT_MS = 20_000;
+const MAX_DEBATE_TRANSCRIPTION_BYTES = 25 * 1024 * 1024;
+const TRANSCRIBABLE_DEBATE_EXTENSIONS = new Set([
+  "m4a",
+  "mp3",
+  "mp4",
+  "mpeg",
+  "mpga",
+  "wav",
+  "webm",
+]);
 
 // ---------------------------------------------------------------------------
 // Storage upload — mirrors the pattern in speechService/resourceService.
@@ -88,6 +99,7 @@ const formatStorageError = (error: unknown) => {
 
 export const uploadDebateSpeech = async (
   debateId: string,
+  turnId: string,
   file: File,
   meta: { userId: string; side: string },
 ) => {
@@ -95,10 +107,23 @@ export const uploadDebateSpeech = async (
     throw new Error("Firebase Storage is not configured.");
   }
 
+  if (file.size > MAX_DEBATE_TRANSCRIPTION_BYTES) {
+    throw new Error("Debate recordings must be no larger than 25 MB.");
+  }
+
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!TRANSCRIBABLE_DEBATE_EXTENSIONS.has(extension)) {
+    throw new Error(
+      "Use an MP3, MP4, MPEG, MPGA, M4A, WAV, or WebM recording so it can be transcribed.",
+    );
+  }
+
   const metadata: UploadMetadata = {
     contentType: file.type,
     customMetadata: {
+      sourceType: "debate-turn",
       debateId,
+      turnId,
       userId: meta.userId,
       side: meta.side,
     },
@@ -109,7 +134,10 @@ export const uploadDebateSpeech = async (
 
   try {
     await withTimeout(uploadTaskToPromise(uploadTask), UPLOAD_TIMEOUT_MS);
-    return await withTimeout(getDownloadURL(assetRef), 8_000);
+    return {
+      speechUrl: await withTimeout(getDownloadURL(assetRef), 8_000),
+      speechStoragePath: assetRef.fullPath,
+    };
   } catch (error) {
     uploadTask.cancel();
     throw new Error(formatStorageError(error));
@@ -381,14 +409,15 @@ export const submitDebateTurn = async (
 ) => {
   const db = requireFirestore();
   const side = sideForUser(debate, user.id);
-  const speechUrl = await uploadDebateSpeech(debate.id, file, {
+  const turnId = `turn-${Date.now()}`;
+  const { speechUrl, speechStoragePath } = await uploadDebateSpeech(debate.id, turnId, file, {
     userId: user.id,
     side,
   });
 
   const submittedAt = nowIso();
   const newTurn: DebateTurn = {
-    id: `turn-${Date.now()}`,
+    id: turnId,
     author: user.name,
     authorId: user.id,
     side,
@@ -398,14 +427,13 @@ export const submitDebateTurn = async (
       `${side === "Aff" ? "Affirmative" : "Negative"} speech submitted.`,
     status: "submitted",
     speechUrl,
+    speechStoragePath,
   };
 
   const turns = [...(debate.turns ?? []), newTurn];
-  const totalTurns = debate.totalRounds * 2;
-  const isCompleted = turns.length >= totalTurns;
-  const currentRound = Math.min(
+  const { isCompleted, currentRound } = getDebateTurnProgress(
+    turns.length,
     debate.totalRounds,
-    Math.floor(turns.length / 2) + 1,
   );
 
   await updateDoc(doc(db, "debates", debate.id), {
@@ -417,6 +445,30 @@ export const submitDebateTurn = async (
   });
 
   return { speechUrl, completed: isCompleted };
+};
+
+/** Repairs debates completed under the older turn-count logic. */
+export const finalizeDebateIfComplete = async (debate: DebateThread) => {
+  if (debate.status === "Completed") {
+    return false;
+  }
+
+  const { isCompleted, currentRound } = getDebateTurnProgress(
+    debate.turns?.length ?? 0,
+    debate.totalRounds,
+  );
+  if (!isCompleted) {
+    return false;
+  }
+
+  const db = requireFirestore();
+  await updateDoc(doc(db, "debates", debate.id), {
+    status: "Completed",
+    currentRound,
+    currentTurnUserId: null,
+    updatedAt: nowIso(),
+  });
+  return true;
 };
 
 // ---------------------------------------------------------------------------

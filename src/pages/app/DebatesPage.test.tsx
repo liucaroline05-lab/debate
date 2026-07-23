@@ -35,10 +35,14 @@ const service = vi.hoisted(() => ({
   addDebateMessage: vi.fn(),
   createOpenChallenge: vi.fn(),
   createPrivateDebate: vi.fn(async () => ({ id: "new", inviteCode: "ABC123" })),
+  finalizeDebateIfComplete: vi.fn(async () => true),
   incrementDebateShareCount: vi.fn(),
   joinDebateByInviteCode: vi.fn(),
   markDebateChatRead: vi.fn(),
-  submitDebateTurn: vi.fn(),
+  submitDebateTurn: vi.fn(async () => ({
+    speechUrl: "https://example.com/speech.webm",
+    completed: false,
+  })),
   toggleDebateReaction: vi.fn(),
 }));
 
@@ -82,6 +86,41 @@ beforeEach(() => {
 });
 
 describe("DebatesPage — My Debates", () => {
+  it("moves to Completed after the final speech finishes the debate", async () => {
+    mocks.collections.debates = [
+      baseDebate({
+        totalRounds: 1,
+        currentTurnUserId: "me",
+      }),
+    ];
+    service.submitDebateTurn.mockResolvedValueOnce({
+      speechUrl: "https://example.com/final.webm",
+      completed: true,
+    });
+
+    renderPage();
+
+    const uploadLabel = screen.getByText(/record \/ upload/i).closest("label");
+    const uploadInput = uploadLabel?.querySelector("input[type='file']");
+    expect(uploadInput).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.change(uploadInput as HTMLInputElement, {
+        target: {
+          files: [new File(["audio"], "final.webm", { type: "audio/webm" })],
+        },
+      });
+    });
+
+    expect(screen.getByRole("tab", { name: /^completed$/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /final speech submitted.*now complete/i,
+    );
+  });
+
   it("shows an active your-turn debate above a waiting debate with the right actions", () => {
     mocks.collections.debates = [
       baseDebate({
@@ -221,6 +260,34 @@ describe("DebatesPage — spectator comments", () => {
     expect(screen.getByRole("link", { name: /^view summary$/i })).toHaveAttribute(
       "href",
       "/app/debates/done-participant?view=summary",
+    );
+  });
+
+  it("repairs debates left active by the old doubled turn count", () => {
+    mocks.collections.debates = [
+      baseDebate({
+        id: "stale-complete",
+        topic: "Stale completed debate",
+        status: "Active",
+        totalRounds: 1,
+        turns: [{
+          id: "final-turn",
+          author: "Me",
+          authorId: "me",
+          side: "Aff",
+          summary: "Final speech",
+          status: "submitted",
+        }],
+      }),
+    ];
+
+    renderPage();
+
+    expect(screen.queryByText("Stale completed debate")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /^completed$/i }));
+    expect(screen.getByText("Stale completed debate")).toBeInTheDocument();
+    expect(service.finalizeDebateIfComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "stale-complete" }),
     );
   });
 
