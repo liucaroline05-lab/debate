@@ -244,7 +244,11 @@ export const DebatesPage = () => {
     };
 
     return debateState.data
-      .filter((debate) => (debate.participantIds ?? []).includes(user.id))
+      .filter(
+        (debate) =>
+          (debate.participantIds ?? []).includes(user.id) &&
+          debate.status !== "Completed",
+      )
       .sort((left, right) => {
         const byRank = rank(left) - rank(right);
         return byRank !== 0 ? byRank : left.nextDeadline.localeCompare(right.nextDeadline);
@@ -1079,9 +1083,14 @@ export const DebatesPage = () => {
                   <span className="meta-line">
                     {debate.totalRounds} rounds • {formatDate(debate.nextDeadline)} • {debate.spectators} spectators
                   </span>
-                  <Link className="btn btn-secondary" to={`/app/debates/${debate.id}`}>
-                    View Full Debate
-                  </Link>
+                  <div className="button-row">
+                    <Link className="btn btn-secondary" to={`/app/debates/${debate.id}`}>
+                      View Debate
+                    </Link>
+                    <Link className="btn btn-ghost" to={`/app/debates/${debate.id}?view=summary`}>
+                      View Summary
+                    </Link>
+                  </div>
                 </div>
 
                 {renderReactions(debate)}

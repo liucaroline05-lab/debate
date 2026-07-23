@@ -1,11 +1,12 @@
 import { useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { PageMeta } from "@/components/common/PageMeta";
 import { seededDebates } from "@/data/firestoreSeeds";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 
 export const DebateWatchPage = () => {
   const { debateId } = useParams();
+  const location = useLocation();
   const debatesState = useSeededFirestoreCollection("debates", seededDebates);
 
   const debate = useMemo(
@@ -21,6 +22,10 @@ export const DebateWatchPage = () => {
     );
   }
 
+  const isSummaryView = new URLSearchParams(location.search).get("view") === "summary";
+  const submittedTurns = debate.turns?.filter((turn) => turn.status === "submitted") ?? [];
+  const summaryText = debate.summary ?? "An AI summary will appear here after the debate has been processed.";
+
   return (
     <>
       <PageMeta
@@ -28,13 +33,35 @@ export const DebateWatchPage = () => {
         description={`Watch and review ${debate.topic}.`}
       />
       <header className="route-header">
-        <p className="eyebrow">Debate Watch</p>
+        <p className="eyebrow">{isSummaryView ? "Debate Summary" : "Debate Watch"}</p>
         <h1>{debate.topic}</h1>
         <p>
-          {debate.format} • {debate.status} • {debate.summary ?? "Review this async round."}
+          {debate.format} • {debate.status} • {isSummaryView ? summaryText : "Review this async round."}
         </p>
       </header>
 
+      {isSummaryView ? (
+        <section className="stack">
+          <article className="app-card">
+            <h2 className="card-title">Debate summary</h2>
+            <p className="card-copy">{summaryText}</p>
+          </article>
+
+          <article className="app-card">
+            <h2 className="card-title">Speech highlights</h2>
+            <div className="list" style={{ marginTop: "1rem" }}>
+              {submittedTurns.length > 0 ? submittedTurns.map((turn) => (
+                <div key={turn.id} className="list-item">
+                  <strong>{turn.author} · {turn.side}</strong>
+                  <span className="meta-line">{turn.summary}</span>
+                </div>
+              )) : (
+                <p className="card-copy">Speech highlights will appear after the uploaded audio is summarized.</p>
+              )}
+            </div>
+          </article>
+        </section>
+      ) : (
       <section className="settings-grid">
         <article className="app-card">
           <h2 className="card-title">Matchup</h2>
@@ -68,6 +95,7 @@ export const DebateWatchPage = () => {
           </div>
         </article>
       </section>
+      )}
     </>
   );
 };

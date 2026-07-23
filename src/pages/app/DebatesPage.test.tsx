@@ -197,6 +197,33 @@ describe("DebatesPage — inline debate composer", () => {
 });
 
 describe("DebatesPage — spectator comments", () => {
+  it("moves completed participant debates out of My Debates and exposes both review actions", () => {
+    mocks.collections.debates = [
+      baseDebate({
+        id: "done-participant",
+        topic: "Completed participant debate",
+        status: "Completed",
+        participantIds: ["me", "opp"],
+      }),
+    ];
+
+    renderPage();
+
+    expect(screen.queryByText("Completed participant debate")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /^completed$/i }));
+
+    expect(screen.getByText("Completed participant debate")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^view debate$/i })).toHaveAttribute(
+      "href",
+      "/app/debates/done-participant",
+    );
+    expect(screen.getByRole("link", { name: /^view summary$/i })).toHaveAttribute(
+      "href",
+      "/app/debates/done-participant?view=summary",
+    );
+  });
+
   it("labels the comment entry differently for active vs completed debates", () => {
     mocks.collections.debates = [
       baseDebate({
