@@ -6,7 +6,6 @@ import {
   type QueryConstraint,
 } from "firebase/firestore";
 import { mapFirestoreDocuments } from "@/features/firestore/mapDocuments";
-import { ensureSeededCollection } from "@/features/firestore/seed";
 import { firestore } from "@/lib/firebase";
 
 interface SeededCollectionState<T> {
@@ -75,16 +74,6 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
         isMounted = false;
       };
     }
-
-    void ensureSeededCollection(collectionName, seedRecordsRef.current).catch((error) => {
-      if (isMounted) {
-        setState((current) => ({
-          ...current,
-          isLoading: false,
-          error: error instanceof Error ? error.message : "Unable to seed collection.",
-        }));
-      }
-    });
 
     const unsubscribe = onSnapshot(
       query(collection(firestore, collectionName), ...constraints),

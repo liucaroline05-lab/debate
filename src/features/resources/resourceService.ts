@@ -1,5 +1,5 @@
 import { FirebaseError } from "firebase/app";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import {
   getDownloadURL,
   ref,
@@ -16,6 +16,7 @@ export interface NewResourceInput {
   title: string;
   category: ResourceItem["category"];
   description: string;
+  longDescription: string;
   curatedBy: string;
   creatorId: string;
   creatorRole: UserRole;
@@ -150,6 +151,7 @@ export const createResource = async (input: NewResourceInput): Promise<ResourceI
     title: input.title.trim(),
     category: input.category,
     description: input.description.trim(),
+    longDescription: input.longDescription.trim() || input.description.trim(),
     curatedBy: input.curatedBy,
     creatorId: input.creatorId,
     creatorRole: input.creatorRole,
@@ -183,4 +185,54 @@ export const createResource = async (input: NewResourceInput): Promise<ResourceI
     ...resource,
     id: docRef.id,
   };
+};
+
+export const updateResource = async (
+  resourceId: string,
+  ownerId: string,
+  input: Pick<NewResourceInput, "title" | "description" | "longDescription" | "category" | "level" | "format" | "mediaType" | "tags" | "body" | "externalUrl" | "thumbnailUrl">,
+) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  if (!input.title.trim() || !input.description.trim()) {
+    throw new Error("Add a title and short description before saving.");
+  }
+
+  const trimmedBody = input.body.trim();
+  await updateDoc(doc(firestore, "resources", resourceId), {
+    title: input.title.trim(),
+    slug: slugify(input.title),
+    description: input.description.trim(),
+    longDescription: input.longDescription.trim() || input.description.trim(),
+    category: input.category,
+    level: input.level,
+    format: input.format,
+    mediaType: input.mediaType,
+    tags: input.tags,
+    externalUrl: input.externalUrl?.trim() || null,
+    thumbnailUrl: input.thumbnailUrl?.trim() || null,
+    contentSections: trimmedBody ? [{ title: "Resource notes", body: trimmedBody }] : [],
+    creatorId: ownerId,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const saveResourceNote = async (resourceId: string, userId: string, content: string) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  await setDoc(doc(firestore, "resourceNotes", `${resourceId}-${userId}`), {
+    resourceId,
+    userId,
+    content: content.trim(),
+    updatedAt: new Date().toISOString(),
+  });
+};
+
+export const toggleResourceSave = async (resourceId: string, userId: string) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const saveRef = doc(firestore, "resourceSaves", `${resourceId}-${userId}`);
+  if ((await getDoc(saveRef)).exists()) {
+    await deleteDoc(saveRef);
+    return false;
+  }
+  await setDoc(saveRef, { resourceId, userId, createdAt: new Date().toISOString() });
+  return true;
 };

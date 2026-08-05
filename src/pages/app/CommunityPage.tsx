@@ -40,7 +40,8 @@ import { useAuth } from "@/features/auth/AuthContext";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type { UserProfile } from "@/types/models";
 
-type ForumTab = "All Posts" | "Question" | "Speech Review" | "Tips & Strategies";
+type ForumTab = "All Posts" | "Saved" | "Question" | "Speech Review" | "Tips & Strategies";
+type PostCategory = Exclude<ForumTab, "Saved">;
 type FeedScope = "all" | "following";
 
 interface PostReaction {
@@ -57,6 +58,7 @@ const EMPTY_REACTIONS: PostReaction[] = [];
 
 const forumTabs: Array<{ id: ForumTab; label: string }> = [
   { id: "All Posts", label: "All Posts" },
+  { id: "Saved", label: "Saved" },
   { id: "Question", label: "Questions" },
   { id: "Speech Review", label: "Speech Reviews" },
   { id: "Tips & Strategies", label: "Tips & Strategies" },
@@ -148,6 +150,7 @@ export const CommunityPage = () => {
     name: "",
     description: "",
     visibility: "public" as "public" | "private",
+    category: "Practice Group" as "Tournament" | "School" | "Practice Group",
   });
   const [message, setMessage] = useState("");
   const [composer, setComposer] = useState({
@@ -155,6 +158,7 @@ export const CommunityPage = () => {
     content: "",
     category: "All Posts" as ForumTab,
     debateType: "",
+    topicTags: "",
     channelId: "channel-community",
   });
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
@@ -190,7 +194,7 @@ export const CommunityPage = () => {
       const matchesFeed =
         feedScope === "all" ? true : followingIds.includes(post.authorId);
       const matchesCategory =
-        activeTab === "All Posts" ? true : post.category === activeTab;
+        activeTab === "All Posts" ? true : activeTab === "Saved" ? myReactions.get(post.id)?.favorite === true : post.category === activeTab;
       const matchesChannel = selectedChannelId ? post.channelId === selectedChannelId : true;
       const matchesQuery =
         loweredQuery.length === 0
@@ -254,8 +258,16 @@ export const CommunityPage = () => {
 
   const trendingTopics = useMemo(() => {
     const counts = postState.data.reduce<Record<string, number>>((accumulator, post) => {
-      const key = post.debateType || post.category || "Community";
-      accumulator[key] = (accumulator[key] ?? 0) + 1;
+      const createdAt = new Date(post.createdAt).getTime();
+      if (!Number.isFinite(createdAt) || createdAt < Date.now() - 7 * 24 * 60 * 60 * 1000) {
+        return accumulator;
+      }
+      const topics = post.topicTags?.length
+        ? post.topicTags
+        : [post.debateType || post.category || "Community"];
+      topics.forEach((topic) => {
+        accumulator[topic] = (accumulator[topic] ?? 0) + 1;
+      });
       return accumulator;
     }, {});
 
@@ -276,8 +288,9 @@ export const CommunityPage = () => {
         authorId: author.id,
         author: authorName,
         authorRole: author.role,
-        category: composer.category,
+        category: composer.category as PostCategory,
         debateType: composer.debateType || undefined,
+        topicTags: composer.topicTags.split(",").map((tag) => tag.trim()).filter(Boolean),
         channelId: composer.channelId,
         title: composer.title || "Community update",
         content: composer.content,
@@ -288,6 +301,7 @@ export const CommunityPage = () => {
         title: "",
         content: "",
         debateType: "",
+        topicTags: "",
       }));
       setIsComposerOpen(false);
       setComposerFiles([]);
@@ -308,7 +322,7 @@ export const CommunityPage = () => {
           ? `Group created. Share invite code ${result.inviteCode}.`
           : "Practice group created.",
       );
-      setGroupForm({ name: "", description: "", visibility: "public" });
+      setGroupForm({ name: "", description: "", visibility: "public", category: "Practice Group" });
       setIsGroupModalOpen(false);
     } catch (error) {
       setGroupInviteNotice(error instanceof Error ? error.message : "Unable to create group.");
@@ -385,7 +399,7 @@ export const CommunityPage = () => {
     void incrementPostShareCount(postId, shareCount).catch(() => {});
   };
 
-  const editPost = async (postId: string, currentTitle?: string, currentContent?: string, currentCategory?: ForumTab, currentDebateType?: string) => {
+  const editPost = async (postId: string, currentTitle?: string, currentContent?: string, currentCategory?: PostCategory, currentDebateType?: string) => {
     const nextTitle = window.prompt("Edit post title", currentTitle ?? "");
     if (nextTitle === null) {
       return;
@@ -515,6 +529,15 @@ export const CommunityPage = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="form-field full">
+                <label htmlFor="postTopics">Topics</label>
+                <input
+                  id="postTopics"
+                  value={composer.topicTags}
+                  onChange={(event) => setComposer((current) => ({ ...current, topicTags: event.target.value }))}
+                  placeholder="Comma-separated, e.g. climate, evidence comparison"
+                />
               </div>
               <div className="form-field full">
                 <label htmlFor="postFiles">Media and files</label>
@@ -679,7 +702,7 @@ export const CommunityPage = () => {
                               <button
                                 type="button"
                                 className="forum-menu-item"
-                                onClick={() => void editPost(post.id, post.title, post.content, post.category as ForumTab, post.debateType)}
+                                onClick={() => void editPost(post.id, post.title, post.content, post.category as PostCategory, post.debateType)}
                               >
                                 <Pencil size={16} /> Edit
                               </button>
@@ -872,7 +895,7 @@ export const CommunityPage = () => {
                 }}
               >
                 <span className="forum-channel-badge forum-create-group-icon"><Plus size={20} /></span>
-                <span><strong>Create Group</strong><span className="meta-line">Start a public or private practice space</span></span>
+                <span><strong>Create Channel</strong><span className="meta-line">Start a public or private community space</span></span>
               </button>
               {practiceGroups.map((channel) => (
                 <Link key={channel.id} to={`/app/community?channel=${channel.id}`} className="forum-channel-row dashboard-list-link">
@@ -912,6 +935,9 @@ export const CommunityPage = () => {
                   </div>
                 </Link>
               ))}
+              {schoolAndTournamentChannels.length === 0 ? (
+                <p className="meta-line">Create a School or Tournament channel to begin.</p>
+              ) : null}
             </div>
           </article>
 
@@ -927,6 +953,9 @@ export const CommunityPage = () => {
                   </div>
                 </div>
               ))}
+              {trendingTopics.length === 0 ? (
+                <p className="meta-line">No topics have trended in the last seven days.</p>
+              ) : null}
             </div>
           </article>
 
@@ -965,8 +994,8 @@ export const CommunityPage = () => {
           >
             <div className="row-between">
               <div>
-                <p className="eyebrow">Practice groups</p>
-                <h2 id="createGroupTitle" className="card-title">Create a practice group</h2>
+                <p className="eyebrow">Community channels</p>
+                <h2 id="createGroupTitle" className="card-title">Create a channel</h2>
               </div>
               <button type="button" className="forum-icon-button" aria-label="Close group form" onClick={() => setIsGroupModalOpen(false)}>×</button>
             </div>
@@ -990,6 +1019,21 @@ export const CommunityPage = () => {
                 />
               </div>
               <div className="form-field full">
+                <label htmlFor="channelCategory">Channel type</label>
+                <select
+                  id="channelCategory"
+                  value={groupForm.category}
+                  onChange={(event) => setGroupForm((current) => ({
+                    ...current,
+                    category: event.target.value as "Tournament" | "School" | "Practice Group",
+                  }))}
+                >
+                  <option value="Practice Group">Practice Group</option>
+                  <option value="School">School</option>
+                  <option value="Tournament">Tournament</option>
+                </select>
+              </div>
+              <div className="form-field full">
                 <label htmlFor="practiceGroupVisibility">Who can join?</label>
                 <select
                   id="practiceGroupVisibility"
@@ -1009,7 +1053,7 @@ export const CommunityPage = () => {
             ) : null}
             <div className="button-row community-modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setIsGroupModalOpen(false)}>Cancel</button>
-              <button type="button" className="btn btn-primary" onClick={() => void submitPracticeGroup()}>Create group</button>
+              <button type="button" className="btn btn-primary" onClick={() => void submitPracticeGroup()}>Create channel</button>
             </div>
           </section>
         </div>

@@ -239,12 +239,26 @@ service cloud.firestore {
         && request.resource.data.description is string
         && request.resource.data.curatedBy is string
         && request.resource.data.level in ["Starter", "Growth", "Advanced"];
-      allow update: if isSignedIn();
+      allow update: if ownsExistingResource("creatorId");
+    }
+
+    match /resourceNotes/{noteId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if ownsExistingResource("userId");
+    }
+
+    match /resourceSaves/{saveId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow delete: if ownsExistingResource("userId");
     }
 
     match /channels/{channelId} {
       allow read: if true;
-      allow create, update: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.creatorId == request.auth.uid;
+      allow update, delete: if ownsExistingResource("creatorId");
     }
 
     match /debateChatReads/{readId} {

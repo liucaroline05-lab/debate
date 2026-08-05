@@ -6,7 +6,6 @@ import { PageMeta } from "@/components/common/PageMeta";
 import {
   seededChannels,
   seededDebates,
-  seededEvents,
   seededResources,
 } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -16,9 +15,10 @@ import {
 } from "@/features/speeches/speechService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDate, formatDateTime } from "@/lib/date";
-import type { SpeechRecord } from "@/types/models";
+import type { SpeechRecord, TabroomImport } from "@/types/models";
 
 const EMPTY_SPEECH_SEEDS: SpeechRecord[] = [];
+const EMPTY_TABROOM_IMPORTS: TabroomImport[] = [];
 
 export const DashboardPage = () => {
   const { currentUser } = useAuth();
@@ -36,10 +36,19 @@ export const DashboardPage = () => {
     Boolean(currentUserId),
     currentUserId ? `speeches:owner:${currentUserId}` : undefined,
   );
+  const tabroomImportState = useSeededFirestoreCollection<TabroomImport>(
+    "tabroomImports",
+    EMPTY_TABROOM_IMPORTS,
+    useMemo<QueryConstraint[]>(
+      () => (currentUserId ? [where("userId", "==", currentUserId)] : []),
+      [currentUserId],
+    ),
+    Boolean(currentUserId),
+    currentUserId ? `tabroom-imports:${currentUserId}` : undefined,
+  );
   const debateState = useSeededFirestoreCollection("debates", seededDebates);
   const resourceState = useSeededFirestoreCollection("resources", seededResources);
   const channelState = useSeededFirestoreCollection("channels", seededChannels);
-  const eventState = useSeededFirestoreCollection("events", seededEvents);
   const dashboardDebates = useMemo(
     () => debateState.data.filter((debate) =>
       (debate.participantIds ?? []).includes(currentUser?.id ?? ""),
@@ -52,11 +61,14 @@ export const DashboardPage = () => {
   );
   const followedChannels = useMemo(() => {
     const ids = new Set(currentUser?.activeChannelIds ?? []);
-    return ids.size ? channelState.data.filter((channel) => ids.has(channel.id)) : channelState.data;
+    return channelState.data.filter((channel) => ids.has(channel.id));
   }, [channelState.data, currentUser?.activeChannelIds]);
   const upcomingEvents = useMemo(
-    () => [...eventState.data].sort((left, right) => left.date.localeCompare(right.date)),
-    [eventState.data],
+    () =>
+      tabroomImportState.data
+        .flatMap((entry) => entry.events ?? [])
+        .sort((left, right) => right.date.localeCompare(left.date)),
+    [tabroomImportState.data],
   );
 
   const handleDeleteSpeech = async (speechId: string) => {
@@ -161,21 +173,21 @@ export const DashboardPage = () => {
         </article>
 
         <article className="app-card">
-          <span className="pill">Upcoming</span>
+          <span className="pill">Your Tabroom data</span>
           <h2 className="card-title" style={{ marginTop: "0.75rem" }}>
-            Events
+            Synced events
           </h2>
           <div className="list" style={{ marginTop: "1rem" }}>
             {upcomingEvents.map((event) => (
               <div key={event.id} className="list-item">
                 <strong>{event.name}</strong>
                 <span className="meta-line">
-                  {event.type} • {event.location} • {formatDate(event.date)}
+                  Tabroom sync • {formatDate(event.date)}
                 </span>
               </div>
             ))}
           </div>
-          {upcomingEvents.length === 0 ? <p className="card-copy">No upcoming events. Sync Tabroom from your profile to import tournament data.</p> : null}
+          {upcomingEvents.length === 0 ? <p className="card-copy">No synced events yet. Sync Tabroom from your profile to import your tournament data.</p> : null}
           <NavLink to="/app/profile#tabroom" className="btn btn-ghost" style={{ marginTop: "1rem" }}>Manage synced events</NavLink>
         </article>
 

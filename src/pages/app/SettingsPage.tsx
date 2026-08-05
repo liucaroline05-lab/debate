@@ -283,12 +283,6 @@ export const SettingsPage = () => {
               <strong>Email</strong>
               <span className="meta-line">{profile.email}</span>
             </div>
-            <div className="list-item">
-              <strong>Session status</strong>
-              <span className="meta-line">
-                {isDemoMode ? "Firebase configuration required" : "Firebase account session"}
-              </span>
-            </div>
             <div className="list-item settings-account-type">
               <div>
                 <strong>Account type</strong>

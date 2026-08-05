@@ -13,8 +13,11 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { seededResources } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
 import { createResource } from "@/features/resources/resourceService";
+import { where, type QueryConstraint } from "firebase/firestore";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { ResourceItem } from "@/types/models";
+import type { ResourceItem, ResourceSave } from "@/types/models";
+
+const EMPTY_RESOURCE_SAVES: ResourceSave[] = [];
 
 const categories: Array<"All" | ResourceItem["category"]> = [
   "All",
@@ -46,6 +49,7 @@ const initialComposer = {
   title: "",
   category: "Research" as ResourceItem["category"],
   description: "",
+  longDescription: "",
   level: "Starter" as ResourceItem["level"],
   format: "All Formats" as NonNullable<ResourceItem["format"]>,
   mediaType: "Link" as NonNullable<ResourceItem["mediaType"]>,
@@ -65,6 +69,11 @@ const getResourcePath = (resource: ResourceItem) =>
 export const ResourcesPage = () => {
   const { currentUser } = useAuth();
   const resourceState = useSeededFirestoreCollection("resources", seededResources);
+  const resourceSaveState = useSeededFirestoreCollection<ResourceSave>(
+    "resourceSaves", EMPTY_RESOURCE_SAVES,
+    useMemo<QueryConstraint[]>(() => currentUser ? [where("userId", "==", currentUser.id)] : [], [currentUser?.id]),
+    Boolean(currentUser), currentUser ? `resource-saves:${currentUser.id}` : undefined,
+  );
   const uploadRef = useRef<HTMLDivElement | null>(null);
   const uploadTitleRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
@@ -84,6 +93,7 @@ export const ResourcesPage = () => {
   );
 
   const filtered = useMemo(() => {
+    const savedIds = new Set(resourceSaveState.data.map((save) => save.resourceId));
     const loweredQuery = query.toLowerCase().trim();
 
     return resourceState.data.filter((resource) => {
@@ -107,7 +117,7 @@ export const ResourcesPage = () => {
       const matchesLevel = level === "All" || resource.level === level;
       const matchesFormat = format === "All" || resource.format === format;
       const matchesMedia = mediaType === "All" || resource.mediaType === mediaType;
-      const matchesSaved = savedOnly ? resource.saved : true;
+      const matchesSaved = savedOnly ? savedIds.has(resource.id) : true;
 
       return (
         matchesQuery &&
@@ -118,7 +128,7 @@ export const ResourcesPage = () => {
         matchesSaved
       );
     });
-  }, [category, format, level, mediaType, query, resourceState.data, savedOnly]);
+  }, [category, format, level, mediaType, query, resourceSaveState.data, resourceState.data, savedOnly]);
 
   const featuredResources = useMemo(
     () => resourceState.data.filter((resource) => resource.saved).slice(0, 12),
@@ -161,7 +171,7 @@ export const ResourcesPage = () => {
 
     try {
       await createResource({
-        ...composer,
+          ...composer,
         curatedBy: currentUser.displayName || "Debate Studio Member",
         creatorId: currentUser.id,
         creatorRole: currentUser.role,
@@ -263,6 +273,15 @@ export const ResourcesPage = () => {
                 setComposer((current) => ({ ...current, description: event.target.value }))
               }
               placeholder="What will this help debaters do?"
+            />
+          </div>
+          <div className="form-field full">
+            <label htmlFor="resourceLongDescription">Long description</label>
+            <textarea
+              id="resourceLongDescription"
+              value={composer.longDescription}
+              onChange={(event) => setComposer((current) => ({ ...current, longDescription: event.target.value }))}
+              placeholder="Give readers the full overview they will see on the resource page."
             />
           </div>
           <div className="form-field">

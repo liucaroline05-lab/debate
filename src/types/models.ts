@@ -248,7 +248,10 @@ export interface ResourceItem {
   slug?: string;
   title: string;
   category: "Case Building" | "Rebuttal" | "Research" | "Delivery";
+  /** Short card/sidebar summary. */
   description: string;
+  /** Full article overview shown on the resource detail page. */
+  longDescription?: string;
   curatedBy: string;
   creatorId?: string;
   creatorRole?: UserRole;
@@ -267,6 +270,21 @@ export interface ResourceItem {
   estimatedTime?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface ResourceNote {
+  id: string;
+  resourceId: string;
+  userId: string;
+  content: string;
+  updatedAt: string;
+}
+
+export interface ResourceSave {
+  id: string;
+  resourceId: string;
+  userId: string;
+  createdAt: string;
 }
 
 export interface CommunityChannel {
@@ -310,6 +328,7 @@ export interface CommunityPost {
   authorRole?: string;
   category?: "Question" | "Speech Review" | "Tips & Strategies" | "All Posts";
   debateType?: string;
+  topicTags?: string[];
   title?: string;
   content: string;
   createdAt: string;

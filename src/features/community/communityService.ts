@@ -26,6 +26,7 @@ interface NewPostInput {
   content: string;
   category: CommunityPost["category"];
   debateType?: string;
+  topicTags?: string[];
   authorId: string;
   author: string;
   authorRole?: string;
@@ -102,6 +103,7 @@ export const createPost = async (input: NewPostInput) => {
     authorRole: input.authorRole,
     category: input.category,
     debateType: input.debateType,
+    topicTags: input.topicTags ?? [],
     title: input.title,
     content: input.content,
     createdAt,
@@ -121,6 +123,7 @@ interface NewPracticeGroupInput {
   description: string;
   visibility: "public" | "private";
   creatorId: string;
+  category?: "Tournament" | "School" | "Practice Group";
 }
 
 const generateInviteCode = () => {
@@ -143,7 +146,7 @@ export const createPracticeGroup = async (input: NewPracticeGroupInput) => {
     memberCount: 1,
     topicTags: ["Practice"],
     shortCode: input.name.trim().slice(0, 2).toUpperCase(),
-    category: "Practice Group",
+    category: input.category ?? "Practice Group",
     activityLabel: "Created just now",
     accent: "sage",
     visibility: input.visibility,
