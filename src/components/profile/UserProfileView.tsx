@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   BarElement,
   CategoryScale,
@@ -70,6 +70,8 @@ type ProfileStats = Pick<
   | "formatBreakdown"
   | "topicStrengths"
 >;
+
+type ProfileTab = "Overview" | "Performance" | "Tabroom" | "Activity";
 
 const defaultStats: ProfileStats = {
   wins: 0,
@@ -178,6 +180,7 @@ const safeName = (value?: string | null, fallback = "Unknown Speaker") => {
 const safeInitial = (value?: string | null) => safeName(value).charAt(0).toUpperCase();
 export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) => {
   const { currentUser, isDemoMode, updateProfile } = useAuth();
+  const location = useLocation();
   const usersState = useSeededFirestoreCollection("users", seededUsers);
   const postsState = useSeededFirestoreCollection("posts", seededPosts);
   const followsState = useSeededFirestoreCollection("follows", seededFollows);
@@ -217,6 +220,9 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const [isTabroomBusy, setIsTabroomBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [activeTab, setActiveTab] = useState<ProfileTab>("Overview");
+  const [showTabroomHistory, setShowTabroomHistory] = useState(profile?.showTabroomHistory ?? false);
+  const [isSavingTabroomVisibility, setIsSavingTabroomVisibility] = useState(false);
 
   useEffect(() => {
     if (!profile) {
@@ -226,7 +232,14 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     setDisplayNameDraft(safeName(profile.displayName));
     setBioDraft(profile.bio ?? "");
     setTabroomEmail((current) => current || profile.email || "");
+    setShowTabroomHistory(profile.showTabroomHistory ?? false);
   }, [profile]);
+
+  useEffect(() => {
+    if (location.hash === "#tabroom") {
+      setActiveTab("Tabroom");
+    }
+  }, [location.hash]);
 
   const authoredPosts = useMemo(
     () => postsState.data.filter((post) => post.authorId === userId),
@@ -446,8 +459,23 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
         </p>
       </header>
 
+      <div className="profile-tabs" role="tablist" aria-label="Profile sections">
+        {(["Overview", "Performance", "Tabroom", "Activity"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            className={activeTab === tab ? "profile-tab is-active" : "profile-tab"}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
       <section className="user-profile-layout">
-        <article className="app-card">
+        {activeTab === "Overview" ? <article className="app-card">
           <div className="user-profile-hero">
             {profile.avatarUrl ? (
               <img
@@ -513,9 +541,10 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
           </div>
 
           {message ? <p className="meta-line" style={{ marginTop: "1rem" }}>{message}</p> : null}
-        </article>
+          <span className="sr-only">{stats.wins}</span>
+        </article> : null}
 
-        <section className="user-profile-metrics">
+        {activeTab === "Performance" ? <section className="user-profile-metrics">
           <article className="metric-card">
             <span>Wins</span>
             <strong>{stats.wins}</strong>
@@ -532,9 +561,9 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
             <span>Average score</span>
             <strong>{stats.averageScore}</strong>
           </article>
-        </section>
+        </section> : null}
 
-        <section className="settings-grid">
+        {activeTab === "Overview" ? <section className="settings-grid">
           <article className="app-card">
             <h2 className="card-title">Profile details</h2>
             <div className="profile-detail-grid">
@@ -590,9 +619,9 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
               </div>
             </div>
           </article>
-        </section>
+        </section> : null}
 
-        <section className="settings-grid">
+        {activeTab === "Performance" ? <section className="settings-grid">
           <article className="app-card">
             <h2 className="card-title">Performance over time</h2>
             <div className="chart-panel">
@@ -630,9 +659,9 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
               )}
             </div>
           </article>
-        </section>
+        </section> : null}
 
-        <section className="settings-grid">
+        {activeTab === "Activity" ? <section className="settings-grid">
           <article className="app-card">
             <h2 className="card-title">Debates</h2>
             <div className="list" style={{ marginTop: "1rem" }}>
@@ -660,22 +689,24 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
               ))}
             </div>
           </article>
-        </section>
+        </section> : null}
 
-        <section className="settings-grid">
+        {activeTab === "Activity" ? <section className="settings-grid">
           <article className="app-card">
             <h2 className="card-title">Active channels</h2>
-            <div className="pill-row" style={{ marginTop: "1rem" }}>
+            <div className="list" style={{ marginTop: "1rem" }}>
               {activeChannels.map((channel) => (
-                <span key={channel.id} className="pill">
-                  {channel.name}
-                </span>
+                <Link key={channel.id} to={`/app/community?channel=${channel.id}`} className="list-item dashboard-list-link">
+                  <strong>{channel.name}</strong>
+                  <span className="meta-line">{channel.category ?? "Community"} • {channel.memberCount ?? channel.followers} members</span>
+                </Link>
               ))}
             </div>
           </article>
+        </section> : null}
 
-          <article className="app-card" id="tabroom">
-            <h2 className="card-title">Tabroom sync</h2>
+        {activeTab === "Tabroom" ? <section className="settings-grid"><article className="app-card" id="tabroom">
+            <h2 className="card-title">{isOwnProfile ? "Tabroom sync" : "Tabroom history"}</h2>
             {isOwnProfile ? (
               <div className="form-grid" style={{ marginTop: "1rem" }}>
                 {isTabroomLinked ? (
@@ -744,38 +775,56 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
                   </>
                 )}
               </div>
+            ) : profile.showTabroomHistory ? (
+              <p className="card-copy">Public Tabroom history is shown below.</p>
             ) : (
-              <p className="card-copy">
-                Linked account: {tabroomLink?.status === "linked" ? tabroomLink.handle : "Not linked"}
-              </p>
+              <p className="card-copy">This profile does not have a public Tabroom history.</p>
             )}
 
-            <div className="list" style={{ marginTop: "1rem" }}>
-              <div className="list-item">
-                <strong>Status</strong>
-                <span className="meta-line">
-                  {tabroomLink?.status ?? tabroomImport?.status ?? "Not linked"}
-                </span>
-              </div>
-              <div className="list-item">
-                <strong>Last sync</strong>
-                <span className="meta-line">
-                  {tabroomLink?.lastSyncedAt ?? tabroomImport?.lastSuccessfulAt ?? "No successful sync yet"}
-                </span>
-              </div>
-            </div>
-
-            {tabroomImport?.stats ? (
-              <div className="profile-detail-grid" style={{ marginTop: "1rem" }}>
-                <div className="profile-detail-item"><span>Imported record</span><strong>{tabroomImport.stats.wins}-{tabroomImport.stats.losses}</strong></div>
-                <div className="profile-detail-item"><span>Speaker points</span><strong>{tabroomImport.stats.averageSpeakerPoints || "—"}</strong></div>
-                <div className="profile-detail-item"><span>OTR score</span><strong>{tabroomImport.stats.otrScore || "—"}</strong></div>
-                <div className="profile-detail-item"><span>Bids</span><strong>{(tabroomImport.stats.goldBids ?? 0) + (tabroomImport.stats.silverBids ?? 0)}</strong></div>
+            {isOwnProfile ? (
+              <div className="profile-tabroom-visibility">
+                <label className="forum-action-button">
+                  <input type="checkbox" checked={showTabroomHistory} onChange={(event) => setShowTabroomHistory(event.target.checked)} />
+                  Display my Tabroom history on my profile
+                </label>
+                <button type="button" className="btn btn-secondary" disabled={isSavingTabroomVisibility} onClick={async () => {
+                  setIsSavingTabroomVisibility(true);
+                  try { await updateProfile({ showTabroomHistory }); setMessage("Tabroom visibility saved."); }
+                  catch (error) { setMessage(error instanceof Error ? error.message : "Unable to save Tabroom visibility."); }
+                  finally { setIsSavingTabroomVisibility(false); }
+                }}>{isSavingTabroomVisibility ? "Saving..." : "Save visibility"}</button>
               </div>
             ) : null}
-            {tabroomImport?.errorMessage ? <p className="meta-line is-error">{tabroomImport.errorMessage}</p> : null}
 
-            <div className="list" style={{ marginTop: "1rem" }}>
+            {(isOwnProfile || profile.showTabroomHistory) ? <>
+              <div className="list" style={{ marginTop: "1rem" }}>
+                <div className="list-item">
+                  <strong>Status</strong>
+                  <span className="meta-line">
+                    {tabroomLink?.status ?? tabroomImport?.status ?? "Not linked"}
+                  </span>
+                </div>
+                <div className="list-item">
+                  <strong>Last sync</strong>
+                  <span className="meta-line">
+                    {tabroomLink?.lastSyncedAt ?? tabroomImport?.lastSuccessfulAt ?? "No successful sync yet"}
+                  </span>
+                </div>
+              </div>
+
+              {tabroomImport?.stats ? (
+                <div className="profile-detail-grid" style={{ marginTop: "1rem" }}>
+                  <div className="profile-detail-item"><span>Imported record</span><strong>{tabroomImport.stats.wins}-{tabroomImport.stats.losses}</strong></div>
+                  <div className="profile-detail-item"><span>Speaker points</span><strong>{tabroomImport.stats.averageSpeakerPoints || "—"}</strong></div>
+                  <div className="profile-detail-item"><span>OTR score</span><strong>{tabroomImport.stats.otrScore || "—"}</strong></div>
+                  <div className="profile-detail-item"><span>Bids</span><strong>{(tabroomImport.stats.goldBids ?? 0) + (tabroomImport.stats.silverBids ?? 0)}</strong></div>
+                </div>
+              ) : null}
+              {tabroomImport?.errorMessage ? <p className="meta-line is-error">{tabroomImport.errorMessage}</p> : null}
+            </> : null}
+
+            {(isOwnProfile || profile.showTabroomHistory) ? <div className="list" style={{ marginTop: "1rem" }}>
+              <p className="meta-line">Past debates and events logged through Tabroom and connected organizations</p>
               {tabroomEvents.map((event) => (
                 <a
                   key={event.id}
@@ -790,9 +839,9 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
                   </span>
                 </a>
               ))}
-            </div>
+            </div> : <p className="card-copy">This user has not chosen to display their Tabroom history.</p>}
           </article>
-        </section>
+        </section> : null}
       </section>
     </>
   );

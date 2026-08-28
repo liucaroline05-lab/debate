@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Bookmark,
@@ -153,6 +153,7 @@ export const CommunityPage = () => {
     category: "Practice Group" as "Tournament" | "School" | "Practice Group",
   });
   const [message, setMessage] = useState("");
+  const [reactionOverrides, setReactionOverrides] = useState<Record<string, Pick<PostReaction, "like" | "dislike" | "favorite">>>({});
   const [composer, setComposer] = useState({
     title: "",
     content: "",
@@ -180,6 +181,37 @@ export const CommunityPage = () => {
     return map;
   }, [reactionState.data, author.id]);
 
+  const getMyReaction = useCallback(
+    (postId: string): Pick<PostReaction, "like" | "dislike" | "favorite"> => {
+      const persisted = myReactions.get(postId);
+      const override = reactionOverrides[postId];
+      return {
+        like: override?.like ?? persisted?.like ?? false,
+        dislike: override?.dislike ?? persisted?.dislike ?? false,
+        favorite: override?.favorite ?? persisted?.favorite ?? false,
+      };
+    },
+    [myReactions, reactionOverrides],
+  );
+
+  useEffect(() => {
+    setReactionOverrides((current) => {
+      let next = current;
+      Object.entries(current).forEach(([postId, override]) => {
+        const persisted = myReactions.get(postId);
+        if (!persisted) return;
+        const matches = override.like === Boolean(persisted.like)
+          && override.dislike === Boolean(persisted.dislike)
+          && override.favorite === Boolean(persisted.favorite);
+        if (matches) {
+          if (next === current) next = { ...current };
+          delete next[postId];
+        }
+      });
+      return next;
+    });
+  }, [myReactions]);
+
   const followingIds = followsState.data
     .filter((follow) => follow.followerId === author.id)
     .map((follow) => follow.followingId);
@@ -194,7 +226,7 @@ export const CommunityPage = () => {
       const matchesFeed =
         feedScope === "all" ? true : followingIds.includes(post.authorId);
       const matchesCategory =
-        activeTab === "All Posts" ? true : activeTab === "Saved" ? myReactions.get(post.id)?.favorite === true : post.category === activeTab;
+        activeTab === "All Posts" ? true : activeTab === "Saved" ? getMyReaction(post.id).favorite === true : post.category === activeTab;
       const matchesChannel = selectedChannelId ? post.channelId === selectedChannelId : true;
       const matchesQuery =
         loweredQuery.length === 0
@@ -217,6 +249,7 @@ export const CommunityPage = () => {
     channelState.data,
     feedScope,
     followingIds,
+    getMyReaction,
     postState.data,
     searchQuery,
     selectedChannelId,
@@ -397,6 +430,36 @@ export const CommunityPage = () => {
 
     // Best-effort: record the share without blocking or breaking the copy above.
     void incrementPostShareCount(postId, shareCount).catch(() => {});
+  };
+
+  const handleReaction = async (
+    postId: string,
+    reaction: "like" | "dislike" | "favorite",
+  ) => {
+    const previous = getMyReaction(postId);
+    const next = { ...previous };
+
+    if (reaction === "like") {
+      next.like = !next.like;
+      if (next.like) next.dislike = false;
+    } else if (reaction === "dislike") {
+      next.dislike = !next.dislike;
+      if (next.dislike) next.like = false;
+    } else {
+      next.favorite = !next.favorite;
+    }
+
+    setReactionOverrides((current) => ({ ...current, [postId]: next }));
+    try {
+      await togglePostReaction(postId, author.id, reaction);
+    } catch (error) {
+      setReactionOverrides((current) => {
+        const restored = { ...current };
+        delete restored[postId];
+        return restored;
+      });
+      setMessage(error instanceof Error ? error.message : "Unable to save that reaction.");
+    }
   };
 
   const editPost = async (postId: string, currentTitle?: string, currentContent?: string, currentCategory?: PostCategory, currentDebateType?: string) => {
@@ -630,6 +693,7 @@ export const CommunityPage = () => {
               </button>
             ))}
           </div>
+          {message && !isComposerOpen ? <p className="meta-line" role="status">{message}</p> : null}
 
           <div className="stack">
             {filteredPosts.map((post) => {
@@ -638,7 +702,7 @@ export const CommunityPage = () => {
               const postAuthorName = safeName(authorProfile?.displayName ?? post.author);
               const comments = commentState.data.filter((entry) => entry.postId === post.id);
               const isOwner = author.id === post.authorId;
-              const reaction = myReactions.get(post.id);
+              const reaction = getMyReaction(post.id);
               const liked = reaction?.like ?? false;
               const disliked = reaction?.dislike ?? false;
               const favorited = reaction?.favorite ?? false;
@@ -781,7 +845,7 @@ export const CommunityPage = () => {
                         type="button"
                         className={liked ? "forum-action-button is-like" : "forum-action-button"}
                         aria-pressed={liked}
-                        onClick={() => void togglePostReaction(post.id, author.id, "like")}
+                        onClick={() => void handleReaction(post.id, "like")}
                       >
                         <ThumbsUp size={16} /> {post.likeCount ?? 0}
                       </button>
@@ -789,7 +853,7 @@ export const CommunityPage = () => {
                         type="button"
                         className={disliked ? "forum-action-button is-dislike" : "forum-action-button"}
                         aria-pressed={disliked}
-                        onClick={() => void togglePostReaction(post.id, author.id, "dislike")}
+                        onClick={() => void handleReaction(post.id, "dislike")}
                       >
                         <ThumbsDown size={16} /> {post.dislikeCount ?? 0}
                       </button>
@@ -797,7 +861,7 @@ export const CommunityPage = () => {
                         type="button"
                         className={favorited ? "forum-action-button is-favorite" : "forum-action-button"}
                         aria-pressed={favorited}
-                        onClick={() => void togglePostReaction(post.id, author.id, "favorite")}
+                        onClick={() => void handleReaction(post.id, "favorite")}
                       >
                         <Bookmark size={16} /> {post.favoriteCount ?? 0}
                       </button>

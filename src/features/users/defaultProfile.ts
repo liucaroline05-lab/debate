@@ -41,5 +41,6 @@ export const normalizeUserProfile = (
   followingCount: profile?.followingCount ?? 0,
   activeChannelIds: profile?.activeChannelIds ?? [],
   tabroomProfileUrl: profile?.tabroomProfileUrl?.trim() || undefined,
+  showTabroomHistory: profile?.showTabroomHistory ?? false,
   createdAt: profile?.createdAt || new Date().toISOString(),
 });

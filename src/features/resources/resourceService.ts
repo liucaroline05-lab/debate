@@ -14,6 +14,7 @@ const UPLOAD_TIMEOUT_MS = 20_000;
 
 export interface NewResourceInput {
   title: string;
+  resourceType: NonNullable<ResourceItem["resourceType"]>;
   category: ResourceItem["category"];
   description: string;
   longDescription: string;
@@ -97,9 +98,47 @@ const formatStorageError = (error: unknown) => {
 const isAudioOrVideo = (file: File) =>
   file.type.startsWith("audio/") || file.type.startsWith("video/");
 
-const convertImageToJpeg = (file: File) =>
-  new Promise<File>((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
+const HEIC_EXTENSIONS = new Set(["heic", "heif"]);
+
+const isHeicFile = (file: File) => {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return file.type.toLowerCase().startsWith("image/heic")
+    || file.type.toLowerCase().startsWith("image/heif")
+    || HEIC_EXTENSIONS.has(extension);
+};
+
+const decodeHeicToJpeg = async (file: File) => {
+  const { default: heic2any } = await import("heic2any");
+  const converted = await heic2any({
+    blob: file,
+    toType: "image/jpeg",
+    quality: 0.9,
+  });
+  const jpegBlob = Array.isArray(converted) ? converted[0] : converted;
+
+  if (!(jpegBlob instanceof Blob)) {
+    throw new Error("This HEIC image could not be converted to JPEG.");
+  }
+
+  return jpegBlob;
+};
+
+const convertImageToJpeg = async (file: File) => {
+  let sourceBlob: Blob = file;
+  if (isHeicFile(file)) {
+    try {
+      sourceBlob = await decodeHeicToJpeg(file);
+    } catch (error) {
+      throw new Error(
+        error instanceof Error
+          ? `HEIC conversion failed: ${error.message}`
+          : "HEIC conversion failed. Choose another image file.",
+      );
+    }
+  }
+
+  return new Promise<File>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(sourceBlob);
     const image = new Image();
 
     const cleanup = () => URL.revokeObjectURL(objectUrl);
@@ -147,6 +186,7 @@ const convertImageToJpeg = (file: File) =>
     };
     image.src = objectUrl;
   });
+};
 
 const uploadResourceFile = async (
   file: File,
@@ -203,7 +243,7 @@ export const uploadResourceThumbnail = async (input: NewResourceInput) => {
   }
 
   const thumbnailFile = input.thumbnailFile;
-  if (!thumbnailFile.type.startsWith("image/")) {
+  if (!thumbnailFile.type.startsWith("image/") && !isHeicFile(thumbnailFile)) {
     throw new Error("Choose an image file for the thumbnail.");
   }
   const jpegFile = await convertImageToJpeg(thumbnailFile);
@@ -231,13 +271,21 @@ export const createResource = async (input: NewResourceInput): Promise<ResourceI
   const trimmedBody = input.body.trim();
   const hasLink = Boolean(input.externalUrl?.trim());
   const hasFile = Boolean(input.file);
+  const isQuickRead = input.resourceType === "Quick Read";
 
   if (!input.title.trim() || !input.description.trim()) {
     throw new Error("Add a title and short description before uploading.");
   }
 
-  if (!trimmedBody && !hasLink && !hasFile) {
+  if (!isQuickRead && !trimmedBody && !hasLink && !hasFile) {
     throw new Error("Add notes, a link, or an audio/video file before uploading.");
+  }
+
+  if (isQuickRead && !input.longDescription.trim()) {
+    throw new Error("Add an overview for this quick read before uploading.");
+  }
+  if (isQuickRead && (hasLink || hasFile || input.thumbnailFile || input.thumbnailUrl?.trim())) {
+    throw new Error("Quick Reads only support a short description and overview.");
   }
 
   const [mediaPath, thumbnailPath] = await Promise.all([
@@ -249,6 +297,7 @@ export const createResource = async (input: NewResourceInput): Promise<ResourceI
     id: `resource-${Date.now()}`,
     slug: slugify(input.title),
     title: input.title.trim(),
+    resourceType: input.resourceType,
     category: input.category,
     description: input.description.trim(),
     longDescription: input.longDescription.trim() || input.description.trim(),
@@ -258,12 +307,14 @@ export const createResource = async (input: NewResourceInput): Promise<ResourceI
     saved: false,
     level: input.level,
     format: input.format,
-    mediaType: input.mediaType,
-    mediaPath: mediaPath ?? undefined,
-    externalUrl: input.externalUrl?.trim() || undefined,
-    thumbnailUrl: thumbnailPath ?? (input.thumbnailUrl?.trim() || undefined),
+    mediaType: isQuickRead ? "Article" : input.mediaType,
+    mediaPath: isQuickRead ? undefined : mediaPath ?? undefined,
+    externalUrl: isQuickRead ? undefined : input.externalUrl?.trim() || undefined,
+    thumbnailUrl: isQuickRead ? undefined : thumbnailPath ?? (input.thumbnailUrl?.trim() || undefined),
     tags: input.tags,
-    contentSections: trimmedBody
+    contentSections: isQuickRead
+      ? [{ title: "Overview", body: input.longDescription.trim() }]
+      : trimmedBody
       ? [
           {
             title: "Resource notes",
@@ -290,7 +341,7 @@ export const createResource = async (input: NewResourceInput): Promise<ResourceI
 export const updateResource = async (
   resourceId: string,
   ownerId: string,
-  input: Pick<NewResourceInput, "title" | "description" | "longDescription" | "category" | "level" | "format" | "mediaType" | "tags" | "body" | "externalUrl" | "thumbnailUrl">,
+  input: Pick<NewResourceInput, "title" | "description" | "longDescription" | "resourceType" | "category" | "level" | "format" | "mediaType" | "tags" | "body" | "externalUrl" | "thumbnailUrl">,
 ) => {
   if (!firestore) throw new Error("Firestore is not configured.");
   if (!input.title.trim() || !input.description.trim()) {
@@ -298,19 +349,29 @@ export const updateResource = async (
   }
 
   const trimmedBody = input.body.trim();
+  const isQuickRead = input.resourceType === "Quick Read";
+  if (isQuickRead && !input.longDescription.trim()) {
+    throw new Error("Add an overview for this quick read before saving.");
+  }
+
   await updateDoc(doc(firestore, "resources", resourceId), {
     title: input.title.trim(),
     slug: slugify(input.title),
+    resourceType: input.resourceType,
     description: input.description.trim(),
     longDescription: input.longDescription.trim() || input.description.trim(),
     category: input.category,
     level: input.level,
     format: input.format,
-    mediaType: input.mediaType,
+    mediaType: isQuickRead ? "Article" : input.mediaType,
     tags: input.tags,
-    externalUrl: input.externalUrl?.trim() || null,
-    thumbnailUrl: input.thumbnailUrl?.trim() || null,
-    contentSections: trimmedBody ? [{ title: "Resource notes", body: trimmedBody }] : [],
+    externalUrl: isQuickRead ? null : input.externalUrl?.trim() || null,
+    thumbnailUrl: isQuickRead ? null : input.thumbnailUrl?.trim() || null,
+    contentSections: isQuickRead
+      ? [{ title: "Overview", body: input.longDescription.trim() }]
+      : trimmedBody
+        ? [{ title: "Resource notes", body: trimmedBody }]
+        : [],
     creatorId: ownerId,
     updatedAt: serverTimestamp(),
   });

@@ -663,6 +663,7 @@ export const seededResources: ResourceItem[] = [
     id: "resource-1",
     slug: "three-layer-rebuttal-framework",
     title: "Three-layer rebuttal framework",
+    resourceType: "Article",
     category: "Rebuttal",
     description:
       "A coach-curated worksheet that breaks rebuttals into three deliberate layers — direct answers, comparative weighing, and final-round crystallization — so you walk into the speech knowing exactly what each block is supposed to do for the judge.",
@@ -709,6 +710,7 @@ export const seededResources: ResourceItem[] = [
     id: "resource-2",
     slug: "research-sprint-checklist",
     title: "Research sprint checklist",
+    resourceType: "Article",
     category: "Research",
     description:
       "A timed, repeatable workflow for turning a cold topic into credible, tagged, speech-ready evidence in a single focused sitting — built to stop the doom-scroll of open tabs and get cards into your team file with sources you can defend in cross.",
@@ -756,6 +758,7 @@ export const seededResources: ResourceItem[] = [
     id: "resource-3",
     slug: "delivery-reset-ritual",
     title: "Delivery reset ritual",
+    resourceType: "Article",
     category: "Delivery",
     description:
       "A short, repeatable pre-round ritual — breath, posture, and emphasis prompts — that settles your nervous system in the last minute before a speech so the first thirty seconds sound deliberate instead of rushed.",
@@ -803,6 +806,7 @@ export const seededResources: ResourceItem[] = [
     id: "resource-4",
     slug: "case-building-map",
     title: "Case building map",
+    resourceType: "Article",
     category: "Case Building",
     description:
       "A visual, step-by-step walkthrough for turning a bare resolution into a clean two-contention case — burdens, claims, warrants, impacts, and the weighing language that ties it together — designed so a beginner can build a coherent case from scratch in one sitting.",

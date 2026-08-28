@@ -15,10 +15,11 @@ import {
 } from "@/features/speeches/speechService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDate, formatDateTime } from "@/lib/date";
-import type { SpeechRecord, TabroomImport } from "@/types/models";
+import type { ResourceSave, SpeechRecord, TabroomImport } from "@/types/models";
 
 const EMPTY_SPEECH_SEEDS: SpeechRecord[] = [];
 const EMPTY_TABROOM_IMPORTS: TabroomImport[] = [];
+const EMPTY_RESOURCE_SAVES: ResourceSave[] = [];
 
 export const DashboardPage = () => {
   const { currentUser } = useAuth();
@@ -48,6 +49,16 @@ export const DashboardPage = () => {
   );
   const debateState = useSeededFirestoreCollection("debates", seededDebates);
   const resourceState = useSeededFirestoreCollection("resources", seededResources);
+  const resourceSaveState = useSeededFirestoreCollection<ResourceSave>(
+    "resourceSaves",
+    EMPTY_RESOURCE_SAVES,
+    useMemo<QueryConstraint[]>(
+      () => (currentUserId ? [where("userId", "==", currentUserId)] : []),
+      [currentUserId],
+    ),
+    Boolean(currentUserId),
+    currentUserId ? `resource-saves:${currentUserId}` : undefined,
+  );
   const channelState = useSeededFirestoreCollection("channels", seededChannels);
   const dashboardDebates = useMemo(
     () => debateState.data.filter((debate) =>
@@ -56,8 +67,11 @@ export const DashboardPage = () => {
     [currentUser?.id, debateState.data],
   );
   const savedResources = useMemo(
-    () => resourceState.data.filter((resource) => resource.saved),
-    [resourceState.data],
+    () => {
+      const savedIds = new Set(resourceSaveState.data.map((save) => save.resourceId));
+      return resourceState.data.filter((resource) => savedIds.has(resource.id));
+    },
+    [resourceSaveState.data, resourceState.data],
   );
   const followedChannels = useMemo(() => {
     const ids = new Set(currentUser?.activeChannelIds ?? []);

@@ -31,6 +31,8 @@ export interface UserProfile {
   followingCount?: number;
   activeChannelIds?: string[];
   tabroomProfileUrl?: string;
+  /** Whether this user has opted to show imported Tabroom history publicly. */
+  showTabroomHistory?: boolean;
   createdAt: string;
 }
 
@@ -247,6 +249,7 @@ export interface ResourceItem {
   id: string;
   slug?: string;
   title: string;
+  resourceType?: "Article" | "Quick Read";
   category: "Case Building" | "Rebuttal" | "Research" | "Delivery";
   /** Short card/sidebar summary. */
   description: string;

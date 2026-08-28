@@ -239,7 +239,8 @@ service cloud.firestore {
         && request.resource.data.description is string
         && request.resource.data.curatedBy is string
         && request.resource.data.level in ["Starter", "Growth", "Advanced"];
-      allow update: if ownsExistingResource("creatorId");
+      allow update: if ownsExistingResource("creatorId")
+        && request.resource.data.creatorId == request.auth.uid;
     }
 
     match /resourceNotes/{noteId} {

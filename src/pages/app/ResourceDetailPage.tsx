@@ -18,6 +18,21 @@ const findResource = (resources: ResourceItem[], resourceId?: string) =>
 const roleLabel = (role?: string) =>
   role ? role.charAt(0).toUpperCase() + role.slice(1) : "Curator";
 
+const getShortDescription = (resource: ResourceItem) => {
+  const description = resource.description.trim();
+  if (description.length <= 180) return description;
+  const sentenceEnd = description.search(/[.!?](?:\s|$)/);
+  if (sentenceEnd >= 40 && sentenceEnd < 180) return description.slice(0, sentenceEnd + 1);
+  return `${description.slice(0, 177).trimEnd()}…`;
+};
+
+const getOverviewDescription = (resource: ResourceItem) => {
+  const overviewSection = resource.contentSections?.find(
+    (section) => section.title.toLowerCase() === "overview" && typeof section.body === "string",
+  );
+  return resource.longDescription?.trim() || overviewSection?.body.trim() || resource.description;
+};
+
 const renderMedia = (resource: ResourceItem) => {
   if (resource.mediaType === "Video" && resource.mediaPath) {
     return (
@@ -77,12 +92,20 @@ export const ResourceDetailPage = () => {
   const [isNoteSaving, setIsNoteSaving] = useState(false);
   const [noteMessage, setNoteMessage] = useState("");
   const [isSaveBusy, setIsSaveBusy] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [optimisticSave, setOptimisticSave] = useState<boolean | null>(null);
 
   const savedNote = noteState.data.find((note) => note.resourceId === resource?.id);
-  const isSaved = saveState.data.some((save) => save.resourceId === resource?.id);
+  const persistedIsSaved = saveState.data.some((save) => save.resourceId === resource?.id);
+  const isSaved = optimisticSave ?? persistedIsSaved;
   useEffect(() => {
     setPersonalNote(savedNote?.content ?? "");
   }, [savedNote?.content, resource?.id]);
+  useEffect(() => {
+    if (optimisticSave !== null && persistedIsSaved === optimisticSave) {
+      setOptimisticSave(null);
+    }
+  }, [optimisticSave, persistedIsSaved]);
 
   if (!resource) {
     return (
@@ -108,12 +131,18 @@ export const ResourceDetailPage = () => {
         item.tags.some((tag) => resource.tags.includes(tag)),
     )
     .slice(0, 4);
+  const isQuickRead = resource.resourceType === "Quick Read";
+  const detailSections = isQuickRead
+    ? [{ title: "Overview", body: getOverviewDescription(resource) }]
+    : resource.contentSections?.length
+      ? resource.contentSections
+      : [{ title: "Overview", body: getOverviewDescription(resource) }];
   const isOwner = currentUser?.id === resource.creatorId;
   const beginEditing = () => {
     setDraft({
       title: resource.title,
-      description: resource.description,
-      longDescription: resource.longDescription ?? resource.description,
+      description: getShortDescription(resource),
+      longDescription: getOverviewDescription(resource),
       tags: resource.tags.join(", "),
       body: resource.contentSections?.map((section) => section.body).join("\n\n") ?? "",
     });
@@ -128,6 +157,7 @@ export const ResourceDetailPage = () => {
         title: draft.title,
         description: draft.description,
         longDescription: draft.longDescription,
+        resourceType: resource.resourceType ?? "Article",
         category: resource.category,
         level: resource.level,
         format: resource.format ?? "All Formats",
@@ -158,32 +188,47 @@ export const ResourceDetailPage = () => {
     }
   };
   const toggleSaved = async () => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setSaveMessage("Sign in to save resources to your library.");
+      return;
+    }
     setIsSaveBusy(true);
-    try { await toggleResourceSave(resource.id, currentUser.id); } finally { setIsSaveBusy(false); }
+    setSaveMessage("");
+    const nextSaved = !isSaved;
+    setOptimisticSave(nextSaved);
+    try {
+      const saved = await toggleResourceSave(resource.id, currentUser.id);
+      setOptimisticSave(saved);
+      setSaveMessage(saved ? "Saved to your resources." : "Removed from saved resources.");
+    } catch (error) {
+      setOptimisticSave(null);
+      setSaveMessage(error instanceof Error ? error.message : "Unable to update saved resources.");
+    } finally {
+      setIsSaveBusy(false);
+    }
   };
 
   return (
     <>
-      <PageMeta title={resource.title} description={resource.description} />
+      <PageMeta title={resource.title} description={getShortDescription(resource)} />
       <div className="resource-detail-back">
-        <Link to="/app/resources" className="forum-author-link">
+        <Link to="/app/resources" className="btn btn-secondary">
           <ArrowLeft size={16} /> Back to resources
         </Link>
       </div>
 
-      <section className="resource-detail-hero">
-        <div className="resource-detail-media">{renderMedia(resource)}</div>
+      <section className={isQuickRead ? "resource-detail-hero is-quick-read" : "resource-detail-hero"}>
+        {!isQuickRead ? <div className="resource-detail-media">{renderMedia(resource)}</div> : null}
         <div className="resource-detail-summary">
           <div className="pill-row">
             <span className="pill">{resource.category}</span>
-            <span className="forum-mini-pill subtle">{resource.mediaType ?? "Article"}</span>
+            <span className="forum-mini-pill subtle">{resource.resourceType ?? resource.mediaType ?? "Article"}</span>
             {resource.creatorRole ? (
               <span className="forum-mini-pill">{roleLabel(resource.creatorRole)}</span>
             ) : null}
           </div>
           <h1>{resource.title}</h1>
-          <p>{resource.description}</p>
+          <p>{getShortDescription(resource)}</p>
           <div className="resource-detail-meta">
             <span>{resource.level}</span>
             <span>{resource.format ?? "All Formats"}</span>
@@ -195,12 +240,13 @@ export const ResourceDetailPage = () => {
               <Bookmark size={16} /> {isSaved ? "Saved" : "Save"}
             </button>
             {isOwner ? <button type="button" className="btn btn-ghost" onClick={beginEditing}>Edit resource</button> : null}
-            {resource.externalUrl ? (
+            {!isQuickRead && resource.externalUrl ? (
               <a className="btn btn-primary" href={resource.externalUrl} target="_blank" rel="noreferrer">
                 <ExternalLink size={16} /> Open Link
               </a>
             ) : null}
           </div>
+          {saveMessage ? <p className="meta-line" role="status">{saveMessage}</p> : null}
         </div>
       </section>
 
@@ -210,9 +256,9 @@ export const ResourceDetailPage = () => {
           <div className="form-grid" style={{ marginTop: "1rem" }}>
             <div className="form-field full"><label htmlFor="editResourceTitle">Title</label><input id="editResourceTitle" value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /></div>
             <div className="form-field full"><label htmlFor="editResourceShort">Short description</label><input id="editResourceShort" value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} /></div>
-            <div className="form-field full"><label htmlFor="editResourceLong">Long description</label><textarea id="editResourceLong" value={draft.longDescription} onChange={(event) => setDraft((current) => ({ ...current, longDescription: event.target.value }))} /></div>
+            <div className="form-field full"><label htmlFor="editResourceLong">{isQuickRead ? "Overview" : "Long description"}</label><textarea id="editResourceLong" value={draft.longDescription} onChange={(event) => setDraft((current) => ({ ...current, longDescription: event.target.value }))} /></div>
             <div className="form-field full"><label htmlFor="editResourceTags">Tags</label><input id="editResourceTags" value={draft.tags} onChange={(event) => setDraft((current) => ({ ...current, tags: event.target.value }))} /></div>
-            <div className="form-field full"><label htmlFor="editResourceNotes">Notes</label><textarea id="editResourceNotes" value={draft.body} onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))} /></div>
+            {!isQuickRead ? <div className="form-field full"><label htmlFor="editResourceNotes">Notes</label><textarea id="editResourceNotes" value={draft.body} onChange={(event) => setDraft((current) => ({ ...current, body: event.target.value }))} /></div> : null}
           </div>
           <div className="button-row" style={{ marginTop: "1rem" }}><button type="button" className="btn btn-secondary" onClick={() => setIsEditing(false)}>Cancel</button><button type="button" className="btn btn-primary" disabled={isSaving} onClick={() => void saveEdits()}>{isSaving ? "Saving..." : "Save changes"}</button></div>
         </section>
@@ -221,13 +267,7 @@ export const ResourceDetailPage = () => {
 
       <section className="resource-detail-layout">
         <article className="app-card resource-detail-content">
-          <p className="resource-detail-lead">{resource.longDescription ?? resource.description}</p>
-          {(resource.contentSections?.length ? resource.contentSections : [
-            {
-              title: "Overview",
-              body: resource.longDescription ?? resource.description,
-            },
-          ]).map((section) => (
+          {detailSections.map((section) => (
             <section key={section.title} className="resource-detail-section">
               <h2>{section.title}</h2>
               <p>{section.body}</p>
@@ -246,10 +286,10 @@ export const ResourceDetailPage = () => {
               <dt>Format</dt>
               <dd>{resource.format ?? "All Formats"}</dd>
             </div>
-            <div>
+            {!isQuickRead ? <div>
               <dt>Media</dt>
               <dd>{resource.mediaType ?? "Article"}</dd>
-            </div>
+            </div> : null}
             <div>
               <dt>Time</dt>
               <dd>{resource.estimatedTime ?? "Self-paced"}</dd>
@@ -288,7 +328,7 @@ export const ResourceDetailPage = () => {
           <div className="resources-grid">
             {relatedResources.map((item) => (
               <Link key={item.id} to={`/app/resources/${item.slug || item.id}`} className="resource-card resource-card-link">
-                {item.thumbnailUrl ? (
+                {item.resourceType === "Quick Read" ? null : item.thumbnailUrl ? (
                   <img src={item.thumbnailUrl} alt="" className="resource-card-media" />
                 ) : (
                   <div className="resource-card-media resource-card-media-fallback">{item.mediaType ?? "Article"}</div>
@@ -296,7 +336,7 @@ export const ResourceDetailPage = () => {
                 <div className="resource-card-body">
                   <span className="pill">{item.category}</span>
                   <h3 className="card-title">{item.title}</h3>
-                  <p className="card-copy">{item.description}</p>
+                  <p className="card-copy">{getShortDescription(item)}</p>
                 </div>
               </Link>
             ))}

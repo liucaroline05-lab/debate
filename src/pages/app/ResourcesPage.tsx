@@ -47,6 +47,7 @@ const mediaTypes: Array<"All" | NonNullable<ResourceItem["mediaType"]>> = [
 
 const initialComposer = {
   title: "",
+  resourceType: "Article" as NonNullable<ResourceItem["resourceType"]>,
   category: "Research" as ResourceItem["category"],
   description: "",
   longDescription: "",
@@ -65,6 +66,17 @@ const roleLabel = (role?: string) =>
 
 const getResourcePath = (resource: ResourceItem) =>
   `/app/resources/${resource.slug || resource.id}`;
+
+// Older resources stored their full overview in `description`. Keep those
+// records readable as the card's short summary while newer uploads use the
+// dedicated short-description field directly.
+const getShortDescription = (resource: ResourceItem) => {
+  const description = resource.description.trim();
+  if (description.length <= 180) return description;
+  const sentenceEnd = description.search(/[.!?](?:\s|$)/);
+  if (sentenceEnd >= 40 && sentenceEnd < 180) return description.slice(0, sentenceEnd + 1);
+  return `${description.slice(0, 177).trimEnd()}…`;
+};
 
 export const ResourcesPage = () => {
   const { currentUser } = useAuth();
@@ -131,8 +143,11 @@ export const ResourcesPage = () => {
   }, [category, format, level, mediaType, query, resourceSaveState.data, resourceState.data, savedOnly]);
 
   const featuredResources = useMemo(
-    () => resourceState.data.filter((resource) => resource.saved).slice(0, 12),
-    [resourceState.data],
+    () => {
+      const savedIds = new Set(resourceSaveState.data.map((save) => save.resourceId));
+      return resourceState.data.filter((resource) => savedIds.has(resource.id)).slice(0, 12);
+    },
+    [resourceSaveState.data, resourceState.data],
   );
 
   const featuredTrackRef = useRef<HTMLDivElement | null>(null);
@@ -171,7 +186,12 @@ export const ResourcesPage = () => {
 
     try {
       await createResource({
-          ...composer,
+        ...composer,
+        mediaType: composer.resourceType === "Quick Read" ? "Article" : composer.mediaType,
+        externalUrl: composer.resourceType === "Quick Read" ? "" : composer.externalUrl,
+        thumbnailFile: composer.resourceType === "Quick Read" ? null : composer.thumbnailFile,
+        file: composer.resourceType === "Quick Read" ? null : composer.file,
+        body: composer.resourceType === "Quick Read" ? "" : composer.body,
         curatedBy: currentUser.displayName || "Debate Studio Member",
         creatorId: currentUser.id,
         creatorRole: currentUser.role,
@@ -202,7 +222,7 @@ export const ResourcesPage = () => {
             <p className="eyebrow">Resources</p>
             <h1>A curated library for research, rebuttal, and delivery.</h1>
             <p>
-              Browse topic hubs with media, notes, and practice moves built for
+              Browse topic hubs with media, notes, and reading guides built for
               the moments between rounds.
             </p>
           </div>
@@ -231,9 +251,32 @@ export const ResourcesPage = () => {
           <div className="space-apart">
             <strong>Upload a resource</strong>
             <span className="meta-line">
-              Audio, video, links, and notes are available to signed-in members.
+              {composer.resourceType === "Quick Read"
+                ? "Publish a concise description and overview for readers."
+                : "Audio, video, links, and notes are available to signed-in members."}
             </span>
           </div>
+        </div>
+
+        <div className="forum-tabs resource-upload-type-tabs" role="tablist" aria-label="Resource type">
+          {(["Article", "Quick Read"] as const).map((resourceType) => (
+            <button
+              key={resourceType}
+              type="button"
+              role="tab"
+              aria-selected={composer.resourceType === resourceType}
+              className={composer.resourceType === resourceType ? "forum-tab is-active" : "forum-tab"}
+              onClick={() => setComposer((current) => ({
+                ...current,
+                resourceType,
+                ...(resourceType === "Quick Read"
+                  ? { mediaType: "Article" as const, externalUrl: "", thumbnailFile: null, file: null, thumbnailUrl: "", body: "" }
+                  : {}),
+              }))}
+            >
+              {resourceType}
+            </button>
+          ))}
         </div>
 
         <div className="form-grid" style={{ marginTop: "1rem" }}>
@@ -276,7 +319,7 @@ export const ResourcesPage = () => {
             />
           </div>
           <div className="form-field full">
-            <label htmlFor="resourceLongDescription">Long description</label>
+            <label htmlFor="resourceLongDescription">{composer.resourceType === "Quick Read" ? "Overview" : "Long description"}</label>
             <textarea
               id="resourceLongDescription"
               value={composer.longDescription}
@@ -318,7 +361,7 @@ export const ResourcesPage = () => {
               ))}
             </select>
           </div>
-          <div className="form-field">
+          {composer.resourceType === "Article" ? <div className="form-field">
             <label htmlFor="resourceMediaType">Media type</label>
             <select
               id="resourceMediaType"
@@ -334,7 +377,7 @@ export const ResourcesPage = () => {
                 <option key={item}>{item}</option>
               ))}
             </select>
-          </div>
+          </div> : null}
           <div className="form-field">
             <label htmlFor="resourceTags">Tags</label>
             <input
@@ -344,7 +387,7 @@ export const ResourcesPage = () => {
               placeholder="Research, PF, Weighing"
             />
           </div>
-          <div className="form-field">
+          {composer.resourceType === "Article" ? <div className="form-field">
             <label htmlFor="resourceLink">External link</label>
             <input
               id="resourceLink"
@@ -354,8 +397,8 @@ export const ResourcesPage = () => {
               }
               placeholder="https://..."
             />
-          </div>
-          <div className="form-field">
+          </div> : null}
+          {composer.resourceType === "Article" ? <div className="form-field">
             <label htmlFor="resourceFile">Audio/video file</label>
             <div className="file-input-shell">
               <input
@@ -377,14 +420,14 @@ export const ResourcesPage = () => {
                 {composer.file ? composer.file.name : "No file chosen"}
               </span>
             </div>
-          </div>
-          <div className="form-field full">
+          </div> : null}
+          {composer.resourceType === "Article" ? <div className="form-field full">
             <label htmlFor="resourceThumbnailFile">Thumbnail image</label>
             <div className="file-input-shell">
               <input
                 id="resourceThumbnailFile"
                 type="file"
-                accept="image/*"
+                accept="image/*,.heic,.heif"
                 className="file-input-native"
                 onChange={(event) =>
                   setComposer((current) => ({
@@ -400,8 +443,8 @@ export const ResourcesPage = () => {
                 {composer.thumbnailFile ? composer.thumbnailFile.name : "No image chosen"}
               </span>
             </div>
-          </div>
-          <div className="form-field full">
+          </div> : null}
+          {composer.resourceType === "Article" ? <div className="form-field full">
             <label htmlFor="resourceBody">Notes</label>
             <textarea
               id="resourceBody"
@@ -409,7 +452,7 @@ export const ResourcesPage = () => {
               onChange={(event) => setComposer((current) => ({ ...current, body: event.target.value }))}
               placeholder="Add drills, instructions, examples, or context for the resource."
             />
-          </div>
+          </div> : null}
         </div>
 
         <div className="forum-composer-footer">
@@ -539,7 +582,7 @@ export const ResourcesPage = () => {
       <section className="resources-grid">
         {filtered.map((resource) => (
           <Link key={resource.id} to={getResourcePath(resource)} className="resource-card resource-card-link">
-            {resource.thumbnailUrl ? (
+          {resource.resourceType === "Quick Read" ? null : resource.thumbnailUrl ? (
               <img src={resource.thumbnailUrl} alt="" className="resource-card-media" />
             ) : (
               <div className="resource-card-media resource-card-media-fallback">{resource.mediaType ?? "Article"}</div>
@@ -547,10 +590,10 @@ export const ResourcesPage = () => {
             <div className="resource-card-body">
               <div className="resource-card-kicker">
                 <span className="pill">{resource.category}</span>
-                <span className="forum-mini-pill subtle">{resource.mediaType ?? "Article"}</span>
+                <span className="forum-mini-pill subtle">{resource.resourceType ?? resource.mediaType ?? "Article"}</span>
               </div>
               <h3 className="card-title">{resource.title}</h3>
-              <p className="card-copy">{resource.description}</p>
+              <p className="card-copy">{getShortDescription(resource)}</p>
               <p className="meta-line">
                 {resource.level} • {resource.format ?? "All Formats"} • Curated by {resource.curatedBy}
               </p>
@@ -558,7 +601,7 @@ export const ResourcesPage = () => {
                 {resource.creatorRole ? (
                   <span className="forum-mini-pill">{roleLabel(resource.creatorRole)}</span>
                 ) : null}
-                {resource.externalUrl ? (
+                {resource.resourceType !== "Quick Read" && resource.externalUrl ? (
                   <span className="forum-mini-pill subtle">
                     <ExternalLink size={13} /> Link
                   </span>
