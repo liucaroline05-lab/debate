@@ -9,6 +9,7 @@ const appLinks = [
   { to: "/app/debates", label: "Async Debate" },
   { to: "/app/resources", label: "Resources" },
   { to: "/app/community", label: "Community" },
+  { to: "/app/messages", label: "Messages" },
   { to: "/app/settings", label: "Settings" },
 ];
 

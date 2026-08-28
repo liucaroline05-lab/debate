@@ -12,6 +12,9 @@ export const defaultUserPreferences: UserPreferences = {
     preferredSide: "Either",
     asyncResponseCadence: "24 hours",
   },
+  messaging: {
+    whoCanMessage: "everyone",
+  },
 };
 
 export const normalizeUserProfile = (
@@ -35,6 +38,10 @@ export const normalizeUserProfile = (
     debateDefaults: {
       ...defaultUserPreferences.debateDefaults,
       ...profile?.preferences?.debateDefaults,
+    },
+    messaging: {
+      ...defaultUserPreferences.messaging,
+      ...profile?.preferences?.messaging,
     },
   },
   followersCount: profile?.followersCount ?? 0,

@@ -1,5 +1,7 @@
 export type UserRole = "student" | "coach";
 
+export type MessagingPermission = "everyone" | "following" | "nobody";
+
 export interface UserPreferences {
   notifications: {
     speechFeedback: boolean;
@@ -11,6 +13,9 @@ export interface UserPreferences {
     preferredFormat: "Policy" | "Lincoln-Douglas" | "Public Forum" | "Congress" | "Extemp";
     preferredSide: "Aff" | "Neg" | "Either";
     asyncResponseCadence: "12 hours" | "24 hours" | "48 hours";
+  };
+  messaging: {
+    whoCanMessage: MessagingPermission;
   };
 }
 
@@ -220,6 +225,29 @@ export interface DebateWinnerVote {
 export interface DebateMessage {
   id: string;
   debateId: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface ChatThread {
+  id: string;
+  type: "direct" | "group";
+  name?: string;
+  createdBy: string;
+  participantIds: string[];
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageText?: string;
+  lastMessageAt?: string;
+  lastMessageSenderId?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  threadId: string;
   authorId: string;
   authorName: string;
   content: string;

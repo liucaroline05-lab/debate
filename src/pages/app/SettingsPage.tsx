@@ -10,11 +10,21 @@ import {
 } from "@/features/profile/avatarService";
 import { maxDisplayNameLength } from "@/features/profile/profileService";
 import { defaultUserPreferences } from "@/features/users/defaultProfile";
-import type { UserRole } from "@/types/models";
+import type { MessagingPermission, UserRole } from "@/types/models";
 
 const accountTypes: Array<{ value: UserRole; label: string }> = [
   { value: "student", label: "Student" },
   { value: "coach", label: "Coach" },
+];
+
+const messagingOptions: Array<{
+  value: MessagingPermission;
+  label: string;
+  description: string;
+}> = [
+  { value: "everyone", label: "Everyone", description: "Any signed-in member can start a conversation with you." },
+  { value: "following", label: "People I follow", description: "Only people you follow can start a new conversation." },
+  { value: "nobody", label: "No one", description: "No one can add you to a new DM or group chat." },
 ];
 
 const safeInitial = (value?: string | null) =>
@@ -32,9 +42,18 @@ export const SettingsPage = () => {
       ...defaultUserPreferences.debateDefaults,
       ...profile?.preferences?.debateDefaults,
     },
+    messaging: {
+      ...defaultUserPreferences.messaging,
+      ...profile?.preferences?.messaging,
+    },
   };
   const [notifications, setNotifications] = useState(resolvedPreferences.notifications);
   const [debateDefaults, setDebateDefaults] = useState(resolvedPreferences.debateDefaults);
+  const [messagingPermission, setMessagingPermission] = useState<MessagingPermission>(
+    resolvedPreferences.messaging.whoCanMessage,
+  );
+  const [messagingMessage, setMessagingMessage] = useState("");
+  const [isSavingMessaging, setIsSavingMessaging] = useState(false);
   const [roleMessage, setRoleMessage] = useState("");
   const [isSavingRole, setIsSavingRole] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState(profile?.displayName ?? "");
@@ -62,6 +81,9 @@ export const SettingsPage = () => {
       ...defaultUserPreferences.debateDefaults,
       ...profile.preferences?.debateDefaults,
     });
+    setMessagingPermission(
+      profile.preferences?.messaging?.whoCanMessage ?? defaultUserPreferences.messaging.whoCanMessage,
+    );
     setDisplayNameDraft(profile.displayName ?? "");
     setBioDraft(profile.bio ?? "");
   }, [profile]);
@@ -237,11 +259,41 @@ export const SettingsPage = () => {
     }
   };
 
+  const changeMessagingPermission = async (nextPermission: MessagingPermission) => {
+    if (nextPermission === messagingPermission || isSavingMessaging) return;
+
+    const previousPermission = messagingPermission;
+    setMessagingPermission(nextPermission);
+    setMessagingMessage("");
+    setIsSavingMessaging(true);
+
+    try {
+      await updateProfile({
+        preferences: {
+          ...profile.preferences,
+          messaging: { whoCanMessage: nextPermission },
+        },
+      });
+      setMessagingMessage(
+        isDemoMode
+          ? "Saved for this session. Connect Firebase to keep this setting."
+          : "Messaging privacy updated.",
+      );
+    } catch (error) {
+      setMessagingPermission(previousPermission);
+      setMessagingMessage(
+        error instanceof Error ? error.message : "Unable to update messaging privacy right now.",
+      );
+    } finally {
+      setIsSavingMessaging(false);
+    }
+  };
+
   return (
     <>
       <PageMeta
         title="Settings"
-        description="Manage account details, profile photo, notifications, and debate preferences."
+        description="Manage account details, profile photo, messaging privacy, notifications, and debate preferences."
       />
       <header className="route-header">
         <p className="eyebrow">Settings</p>
@@ -456,6 +508,34 @@ export const SettingsPage = () => {
               </span>
             </button>
           </div>
+        </article>
+
+        <article className="app-card settings-messaging-card">
+          <h2 className="card-title">Messaging privacy</h2>
+          <p className="card-copy">Choose who can start a new DM or add you to a group chat.</p>
+          <div className="settings-message-options" role="radiogroup" aria-label="Who can message you">
+            {messagingOptions.map((option) => {
+              const isActive = messagingPermission === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={isActive ? "settings-message-option is-on" : "settings-message-option"}
+                  role="radio"
+                  aria-checked={isActive}
+                  disabled={isSavingMessaging}
+                  onClick={() => void changeMessagingPermission(option.value)}
+                >
+                  <span className="settings-message-radio" aria-hidden="true" />
+                  <span>
+                    <strong>{option.label}</strong>
+                    <small>{option.description}</small>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {messagingMessage ? <p className="meta-line" aria-live="polite">{messagingMessage}</p> : null}
         </article>
 
         <article className="app-card">

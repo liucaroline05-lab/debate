@@ -47,6 +47,26 @@ service cloud.firestore {
       ]);
     }
 
+    function messagingPermissionFor(userId) {
+      let profile = get(/databases/$(database)/documents/users/$(userId)).data;
+      return (
+          !("preferences" in profile)
+          || !("messaging" in profile.preferences)
+          || !("whoCanMessage" in profile.preferences.messaging)
+        )
+        ? "everyone"
+        : profile.preferences.messaging.whoCanMessage;
+    }
+
+    function recipientAllowsMessage(recipientId, senderId) {
+      let permission = messagingPermissionFor(recipientId);
+      return permission == "everyone"
+        || (
+          permission == "following"
+          && exists(/databases/$(database)/documents/follows/$(recipientId + "-" + senderId))
+        );
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if isOwner(userId) && hasValidDisplayName();
@@ -266,6 +286,80 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
+    }
+
+    function chatData(threadId) {
+      return get(/databases/$(database)/documents/chatThreads/$(threadId)).data;
+    }
+
+    function isChatParticipant(threadId) {
+      return isSignedIn()
+        && request.auth.uid in chatData(threadId).participantIds;
+    }
+
+    function isValidDirectThreadCreate() {
+      let recipients = request.resource.data.participantIds.removeAll([request.auth.uid]);
+      return request.resource.data.type == "direct"
+        && request.resource.data.participantIds.size() == 2
+        && request.resource.data.memberCount == 2
+        && request.resource.data.participantIds[0] != request.resource.data.participantIds[1]
+        && recipients.size() == 1
+        && recipientAllowsMessage(recipients[0], request.auth.uid);
+    }
+
+    function isValidGroupThreadCreate() {
+      return request.resource.data.type == "group"
+        && request.resource.data.participantIds == [request.auth.uid]
+        && request.resource.data.memberCount == 1;
+    }
+
+    function isAddingAllowedGroupMember() {
+      let added = request.resource.data.participantIds.removeAll(resource.data.participantIds);
+      return resource.data.type == "group"
+        && resource.data.createdBy == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "participantIds",
+          "memberCount",
+          "updatedAt"
+        ])
+        && added.size() == 1
+        && request.resource.data.participantIds.size() == resource.data.participantIds.size() + 1
+        && request.resource.data.memberCount == resource.data.memberCount + 1
+        && recipientAllowsMessage(added[0], request.auth.uid);
+    }
+
+    function isChatMetadataUpdate() {
+      return request.auth.uid in resource.data.participantIds
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "lastMessageText",
+          "lastMessageAt",
+          "lastMessageSenderId",
+          "updatedAt"
+        ])
+        && request.resource.data.lastMessageSenderId == request.auth.uid;
+    }
+
+    match /chatThreads/{threadId} {
+      allow read: if isSignedIn()
+        && request.auth.uid in resource.data.participantIds;
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && (isValidDirectThreadCreate() || isValidGroupThreadCreate());
+      allow update: if isSignedIn()
+        && (isAddingAllowedGroupMember() || isChatMetadataUpdate());
+      allow delete: if isSignedIn()
+        && resource.data.createdBy == request.auth.uid
+        && resource.data.participantIds == [request.auth.uid];
+    }
+
+    match /chatMessages/{messageId} {
+      allow read: if isChatParticipant(resource.data.threadId);
+      allow create: if isSignedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 4000
+        && isChatParticipant(request.resource.data.threadId);
     }
 
     match /channelMemberships/{membershipId} {

@@ -48,6 +48,9 @@ const preferences = {
     preferredSide: "Either" as const,
     asyncResponseCadence: "24 hours" as const,
   },
+  messaging: {
+    whoCanMessage: "everyone" as const,
+  },
 };
 
 const demoUser: UserProfile = {
