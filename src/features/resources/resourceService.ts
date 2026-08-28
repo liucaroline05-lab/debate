@@ -27,6 +27,7 @@ export interface NewResourceInput {
   body: string;
   externalUrl?: string;
   thumbnailUrl?: string;
+  thumbnailFile?: File | null;
   file?: File | null;
 }
 
@@ -93,29 +94,75 @@ const formatStorageError = (error: unknown) => {
     : "Unable to upload the selected resource file to Firebase Storage.";
 };
 
-export const uploadResourceAsset = async (input: NewResourceInput) => {
-  if (!input.file) {
-    return null;
-  }
+const isAudioOrVideo = (file: File) =>
+  file.type.startsWith("audio/") || file.type.startsWith("video/");
 
+const convertImageToJpeg = (file: File) =>
+  new Promise<File>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    const cleanup = () => URL.revokeObjectURL(objectUrl);
+
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        cleanup();
+        reject(new Error("This image could not be prepared for upload."));
+        return;
+      }
+
+      // JPEG has no transparency, so use the site's light background instead
+      // of allowing transparent PNG/WebP pixels to become black.
+      context.fillStyle = "#fffdf8";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0);
+      cleanup();
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("This image could not be converted to JPEG."));
+            return;
+          }
+
+          const baseName = file.name.replace(/\.[^.]+$/, "") || "thumbnail";
+          resolve(new File([blob], `${baseName}.jpg`, {
+            type: "image/jpeg",
+            lastModified: Date.now(),
+          }));
+        },
+        "image/jpeg",
+        0.9,
+      );
+    };
+
+    image.onerror = () => {
+      cleanup();
+      reject(new Error("This image could not be loaded for upload."));
+    };
+    image.src = objectUrl;
+  });
+
+const uploadResourceFile = async (
+  file: File,
+  path: string,
+  customMetadata: Record<string, string>,
+) => {
   if (!storage) {
     throw new Error("Firebase Storage is not configured.");
   }
 
   const metadata: UploadMetadata = {
-    contentType: input.file.type,
-    customMetadata: {
-      userId: input.creatorId,
-      title: input.title,
-      category: input.category,
-      format: input.format,
-      mediaType: input.mediaType,
-      tags: JSON.stringify(input.tags),
-    },
+    contentType: file.type,
+    customMetadata,
   };
-
-  const assetRef = ref(storage, `resources/${input.creatorId}/${Date.now()}-${input.file.name}`);
-  const uploadTask = uploadBytesResumable(assetRef, input.file, metadata);
+  const assetRef = ref(storage, path);
+  const uploadTask = uploadBytesResumable(assetRef, file, metadata);
 
   try {
     await withTimeout(uploadTaskToPromise(uploadTask), UPLOAD_TIMEOUT_MS);
@@ -124,6 +171,56 @@ export const uploadResourceAsset = async (input: NewResourceInput) => {
     uploadTask.cancel();
     throw new Error(formatStorageError(error));
   }
+};
+
+export const uploadResourceAsset = async (input: NewResourceInput) => {
+  if (!input.file) {
+    return null;
+  }
+
+  if (!isAudioOrVideo(input.file)) {
+    throw new Error("Choose an audio or video file for the resource.");
+  }
+
+  return uploadResourceFile(
+    input.file,
+    `resources/${input.creatorId}/${Date.now()}-media-${input.file.name}`,
+    {
+      userId: input.creatorId,
+      title: input.title,
+      category: input.category,
+      format: input.format,
+      mediaType: input.mediaType,
+      tags: JSON.stringify(input.tags),
+      assetType: "media",
+    },
+  );
+};
+
+export const uploadResourceThumbnail = async (input: NewResourceInput) => {
+  if (!input.thumbnailFile) {
+    return null;
+  }
+
+  const thumbnailFile = input.thumbnailFile;
+  if (!thumbnailFile.type.startsWith("image/")) {
+    throw new Error("Choose an image file for the thumbnail.");
+  }
+  const jpegFile = await convertImageToJpeg(thumbnailFile);
+
+  return uploadResourceFile(
+    jpegFile,
+    `resources/${input.creatorId}/${Date.now()}-thumbnail-${jpegFile.name}`,
+    {
+      userId: input.creatorId,
+      title: input.title,
+      category: input.category,
+      format: input.format,
+      mediaType: input.mediaType,
+      tags: JSON.stringify(input.tags),
+      assetType: "thumbnail",
+    },
+  );
 };
 
 export const createResource = async (input: NewResourceInput): Promise<ResourceItem> => {
@@ -143,7 +240,10 @@ export const createResource = async (input: NewResourceInput): Promise<ResourceI
     throw new Error("Add notes, a link, or an audio/video file before uploading.");
   }
 
-  const mediaPath = await uploadResourceAsset(input);
+  const [mediaPath, thumbnailPath] = await Promise.all([
+    uploadResourceAsset(input),
+    uploadResourceThumbnail(input),
+  ]);
   const createdAt = new Date().toISOString();
   const resource: ResourceItem = {
     id: `resource-${Date.now()}`,
@@ -161,7 +261,7 @@ export const createResource = async (input: NewResourceInput): Promise<ResourceI
     mediaType: input.mediaType,
     mediaPath: mediaPath ?? undefined,
     externalUrl: input.externalUrl?.trim() || undefined,
-    thumbnailUrl: input.thumbnailUrl?.trim() || undefined,
+    thumbnailUrl: thumbnailPath ?? (input.thumbnailUrl?.trim() || undefined),
     tags: input.tags,
     contentSections: trimmedBody
       ? [

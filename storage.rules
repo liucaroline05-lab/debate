@@ -39,6 +39,13 @@ service firebase.storage {
         );
     }
 
+    function isAllowedResourceImage(maxSizeMB) {
+      return request.resource != null
+        && request.resource.size < maxSizeMB * 1024 * 1024
+        && request.resource.contentType != null
+        && request.resource.contentType.matches('image/.*');
+    }
+
     function isValidDebateTurnUpload() {
       return request.resource.metadata.sourceType == "debate-turn"
         && request.resource.metadata.debateId is string
@@ -76,7 +83,16 @@ service firebase.storage {
       allow read: if true;
       allow create: if isSignedIn()
         && request.auth.uid == creatorId
-        && isAllowedMedia(500);
+        && (
+          (
+            request.resource.metadata.assetType == "media"
+            && isAllowedMedia(500)
+          )
+          || (
+            request.resource.metadata.assetType == "thumbnail"
+            && isAllowedResourceImage(500)
+          )
+        );
       allow update, delete: if false;
     }
 

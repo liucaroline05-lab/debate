@@ -264,13 +264,15 @@ export const ResourceDetailPage = () => {
             ))}
           </div>
           <h2 className="card-title" style={{ marginTop: "1.5rem" }}>My Notes</h2>
-          <textarea
-            aria-label="My Notes"
-            value={personalNote}
-            onChange={(event) => setPersonalNote(event.target.value)}
-            placeholder="Write private notes about this resource..."
-            style={{ minHeight: "9rem", marginTop: "0.75rem" }}
-          />
+          <div className="form-field resource-notes-field">
+            <textarea
+              id="resourcePersonalNotes"
+              aria-label="My Notes"
+              value={personalNote}
+              onChange={(event) => setPersonalNote(event.target.value)}
+              placeholder="Write private notes about this resource..."
+            />
+          </div>
           <div className="button-row" style={{ justifyContent: "flex-end", marginTop: "0.75rem" }}>
             <button type="button" className="btn btn-primary" disabled={isNoteSaving} onClick={() => void savePersonalNote()}>
               {isNoteSaving ? "Saving..." : "Save notes"}

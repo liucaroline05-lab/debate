@@ -56,7 +56,7 @@ const initialComposer = {
   tags: "",
   body: "",
   externalUrl: "",
-  thumbnailUrl: "",
+  thumbnailFile: null as File | null,
   file: null as File | null,
 };
 
@@ -379,15 +379,27 @@ export const ResourcesPage = () => {
             </div>
           </div>
           <div className="form-field full">
-            <label htmlFor="resourceThumbnail">Thumbnail URL</label>
-            <input
-              id="resourceThumbnail"
-              value={composer.thumbnailUrl}
-              onChange={(event) =>
-                setComposer((current) => ({ ...current, thumbnailUrl: event.target.value }))
-              }
-              placeholder="https://..."
-            />
+            <label htmlFor="resourceThumbnailFile">Thumbnail image</label>
+            <div className="file-input-shell">
+              <input
+                id="resourceThumbnailFile"
+                type="file"
+                accept="image/*"
+                className="file-input-native"
+                onChange={(event) =>
+                  setComposer((current) => ({
+                    ...current,
+                    thumbnailFile: event.target.files?.[0] ?? null,
+                  }))
+                }
+              />
+              <label htmlFor="resourceThumbnailFile" className="file-input-trigger">
+                Choose image
+              </label>
+              <span className={composer.thumbnailFile ? "file-input-name has-file" : "file-input-name"}>
+                {composer.thumbnailFile ? composer.thumbnailFile.name : "No image chosen"}
+              </span>
+            </div>
           </div>
           <div className="form-field full">
             <label htmlFor="resourceBody">Notes</label>

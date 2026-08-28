@@ -8,7 +8,7 @@ import OpenAI, { toFile } from "openai";
 import { openAiApiKey } from "./secrets";
 
 const TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
-const SUMMARY_MODEL = "gpt-5.4-nano";
+const SUMMARY_MODEL = "gpt-5.6-luna";
 const TRANSCRIPTION_PROMPT_VERSION = "debate-transcription-v1";
 const SUMMARY_PROMPT_VERSION = "debate-summary-v1";
 const MAX_TRANSCRIPTION_BYTES = 25 * 1024 * 1024;
