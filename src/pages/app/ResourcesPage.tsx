@@ -519,14 +519,14 @@ export const ResourcesPage = () => {
           </div>
         </div>
         <div className="resource-filter-footer">
-          <label className="forum-action-button">
-            <input
-              type="checkbox"
-              checked={savedOnly}
-              onChange={(event) => setSavedOnly(event.target.checked)}
-            />
-            <Bookmark size={16} /> Saved only
-          </label>
+          <button
+            type="button"
+            className="btn btn-toggle"
+            aria-pressed={savedOnly}
+            onClick={() => setSavedOnly((current) => !current)}
+          >
+            <Bookmark size={16} aria-hidden="true" /> Saved only
+          </button>
           <span className="meta-line">
             {filtered.length} result{filtered.length === 1 ? "" : "s"}
           </span>

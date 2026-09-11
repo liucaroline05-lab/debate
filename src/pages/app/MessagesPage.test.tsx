@@ -69,6 +69,7 @@ const thread: ChatThread = {
 const message: ChatMessage = {
   id: "message-1",
   threadId: thread.id,
+  participantIds: thread.participantIds,
   authorId: "james",
   authorName: "James Kim",
   content: "Want to compare cases?",
@@ -114,7 +115,7 @@ describe("MessagesPage", () => {
     await user.type(screen.getByRole("textbox", { name: "Message James Kim" }), "I’m in!");
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
-    expect(mocks.sendChatMessage).toHaveBeenCalledWith(thread.id, currentUser, "I’m in!");
+    expect(mocks.sendChatMessage).toHaveBeenCalledWith(thread, currentUser, "I’m in!");
   });
 
   it("starts a new direct message from the people picker", async () => {

@@ -1,5 +1,14 @@
 import { FirebaseError } from "firebase/app";
-import { addDoc, collection, deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
 import {
   getDownloadURL,
   ref,
@@ -8,7 +17,7 @@ import {
   type UploadTaskSnapshot,
 } from "firebase/storage";
 import { firestore, storage } from "@/lib/firebase";
-import type { ResourceItem, UserRole } from "@/types/models";
+import type { ResourceItem, ResourceNote, UserRole } from "@/types/models";
 
 const UPLOAD_TIMEOUT_MS = 20_000;
 
@@ -377,9 +386,12 @@ export const updateResource = async (
   });
 };
 
+export const resourceNoteId = (resourceId: string, userId: string) =>
+  `${resourceId}-${userId}`;
+
 export const saveResourceNote = async (resourceId: string, userId: string, content: string) => {
   if (!firestore) throw new Error("Firestore is not configured.");
-  await setDoc(doc(firestore, "resourceNotes", `${resourceId}-${userId}`), {
+  await setDoc(doc(firestore, "resourceNotes", resourceNoteId(resourceId, userId)), {
     resourceId,
     userId,
     content: content.trim(),
@@ -387,13 +399,54 @@ export const saveResourceNote = async (resourceId: string, userId: string, conte
   });
 };
 
-export const toggleResourceSave = async (resourceId: string, userId: string) => {
+/**
+ * Watches the single note document for this reader, so the saved text is
+ * re-read from Firestore on every visit instead of depending on an in-memory
+ * collection cache that is empty after a reload.
+ */
+export const subscribeToResourceNote = (
+  resourceId: string,
+  userId: string,
+  onNote: (note: ResourceNote | null) => void,
+  onError: (message: string) => void,
+) => {
+  if (!firestore) {
+    onError("Firestore is not configured.");
+    return () => {};
+  }
+
+  return onSnapshot(
+    doc(firestore, "resourceNotes", resourceNoteId(resourceId, userId)),
+    (snapshot) => {
+      onNote(
+        snapshot.exists()
+          ? ({ id: snapshot.id, ...snapshot.data() } as ResourceNote)
+          : null,
+      );
+    },
+    (error) => onError(error.message),
+  );
+};
+
+/**
+ * `isSaved` is passed in by the caller rather than read back first: a get() on
+ * a resourceSaves document that does not exist yet is denied by the rules
+ * (there is no `resource` to own), which made the very first click on Save
+ * fail every time.
+ */
+export const toggleResourceSave = async (
+  resourceId: string,
+  userId: string,
+  isSaved: boolean,
+) => {
   if (!firestore) throw new Error("Firestore is not configured.");
-  const saveRef = doc(firestore, "resourceSaves", `${resourceId}-${userId}`);
-  if ((await getDoc(saveRef)).exists()) {
+  const saveRef = doc(firestore, "resourceSaves", resourceNoteId(resourceId, userId));
+
+  if (isSaved) {
     await deleteDoc(saveRef);
     return false;
   }
+
   await setDoc(saveRef, { resourceId, userId, createdAt: new Date().toISOString() });
   return true;
 };

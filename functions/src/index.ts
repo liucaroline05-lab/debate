@@ -25,6 +25,7 @@ export {
   summarizeCompletedDebate,
   transcribeDebateSpeech,
 } from "./debateAi";
+export { summarizeUploadedSpeech } from "./speechAi";
 
 interface UploadProfilePhotoRequest {
   contentType?: unknown;
@@ -520,13 +521,39 @@ export const syncTabroom = onCall(
 );
 */
 
-const tabroomWebBaseUrl = "https://www.tabroom.com";
+
+// ---------------------------------------------------------------------------
+// Tabroom account linking and sync.
+//
+// Tabroom's public REST API lives at https://api.tabroom.com/v1 (its OpenAPI
+// document is served from GET /v1). Authentication is `POST /auth/login`,
+// which returns { token, Person }; the token is then sent as
+// `Authorization: Bearer <token>`. The endpoint this code previously called,
+// `/user/profile`, does not exist in that API, which is why linking and
+// syncing always failed. `/user/session` is the documented way to read the
+// signed-in person, and `/user/tourns` returns their tournament history.
+// ---------------------------------------------------------------------------
+
 const tabroomApiBaseUrl = "https://api.tabroom.com/v1";
+const tabroomTournUrl = (tournId: number) =>
+  `https://www.tabroom.com/index/tourn/index.mhtml?tourn_id=${tournId}`;
+// Each per-tournament role summary costs one extra request, so only the most
+// recent tournaments are enriched with it.
+const maxEnrichedTournaments = 15;
+const maxImportedTournaments = 60;
 
 interface TabroomProfileSummary {
   officialUserId: number | null;
   handle: string;
-  nsdaId: number | null;
+  email: string;
+}
+
+interface TabroomEventRecord {
+  id: string;
+  name: string;
+  date: string;
+  result: string;
+  sourceUrl: string;
 }
 
 const getTabroomSecretKey = () => {
@@ -569,12 +596,6 @@ const decryptTabroomToken = (session: EncryptedTabroomSession) => {
   ]).toString("utf8");
 };
 
-const extractTabroomToken = (response: Response) => {
-  const cookieHeader = response.headers.get("set-cookie") ?? "";
-  const match = cookieHeader.match(/(?:^|[,;]\s*)TabroomToken=([^;,\s]+)/i);
-  return match?.[1] ?? "";
-};
-
 const tabroomCredentials = (data: LinkTabroomSessionRequest) => {
   const email = typeof data.email === "string" ? data.email.trim() : "";
   const password = typeof data.password === "string" ? data.password : "";
@@ -588,62 +609,77 @@ const tabroomCredentials = (data: LinkTabroomSessionRequest) => {
   return { email, password };
 };
 
-const loginToTabroom = async (email: string, password: string) => {
-  let response: Response;
+const tabroomRequest = async (path: string, init: RequestInit) => {
   try {
-    response = await fetch(`${tabroomWebBaseUrl}/user/login/login_save.mhtml`, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ username: email, password }),
-      redirect: "manual",
+    return await fetch(`${tabroomApiBaseUrl}${path}`, {
+      ...init,
       signal: AbortSignal.timeout(20_000),
     });
   } catch (error) {
-    console.error("Tabroom login request failed", { networkCode: getNetworkErrorCode(error) });
+    console.error("Tabroom request failed", {
+      path,
+      networkCode: getNetworkErrorCode(error),
+      error: getErrorMessage(error),
+    });
     throw new HttpsError("unavailable", "Tabroom could not be reached. Try again shortly.");
   }
+};
 
-  if (response.status >= 500) {
-    throw new HttpsError("unavailable", "Tabroom is temporarily unavailable.");
-  }
+const authorizedTabroomRequest = (path: string, token: string) =>
+  tabroomRequest(path, {
+    headers: {
+      accept: "application/json",
+      authorization: `Bearer ${token}`,
+    },
+  });
 
-  const token = extractTabroomToken(response);
-  if (!token) {
+const loginToTabroom = async (email: string, password: string) => {
+  const response = await tabroomRequest("/auth/login", {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ username: email, password }),
+  });
+
+  if (response.status === 401 || response.status === 403) {
     throw new HttpsError(
       "unauthenticated",
       "Tabroom rejected those credentials. Check your email and password and try again.",
     );
   }
+  if (!response.ok) {
+    console.error("Tabroom login returned an unexpected status", { status: response.status });
+    throw new HttpsError("unavailable", "Tabroom is temporarily unavailable. Try again shortly.");
+  }
+
+  const payload = await response.json() as { token?: unknown };
+  const token = typeof payload.token === "string" ? payload.token : "";
+  if (!token) {
+    throw new HttpsError("unavailable", "Tabroom did not return a session token.");
+  }
   return token;
 };
 
 const normalizeTabroomProfile = (value: unknown): TabroomProfileSummary => {
-  const profile = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const id = Number(profile.id);
-  const nsda = Number(profile.nsda);
-  const first = typeof profile.first === "string" ? profile.first.trim() : "";
-  const last = typeof profile.last === "string" ? profile.last.trim() : "";
+  const session = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const person = session.Person && typeof session.Person === "object"
+    ? session.Person as Record<string, unknown>
+    : {};
+  const id = Number(person.id);
+  const first = typeof person.first === "string" ? person.first.trim() : "";
+  const last = typeof person.last === "string" ? person.last.trim() : "";
+
   return {
     officialUserId: Number.isFinite(id) && id > 0 ? id : null,
     handle: [first, last].filter(Boolean).join(" ") || "Tabroom account",
-    nsdaId: Number.isFinite(nsda) && nsda > 0 ? nsda : null,
+    email: typeof person.email === "string" ? person.email : "",
   };
 };
 
 const fetchTabroomProfile = async (token: string) => {
-  let response: Response;
-  try {
-    response = await fetch(`${tabroomApiBaseUrl}/user/profile`, {
-      headers: {
-        accept: "application/json",
-        cookie: `TabroomToken=${token}`,
-      },
-      signal: AbortSignal.timeout(20_000),
-    });
-  } catch (error) {
-    console.error("Tabroom profile request failed", { networkCode: getNetworkErrorCode(error) });
-    throw new HttpsError("unavailable", "Tabroom could not be reached. Try again shortly.");
-  }
+  const response = await authorizedTabroomRequest("/user/session", token);
 
   if (response.status === 401 || response.status === 403) {
     throw new HttpsError(
@@ -652,23 +688,126 @@ const fetchTabroomProfile = async (token: string) => {
     );
   }
   if (!response.ok) {
+    console.error("Tabroom session lookup failed", { status: response.status });
     throw new HttpsError("unavailable", "Tabroom could not validate this account.");
   }
 
   return normalizeTabroomProfile(await response.json() as unknown);
 };
 
+const asTabroomTournaments = (value: unknown) =>
+  (Array.isArray(value) ? value : [])
+    .filter((tourn): tourn is Record<string, unknown> =>
+      Boolean(tourn) && typeof tourn === "object")
+    .map((tourn) => ({
+      id: Number(tourn.id),
+      name: typeof tourn.name === "string" ? tourn.name : "Tabroom tournament",
+      start: typeof tourn.start === "string" ? tourn.start : "",
+      end: typeof tourn.end === "string" ? tourn.end : "",
+    }))
+    .filter((tourn) => Number.isFinite(tourn.id) && tourn.id > 0)
+    // Newest first, so the dashboard's recent-events surfaces stay recent.
+    .sort((left, right) => (right.start || "").localeCompare(left.start || ""))
+    .slice(0, maxImportedTournaments);
+
+const fetchTabroomRoleLabel = async (token: string, tournId: number) => {
+  try {
+    const response = await authorizedTabroomRequest(`/user/tourns/${tournId}/summary`, token);
+    if (!response.ok) {
+      return "";
+    }
+    const summary = await response.json() as { roles?: unknown };
+    const roles = Array.isArray(summary.roles)
+      ? summary.roles.filter((role): role is string => typeof role === "string")
+      : [];
+    return roles.map((role) => role.charAt(0).toUpperCase() + role.slice(1)).join(" • ");
+  } catch {
+    // One failed enrichment must not fail the whole import.
+    return "";
+  }
+};
+
+const importTabroomTournaments = async (token: string): Promise<TabroomEventRecord[]> => {
+  const response = await authorizedTabroomRequest("/user/tourns", token);
+
+  if (response.status === 401 || response.status === 403) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Your Tabroom session has expired. Link your account again.",
+    );
+  }
+  if (!response.ok) {
+    console.error("Tabroom tournament import failed", { status: response.status });
+    throw new HttpsError("unavailable", "Tabroom could not return your tournament history.");
+  }
+
+  const tournaments = asTabroomTournaments(await response.json() as unknown);
+  const roleLabels = await Promise.all(
+    tournaments.map((tourn, index) =>
+      index < maxEnrichedTournaments
+        ? fetchTabroomRoleLabel(token, tourn.id)
+        : Promise.resolve(""),
+    ),
+  );
+
+  return tournaments.map((tourn, index) => ({
+    id: `tabroom-tourn-${tourn.id}`,
+    name: tourn.name,
+    date: tourn.start || tourn.end || new Date().toISOString(),
+    result: roleLabels[index] || "Entered",
+    sourceUrl: tabroomTournUrl(tourn.id),
+  }));
+};
+
 const tabroomProfileFields = (profile: TabroomProfileSummary) => ({
   handle: profile.handle,
   ...(profile.officialUserId ? { officialUserId: profile.officialUserId } : {}),
-  ...(profile.nsdaId ? { nsdaId: profile.nsdaId } : {}),
 });
+
+const writeTabroomImport = async (
+  uid: string,
+  profile: TabroomProfileSummary,
+  events: TabroomEventRecord[],
+  syncedAt: string,
+) => {
+  const db = getFirestore();
+  await Promise.all([
+    db.doc(`tabroomLinks/tabroom-link-${uid}`).set({
+      userId: uid,
+      provider: "tabroom",
+      status: "linked",
+      lastSyncedAt: syncedAt,
+      ...tabroomProfileFields(profile),
+    }, { merge: true }),
+    db.doc(`tabroomImports/tabroom-import-${uid}`).set({
+      userId: uid,
+      status: "success",
+      startedAt: syncedAt,
+      lastSuccessfulAt: syncedAt,
+      source: "tabroom-api",
+      tournamentCount: events.length,
+      events,
+      errorMessage: FieldValue.delete(),
+    }, { merge: true }),
+  ]);
+};
+
+const markTabroomSyncFailed = async (uid: string, message: string) => {
+  const db = getFirestore();
+  await Promise.all([
+    db.doc(`tabroomLinks/tabroom-link-${uid}`).set({ status: "error" }, { merge: true }),
+    db.doc(`tabroomImports/tabroom-import-${uid}`).set(
+      { userId: uid, status: "error", errorMessage: message.slice(0, 500) },
+      { merge: true },
+    ),
+  ]);
+};
 
 export const linkTabroomSession = onCall(
   {
     cors: true,
     invoker: "public",
-    timeoutSeconds: 30,
+    timeoutSeconds: 120,
     secrets: [tabroomSessionEncryptionKey],
   },
   async (request) => {
@@ -679,37 +818,27 @@ export const linkTabroomSession = onCall(
     const { email, password } = tabroomCredentials(request.data as LinkTabroomSessionRequest);
     const token = await loginToTabroom(email, password);
     const profile = await fetchTabroomProfile(token);
-    const encryptedSession = encryptTabroomToken(token);
     const uid = request.auth.uid;
     const linkedAt = new Date().toISOString();
     const db = getFirestore();
 
-    await Promise.all([
-      db.doc(`tabroomSessions/${uid}`).set({
-        userId: uid,
-        ...encryptedSession,
-        createdAt: linkedAt,
-        validatedAt: linkedAt,
-      }),
-      db.doc(`tabroomLinks/tabroom-link-${uid}`).set({
-        userId: uid,
-        provider: "tabroom",
-        status: "linked",
-        linkedAt,
-        lastSyncedAt: linkedAt,
-        ...tabroomProfileFields(profile),
-      }, { merge: true }),
-      db.doc(`tabroomImports/tabroom-import-${uid}`).set({
-        userId: uid,
-        status: "success",
-        startedAt: linkedAt,
-        lastSuccessfulAt: linkedAt,
-        source: "official-profile",
-        errorMessage: FieldValue.delete(),
-      }, { merge: true }),
-    ]);
+    await db.doc(`tabroomSessions/${uid}`).set({
+      userId: uid,
+      ...encryptTabroomToken(token),
+      createdAt: linkedAt,
+      validatedAt: linkedAt,
+    });
 
-    return { profile };
+    try {
+      const events = await importTabroomTournaments(token);
+      await writeTabroomImport(uid, profile, events, linkedAt);
+      await db.doc(`tabroomLinks/tabroom-link-${uid}`).set({ linkedAt }, { merge: true });
+      return { profile, eventCount: events.length };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to import Tabroom data.";
+      await markTabroomSyncFailed(uid, message);
+      throw error;
+    }
   },
 );
 
@@ -717,7 +846,7 @@ export const syncTabroomSession = onCall(
   {
     cors: true,
     invoker: "public",
-    timeoutSeconds: 30,
+    timeoutSeconds: 120,
     secrets: [tabroomSessionEncryptionKey],
   },
   async (request) => {
@@ -728,8 +857,6 @@ export const syncTabroomSession = onCall(
     const uid = request.auth.uid;
     const db = getFirestore();
     const sessionRef = db.doc(`tabroomSessions/${uid}`);
-    const linkRef = db.doc(`tabroomLinks/tabroom-link-${uid}`);
-    const importRef = db.doc(`tabroomImports/tabroom-import-${uid}`);
     const sessionSnapshot = await sessionRef.get();
 
     if (!sessionSnapshot.exists) {
@@ -738,45 +865,38 @@ export const syncTabroomSession = onCall(
 
     const syncedAt = new Date().toISOString();
     await Promise.all([
-      linkRef.set({ status: "syncing" }, { merge: true }),
-      importRef.set({ userId: uid, status: "syncing", startedAt: syncedAt }, { merge: true }),
+      db.doc(`tabroomLinks/tabroom-link-${uid}`).set({ status: "syncing" }, { merge: true }),
+      db.doc(`tabroomImports/tabroom-import-${uid}`).set(
+        { userId: uid, status: "syncing", startedAt: syncedAt },
+        { merge: true },
+      ),
     ]);
 
+    let token: string;
     try {
-      const token = decryptTabroomToken(sessionSnapshot.data() as EncryptedTabroomSession);
-      const profile = await fetchTabroomProfile(token);
-      await Promise.all([
-        sessionRef.set({ validatedAt: syncedAt }, { merge: true }),
-        linkRef.set({
-          userId: uid,
-          provider: "tabroom",
-          status: "linked",
-          lastSyncedAt: syncedAt,
-          ...tabroomProfileFields(profile),
-        }, { merge: true }),
-        importRef.set({
-          userId: uid,
-          status: "success",
-          lastSuccessfulAt: syncedAt,
-          source: "official-profile",
-          errorMessage: FieldValue.delete(),
-        }, { merge: true }),
-      ]);
-      return { profile };
-    } catch (error) {
-      const isExpired = error instanceof HttpsError && error.code === "unauthenticated";
-      const message = error instanceof Error ? error.message : "Unable to sync Tabroom.";
-      await Promise.all([
-        linkRef.set({ status: "error" }, { merge: true }),
-        importRef.set({ status: "error", errorMessage: message }, { merge: true }),
-        ...(isExpired ? [sessionRef.delete()] : []),
-      ]);
-      if (error instanceof HttpsError) throw error;
+      token = decryptTabroomToken(sessionSnapshot.data() as EncryptedTabroomSession);
+    } catch {
       console.error("Stored Tabroom session could not be decrypted", { uid });
+      await markTabroomSyncFailed(uid, "The saved Tabroom session is invalid.");
       throw new HttpsError(
         "failed-precondition",
         "The saved Tabroom session is invalid. Link your account again.",
       );
+    }
+
+    try {
+      const profile = await fetchTabroomProfile(token);
+      const events = await importTabroomTournaments(token);
+      await sessionRef.set({ validatedAt: syncedAt }, { merge: true });
+      await writeTabroomImport(uid, profile, events, syncedAt);
+      return { profile, eventCount: events.length };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to sync Tabroom.";
+      await markTabroomSyncFailed(uid, message);
+      if (error instanceof HttpsError && error.code === "unauthenticated") {
+        await sessionRef.delete();
+      }
+      throw error;
     }
   },
 );
@@ -800,6 +920,12 @@ export const unlinkTabroomSession = onCall(
         handle: FieldValue.delete(),
         officialUserId: FieldValue.delete(),
         nsdaId: FieldValue.delete(),
+      }, { merge: true }),
+      db.doc(`tabroomImports/tabroom-import-${uid}`).set({
+        userId: uid,
+        status: "queued",
+        events: [],
+        errorMessage: FieldValue.delete(),
       }, { merge: true }),
     ]);
     return { unlinked: true };

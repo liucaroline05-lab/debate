@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   Bookmark,
   Check,
+  CornerDownRight,
   Download,
   FileText,
   Flag,
@@ -33,12 +34,13 @@ import {
   incrementPostShareCount,
   joinPracticeGroupByCode,
   reportPostById,
+  toggleCommentReaction,
   togglePostReaction,
   updatePostContent,
 } from "@/features/community/communityService";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { UserProfile } from "@/types/models";
+import type { PostComment, PostCommentReaction, UserProfile } from "@/types/models";
 
 type ForumTab = "All Posts" | "Saved" | "Question" | "Speech Review" | "Tips & Strategies";
 type PostCategory = Exclude<ForumTab, "Saved">;
@@ -53,8 +55,10 @@ interface PostReaction {
   favorite?: boolean;
 }
 
-// Stable reference so the seeded-collection hook does not re-subscribe each render.
+// Stable references so the seeded-collection hook does not re-subscribe each render.
 const EMPTY_REACTIONS: PostReaction[] = [];
+const EMPTY_COMMENT_REACTIONS: PostCommentReaction[] = [];
+const MAX_COMMENT_DEPTH = 4;
 
 const forumTabs: Array<{ id: ForumTab; label: string }> = [
   { id: "All Posts", label: "All Posts" },
@@ -80,6 +84,33 @@ const channelAccentClass = (accent?: string) => {
 const safeName = (value?: string | null, fallback = "Unknown Speaker") => {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : fallback;
+};
+
+const byOldestFirst = (left: PostComment, right: PostComment) =>
+  left.createdAt.localeCompare(right.createdAt);
+
+/**
+ * Groups a post's flat comment list into roots and replies. A reply whose
+ * parent is missing (deleted, or not loaded yet) is shown as a root so it is
+ * never silently dropped.
+ */
+const buildCommentTree = (comments: PostComment[]) => {
+  const byId = new Map(comments.map((comment) => [comment.id, comment]));
+  const repliesByParentId = new Map<string, PostComment[]>();
+  const roots: PostComment[] = [];
+
+  [...comments].sort(byOldestFirst).forEach((comment) => {
+    const parentId = comment.parentCommentId;
+    if (parentId && byId.has(parentId)) {
+      const siblings = repliesByParentId.get(parentId) ?? [];
+      siblings.push(comment);
+      repliesByParentId.set(parentId, siblings);
+      return;
+    }
+    roots.push(comment);
+  });
+
+  return { roots, repliesByParentId };
 };
 
 const safeInitial = (value?: string | null) => safeName(value).charAt(0).toUpperCase();
@@ -163,6 +194,11 @@ export const CommunityPage = () => {
     channelId: "channel-community",
   });
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
+  const [commentVoteOverrides, setCommentVoteOverrides] = useState<
+    Record<string, { like: boolean; dislike: boolean }>
+  >({});
 
   const usersState = useSeededFirestoreCollection("users", seededUsers);
   const channelState = useSeededFirestoreCollection("channels", seededChannels);
@@ -170,6 +206,31 @@ export const CommunityPage = () => {
   const commentState = useSeededFirestoreCollection("postComments", seededComments);
   const followsState = useSeededFirestoreCollection("follows", seededFollows);
   const reactionState = useSeededFirestoreCollection<PostReaction>("postReactions", EMPTY_REACTIONS);
+  const commentReactionState = useSeededFirestoreCollection<PostCommentReaction>(
+    "postCommentReactions",
+    EMPTY_COMMENT_REACTIONS,
+  );
+
+  const myCommentVotes = useMemo(() => {
+    const map = new Map<string, { like: boolean; dislike: boolean }>();
+    commentReactionState.data.forEach((reaction) => {
+      if (reaction.userId === author.id) {
+        map.set(reaction.commentId, {
+          like: Boolean(reaction.like),
+          dislike: Boolean(reaction.dislike),
+        });
+      }
+    });
+    return map;
+  }, [commentReactionState.data, author.id]);
+
+  const getMyCommentVote = useCallback(
+    (commentId: string) =>
+      commentVoteOverrides[commentId]
+      ?? myCommentVotes.get(commentId)
+      ?? { like: false, dislike: false },
+    [commentVoteOverrides, myCommentVotes],
+  );
 
   const myReactions = useMemo(() => {
     const map = new Map<string, PostReaction>();
@@ -211,6 +272,21 @@ export const CommunityPage = () => {
       return next;
     });
   }, [myReactions]);
+
+  useEffect(() => {
+    setCommentVoteOverrides((current) => {
+      let next = current;
+      Object.entries(current).forEach(([commentId, override]) => {
+        const persisted = myCommentVotes.get(commentId);
+        if (!persisted) return;
+        if (persisted.like === override.like && persisted.dislike === override.dislike) {
+          if (next === current) next = { ...current };
+          delete next[commentId];
+        }
+      });
+      return next;
+    });
+  }, [myCommentVotes]);
 
   const followingIds = followsState.data
     .filter((follow) => follow.followerId === author.id)
@@ -383,6 +459,49 @@ export const CommunityPage = () => {
       setCommentDrafts((current) => ({ ...current, [postId]: "" }));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to add comment.");
+    }
+  };
+
+  const submitReply = async (postId: string, parentCommentId: string) => {
+    const content = replyDrafts[parentCommentId]?.trim();
+    if (!content) {
+      return;
+    }
+
+    try {
+      await addCommentToPost(postId, author.id, authorName, content, parentCommentId);
+      setReplyDrafts((current) => ({ ...current, [parentCommentId]: "" }));
+      setReplyingToId(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to post reply.");
+    }
+  };
+
+  const handleCommentVote = async (
+    comment: PostComment,
+    reaction: "like" | "dislike",
+  ) => {
+    const previous = getMyCommentVote(comment.id);
+    const next = { ...previous };
+
+    if (reaction === "like") {
+      next.like = !next.like;
+      if (next.like) next.dislike = false;
+    } else {
+      next.dislike = !next.dislike;
+      if (next.dislike) next.like = false;
+    }
+
+    setCommentVoteOverrides((current) => ({ ...current, [comment.id]: next }));
+    try {
+      await toggleCommentReaction(comment.id, comment.postId, author.id, reaction);
+    } catch (error) {
+      setCommentVoteOverrides((current) => {
+        const restored = { ...current };
+        delete restored[comment.id];
+        return restored;
+      });
+      setMessage(error instanceof Error ? error.message : "Unable to save that vote.");
     }
   };
 
@@ -709,6 +828,113 @@ export const CommunityPage = () => {
               const isCommentsOpen = expandedPostId === post.id;
               const hasCommented = comments.some((entry) => entry.authorId === author.id);
               const justShared = sharedPostId === post.id;
+              const commentTree = buildCommentTree(comments);
+
+              const renderComment = (comment: PostComment, depth: number) => {
+                const vote = getMyCommentVote(comment.id);
+                const replies = commentTree.repliesByParentId.get(comment.id) ?? [];
+                const isReplying = replyingToId === comment.id;
+                const commentAuthorName = safeName(comment.authorName);
+
+                return (
+                  <div
+                    key={comment.id}
+                    className={depth > 0 ? "forum-comment-thread is-reply" : "forum-comment-thread"}
+                  >
+                    <div className="forum-comment-item">
+                      <ProfileHoverLink
+                        user={usersState.data.find((item) => item.id === comment.authorId)}
+                        userId={comment.authorId}
+                        name={commentAuthorName}
+                        className="forum-author-link"
+                      >
+                        <strong>{commentAuthorName}</strong>
+                      </ProfileHoverLink>
+                      <span className="meta-line">
+                        {new Date(comment.createdAt).toLocaleString([], {
+                          hour: "numeric",
+                          minute: "2-digit",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
+                      <p className="card-copy">{comment.content}</p>
+
+                      <div className="forum-comment-actions">
+                        <button
+                          type="button"
+                          className={vote.like ? "forum-action-button is-like" : "forum-action-button"}
+                          aria-pressed={vote.like}
+                          aria-label={"Like comment by " + commentAuthorName}
+                          onClick={() => void handleCommentVote(comment, "like")}
+                        >
+                          <ThumbsUp size={14} /> {comment.likeCount ?? 0}
+                        </button>
+                        <button
+                          type="button"
+                          className={vote.dislike ? "forum-action-button is-dislike" : "forum-action-button"}
+                          aria-pressed={vote.dislike}
+                          aria-label={"Dislike comment by " + commentAuthorName}
+                          onClick={() => void handleCommentVote(comment, "dislike")}
+                        >
+                          <ThumbsDown size={14} /> {comment.dislikeCount ?? 0}
+                        </button>
+                        {depth < MAX_COMMENT_DEPTH ? (
+                          <button
+                            type="button"
+                            className={isReplying ? "forum-action-button is-comment" : "forum-action-button"}
+                            aria-pressed={isReplying}
+                            aria-label={"Reply to " + commentAuthorName}
+                            onClick={() => setReplyingToId(isReplying ? null : comment.id)}
+                          >
+                            <CornerDownRight size={14} /> Reply
+                            {replies.length > 0 ? " (" + replies.length + ")" : ""}
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {isReplying ? (
+                        <div className="forum-comment-form forum-reply-form">
+                          <input
+                            autoFocus
+                            aria-label={"Reply to " + commentAuthorName}
+                            value={replyDrafts[comment.id] ?? ""}
+                            onChange={(event) =>
+                              setReplyDrafts((current) => ({
+                                ...current,
+                                [comment.id]: event.target.value,
+                              }))
+                            }
+                            placeholder={"Reply to " + commentAuthorName + "..."}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                void submitReply(post.id, comment.id);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            aria-label={"Post reply to " + commentAuthorName}
+                            onClick={() => void submitReply(post.id, comment.id)}
+                          >
+                            Reply
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {replies.length > 0 ? (
+                      <div className="forum-comment-replies">
+                        {replies.map((reply) =>
+                          renderComment(reply, Math.min(depth + 1, MAX_COMMENT_DEPTH)),
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              };
 
               return (
                 <article key={post.id} className="forum-post-card" id={post.id}>
@@ -873,6 +1099,7 @@ export const CommunityPage = () => {
                             : "forum-action-button"
                         }
                         aria-pressed={isCommentsOpen}
+                        aria-label="Toggle comments"
                         onClick={() => setExpandedPostId(isCommentsOpen ? null : post.id)}
                       >
                         <MessageCircle size={16} /> {comments.length}
@@ -891,27 +1118,9 @@ export const CommunityPage = () => {
                   {expandedPostId === post.id ? (
                     <div className="forum-comments-panel">
                       <div className="stack">
-                        {comments.map((comment) => (
-                          <div key={comment.id} className="forum-comment-item">
-                            <ProfileHoverLink
-                              user={usersState.data.find((item) => item.id === comment.authorId)}
-                              userId={comment.authorId}
-                              name={safeName(comment.authorName)}
-                              className="forum-author-link"
-                            >
-                              <strong>{safeName(comment.authorName)}</strong>
-                            </ProfileHoverLink>
-                            <span className="meta-line">
-                              {new Date(comment.createdAt).toLocaleString([], {
-                                hour: "numeric",
-                                minute: "2-digit",
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </span>
-                            <p className="card-copy">{comment.content}</p>
-                          </div>
-                        ))}
+                        {commentTree.roots.length > 0
+                          ? commentTree.roots.map((comment) => renderComment(comment, 0))
+                          : <p className="meta-line">No comments yet. Start the discussion.</p>}
                       </div>
 
                       <div className="forum-comment-form">
@@ -924,9 +1133,15 @@ export const CommunityPage = () => {
                             }))
                           }
                           placeholder="Write a comment..."
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void submitComment(post.id);
+                            }
+                          }}
                         />
                         <button type="button" className="btn btn-secondary" onClick={() => void submitComment(post.id)}>
-                          Reply
+                          Comment
                         </button>
                       </div>
                     </div>

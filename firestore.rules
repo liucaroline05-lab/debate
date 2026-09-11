@@ -35,6 +35,24 @@ service cloud.firestore {
         && request.resource.data.reported == true;
     }
 
+    // The AI speech summary is produced server-side by a Cloud Function, so
+    // clients must never be able to write or edit it.
+    function keepsServerManagedSpeechSummary() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "aiSummary",
+        "summary",
+        "summaryStatus",
+        "summaryModel",
+        "summaryPromptVersion",
+        "summaryTranscriptRef",
+        "summaryResponseId",
+        "summaryGeneratedAt",
+        "summaryError",
+        "summaryProcessingEventId",
+        "transcriptStatus"
+      ]);
+    }
+
     function hasValidDisplayName() {
       return request.resource.data.displayName is string
         && request.resource.data.displayName.size() > 0
@@ -47,15 +65,19 @@ service cloud.firestore {
       ]);
     }
 
+    // Defaults to "everyone" when the recipient has no profile document or has
+    // never saved a messaging preference. Reading `.data` off a missing
+    // document instead throws, which denied every new conversation.
     function messagingPermissionFor(userId) {
-      let profile = get(/databases/$(database)/documents/users/$(userId)).data;
+      let userDoc = get(/databases/$(database)/documents/users/$(userId));
       return (
-          !("preferences" in profile)
-          || !("messaging" in profile.preferences)
-          || !("whoCanMessage" in profile.preferences.messaging)
+          userDoc == null
+          || !("preferences" in userDoc.data)
+          || !("messaging" in userDoc.data.preferences)
+          || !("whoCanMessage" in userDoc.data.preferences.messaging)
         )
         ? "everyone"
-        : profile.preferences.messaging.whoCanMessage;
+        : userDoc.data.preferences.messaging.whoCanMessage;
     }
 
     function recipientAllowsMessage(recipientId, senderId) {
@@ -104,13 +126,33 @@ service cloud.firestore {
       allow delete: if ownsExistingResource("authorId");
     }
 
+    function isCommentCounterUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        "likeCount",
+        "dislikeCount",
+        "replyCount",
+        "updatedAt"
+      ]);
+    }
+
     match /postComments/{commentId} {
       allow read: if true;
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid;
+      // Vote and reply tallies are maintained by any signed-in voter; the
+      // per-user vote itself lives in postCommentReactions.
+      allow update: if isSignedIn()
+        && (isCommentCounterUpdate() || ownsExistingResource("authorId"));
+      allow delete: if ownsExistingResource("authorId");
     }
 
     match /postReactions/{reactionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /postCommentReactions/{reactionId} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn()
         && request.resource.data.userId == request.auth.uid;
@@ -136,6 +178,7 @@ service cloud.firestore {
       allow update: if (
           ownsExistingResource("creatorId")
           && hasValidSpeechVisibility()
+          && keepsServerManagedSpeechSummary()
         )
         || isSpeechReportUpdate();
       allow delete: if ownsExistingResource("creatorId");
@@ -205,6 +248,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Same for speech-library transcripts; the student-facing summary lives on
+    // the speech document.
+    match /speechTranscripts/{transcriptId} {
+      allow read, write: if false;
+    }
+
     match /matchRequests/{requestId} {
       allow read, create, update: if isSignedIn();
     }
@@ -263,14 +312,19 @@ service cloud.firestore {
         && request.resource.data.creatorId == request.auth.uid;
     }
 
+    // `resource` is null when a client reads a document that does not exist
+    // yet. Without the null guard the rule errors out and the read is denied,
+    // so "is this saved?" style lookups failed before anything was ever saved.
     match /resourceNotes/{noteId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn()
+        && (resource == null || resource.data.userId == request.auth.uid);
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if ownsExistingResource("userId");
     }
 
     match /resourceSaves/{saveId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn()
+        && (resource == null || resource.data.userId == request.auth.uid);
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow delete: if ownsExistingResource("userId");
     }
@@ -341,6 +395,7 @@ service cloud.firestore {
 
     match /chatThreads/{threadId} {
       allow read: if isSignedIn()
+        && resource != null
         && request.auth.uid in resource.data.participantIds;
       allow create: if isSignedIn()
         && request.resource.data.createdBy == request.auth.uid
@@ -353,12 +408,30 @@ service cloud.firestore {
     }
 
     match /chatMessages/{messageId} {
-      allow read: if isChatParticipant(resource.data.threadId);
+      // Reads are authorized from the message's own denormalized
+      // participantIds. Resolving the parent thread with get() instead costs
+      // one document access call per returned message, and a query is only
+      // allowed 10 in total, so a conversation stopped loading once it had a
+      // handful of messages. The get() fallback only runs for messages written
+      // before participantIds existed.
+      allow read: if isSignedIn()
+        && (
+          (
+            "participantIds" in resource.data
+            && request.auth.uid in resource.data.participantIds
+          )
+          || (
+            !("participantIds" in resource.data)
+            && isChatParticipant(resource.data.threadId)
+          )
+        );
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.content is string
         && request.resource.data.content.size() > 0
         && request.resource.data.content.size() <= 4000
+        && request.resource.data.participantIds
+          == chatData(request.resource.data.threadId).participantIds
         && isChatParticipant(request.resource.data.threadId);
     }
 

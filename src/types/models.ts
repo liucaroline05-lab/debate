@@ -41,6 +41,23 @@ export interface UserProfile {
   createdAt: string;
 }
 
+export interface SpeechAiSummary {
+  overview: string;
+  mainClaims: string[];
+  evidenceMentioned: Array<{
+    description: string;
+    sourceAsStated: string;
+  }>;
+  structure: Array<{
+    section: string;
+    description: string;
+  }>;
+  deliveryNotes: string[];
+  suggestions: string[];
+}
+
+export type SpeechSummaryStatus = "processing" | "completed" | "failed";
+
 export interface SpeechRecord {
   id: string;
   creatorId?: string;
@@ -56,8 +73,16 @@ export interface SpeechRecord {
   tags: string[];
   organizationTags: string[];
   mediaPath?: string;
+  mediaStoragePath?: string;
   commentsEnabled?: boolean;
   reported?: boolean;
+  /** Written only by the speech summary Cloud Function. */
+  summary?: string;
+  aiSummary?: SpeechAiSummary;
+  summaryStatus?: SpeechSummaryStatus;
+  summaryModel?: string;
+  summaryPromptVersion?: string;
+  summaryError?: string;
 }
 
 export interface SpeechComment {
@@ -248,6 +273,8 @@ export interface ChatThread {
 export interface ChatMessage {
   id: string;
   threadId: string;
+  /** Denormalized from the parent thread so rules can authorize reads per message. */
+  participantIds: string[];
   authorId: string;
   authorName: string;
   content: string;
@@ -381,9 +408,24 @@ export interface CommunityPost {
 export interface PostComment {
   id: string;
   postId: string;
+  /** Set when this comment is a reply to another comment on the same post. */
+  parentCommentId?: string | null;
   authorId: string;
   authorName: string;
   content: string;
+  createdAt: string;
+  likeCount?: number;
+  dislikeCount?: number;
+  replyCount?: number;
+}
+
+export interface PostCommentReaction {
+  id: string;
+  commentId: string;
+  postId: string;
+  userId: string;
+  like: boolean;
+  dislike: boolean;
   createdAt: string;
 }
 
@@ -470,6 +512,8 @@ export interface TabroomImport {
   startedAt: string;
   lastSuccessfulAt?: string;
   errorMessage?: string;
+  source?: string;
+  tournamentCount?: number;
   events: TabroomEvent[];
   stats?: {
     wins: number;

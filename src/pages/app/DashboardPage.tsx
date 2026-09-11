@@ -15,11 +15,17 @@ import {
 } from "@/features/speeches/speechService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDate, formatDateTime } from "@/lib/date";
-import type { ResourceSave, SpeechRecord, TabroomImport } from "@/types/models";
+import type {
+  ChannelMembership,
+  ResourceSave,
+  SpeechRecord,
+  TabroomImport,
+} from "@/types/models";
 
 const EMPTY_SPEECH_SEEDS: SpeechRecord[] = [];
 const EMPTY_TABROOM_IMPORTS: TabroomImport[] = [];
 const EMPTY_RESOURCE_SAVES: ResourceSave[] = [];
+const EMPTY_CHANNEL_MEMBERSHIPS: ChannelMembership[] = [];
 
 export const DashboardPage = () => {
   const { currentUser } = useAuth();
@@ -60,6 +66,16 @@ export const DashboardPage = () => {
     currentUserId ? `resource-saves:${currentUserId}` : undefined,
   );
   const channelState = useSeededFirestoreCollection("channels", seededChannels);
+  const membershipState = useSeededFirestoreCollection<ChannelMembership>(
+    "channelMemberships",
+    EMPTY_CHANNEL_MEMBERSHIPS,
+    useMemo<QueryConstraint[]>(
+      () => (currentUserId ? [where("userId", "==", currentUserId)] : []),
+      [currentUserId],
+    ),
+    Boolean(currentUserId),
+    currentUserId ? `channel-memberships:${currentUserId}` : undefined,
+  );
   const dashboardDebates = useMemo(
     () => debateState.data.filter((debate) =>
       (debate.participantIds ?? []).includes(currentUser?.id ?? ""),
@@ -73,10 +89,16 @@ export const DashboardPage = () => {
     },
     [resourceSaveState.data, resourceState.data],
   );
+  // Channel membership is recorded in `channelMemberships` when a user creates
+  // or joins a group; `activeChannelIds` on the profile is only ever a legacy
+  // hint, so relying on it alone left this card permanently empty.
   const followedChannels = useMemo(() => {
-    const ids = new Set(currentUser?.activeChannelIds ?? []);
+    const ids = new Set([
+      ...membershipState.data.map((membership) => membership.channelId),
+      ...(currentUser?.activeChannelIds ?? []),
+    ]);
     return channelState.data.filter((channel) => ids.has(channel.id));
-  }, [channelState.data, currentUser?.activeChannelIds]);
+  }, [channelState.data, currentUser?.activeChannelIds, membershipState.data]);
   const upcomingEvents = useMemo(
     () =>
       tabroomImportState.data
@@ -251,11 +273,20 @@ export const DashboardPage = () => {
               <NavLink key={channel.id} to={`/app/community?channel=${channel.id}`} className="list-item dashboard-list-link">
                 <strong>{channel.name}</strong>
                 <span className="meta-line">
-                  {channel.followers} members • {channel.topicTags.join(" • ")}
+                  {channel.memberCount ?? channel.followers} members
+                  {channel.topicTags.length > 0 ? ` • ${channel.topicTags.join(" • ")}` : ""}
                 </span>
               </NavLink>
             ))}
           </div>
+          {followedChannels.length === 0 ? (
+            <p className="card-copy">
+              You have not joined a channel yet. Create or join one from Community to see it here.
+            </p>
+          ) : null}
+          <NavLink to="/app/community" className="btn btn-ghost" style={{ marginTop: "1rem" }}>
+            Browse channels
+          </NavLink>
         </article>
       </section>
     </>

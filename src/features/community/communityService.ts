@@ -20,6 +20,8 @@ import type {
   PostComment,
 } from "@/types/models";
 
+const maxCommentLength = 2_000;
+
 interface NewPostInput {
   channelId: string;
   title: string;
@@ -243,19 +245,32 @@ export const addCommentToPost = async (
   authorId: string,
   authorName: string,
   content: string,
+  parentCommentId: string | null = null,
 ) => {
   if (!firestore) {
     throw new Error("Firestore is not configured.");
+  }
+
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    throw new Error("Write something before replying.");
+  }
+  if (trimmedContent.length > maxCommentLength) {
+    throw new Error(`Comments must be ${maxCommentLength.toLocaleString()} characters or fewer.`);
   }
 
   const createdAt = new Date().toISOString();
 
   await addDoc(collection(firestore, "postComments"), {
     postId,
+    parentCommentId,
     authorId,
     authorName,
-    content,
+    content: trimmedContent,
     createdAt,
+    likeCount: 0,
+    dislikeCount: 0,
+    replyCount: 0,
   } satisfies Omit<PostComment, "id">);
 
   const postRef = doc(firestore, "posts", postId);
@@ -265,6 +280,85 @@ export const addCommentToPost = async (
   await updateDoc(postRef, {
     replyCount: currentReplyCount + 1,
     updatedAt: createdAt,
+  });
+
+  if (parentCommentId) {
+    const parentRef = doc(firestore, "postComments", parentCommentId);
+    const parentSnapshot = await getDoc(parentRef);
+    if (parentSnapshot.exists()) {
+      await updateDoc(parentRef, {
+        replyCount: ((parentSnapshot.data()?.replyCount as number | undefined) ?? 0) + 1,
+        updatedAt: createdAt,
+      });
+    }
+  }
+};
+
+/**
+ * Like/dislike on a single comment. The per-user vote lives in its own
+ * document keyed by comment + user, and the aggregate counters live on the
+ * comment, mirroring how post reactions work.
+ */
+export const toggleCommentReaction = async (
+  commentId: string,
+  postId: string,
+  userId: string,
+  reaction: "like" | "dislike",
+) => {
+  if (!firestore) {
+    throw new Error("Firestore is not configured.");
+  }
+
+  const commentRef = doc(firestore, "postComments", commentId);
+  const reactionRef = doc(firestore, "postCommentReactions", `${commentId}-${userId}`);
+
+  await runTransaction(firestore, async (transaction) => {
+    const commentSnapshot = await transaction.get(commentRef);
+    if (!commentSnapshot.exists()) {
+      throw new Error("That comment is no longer available.");
+    }
+
+    const reactionSnapshot = await transaction.get(reactionRef);
+    const existing = (reactionSnapshot.exists() ? reactionSnapshot.data() : null) as
+      | { like?: boolean; dislike?: boolean }
+      | null;
+
+    const previousLike = existing?.like ?? false;
+    const previousDislike = existing?.dislike ?? false;
+    const next = { like: previousLike, dislike: previousDislike };
+
+    if (reaction === "like") {
+      next.like = !previousLike;
+      if (next.like) next.dislike = false;
+    } else {
+      next.dislike = !previousDislike;
+      if (next.dislike) next.like = false;
+    }
+
+    transaction.set(
+      reactionRef,
+      {
+        commentId,
+        postId,
+        userId,
+        ...next,
+        createdAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+
+    const commentData = commentSnapshot.data();
+    transaction.update(commentRef, {
+      likeCount:
+        ((commentData?.likeCount as number | undefined) ?? 0)
+        + Number(next.like)
+        - Number(previousLike),
+      dislikeCount:
+        ((commentData?.dislikeCount as number | undefined) ?? 0)
+        + Number(next.dislike)
+        - Number(previousDislike),
+      updatedAt: new Date().toISOString(),
+    });
   });
 };
 

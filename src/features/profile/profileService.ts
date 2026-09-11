@@ -115,7 +115,12 @@ export const toggleFollowUser = async (
 interface TabroomProfileSummary {
   officialUserId: number | null;
   handle: string;
-  nsdaId: number | null;
+  email: string;
+}
+
+interface TabroomSyncResult {
+  profile: TabroomProfileSummary;
+  eventCount: number;
 }
 
 const formatTabroomFunctionError = (error: unknown) => {
@@ -141,7 +146,7 @@ export const linkTabroomSession = async (email: string, password: string) => {
 
   const link = httpsCallable<
     { email: string; password: string },
-    { profile: TabroomProfileSummary }
+    TabroomSyncResult
   >(functions, "linkTabroomSession");
   try {
     return (await link({ email: email.trim(), password })).data;
@@ -152,7 +157,7 @@ export const linkTabroomSession = async (email: string, password: string) => {
 
 export const syncTabroomSession = async () => {
   if (!functions) throw new Error("Firebase Functions is not configured.");
-  const sync = httpsCallable<Record<string, never>, { profile: TabroomProfileSummary }>(
+  const sync = httpsCallable<Record<string, never>, TabroomSyncResult>(
     functions,
     "syncTabroomSession",
   );

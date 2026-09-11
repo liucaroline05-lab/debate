@@ -55,6 +55,15 @@ service firebase.storage {
         && request.resource.size <= 25 * 1024 * 1024;
     }
 
+    // Speech-library uploads are transcribed and summarized by the
+    // summarizeUploadedSpeech function, which reads speechId/userId from the
+    // object metadata.
+    function isValidSpeechLibraryUpload() {
+      return request.resource.metadata.sourceType == "speech-upload"
+        && request.resource.metadata.speechId is string
+        && request.resource.metadata.userId == request.auth.uid;
+    }
+
     // Profile photos. Public read so avatars render anywhere in the app; all
     // writes go through the Cloud Function (Admin SDK), never the client.
     match /avatars/{userId}/{fileName} {
@@ -71,8 +80,13 @@ service firebase.storage {
         && isAllowedMedia(500)
         && (
           !("sourceType" in request.resource.metadata)
-          || request.resource.metadata.sourceType != "debate-turn"
-          || isValidDebateTurnUpload()
+          || (
+            request.resource.metadata.sourceType == "debate-turn"
+              ? isValidDebateTurnUpload()
+              : request.resource.metadata.sourceType == "speech-upload"
+                ? isValidSpeechLibraryUpload()
+                : true
+          )
         );
       allow update, delete: if false;
     }

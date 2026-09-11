@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
 import { ArrowLeft, Bookmark, ExternalLink } from "lucide-react";
@@ -6,11 +6,16 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { seededResources } from "@/data/firestoreSeeds";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { useAuth } from "@/features/auth/AuthContext";
-import { saveResourceNote, toggleResourceSave, updateResource } from "@/features/resources/resourceService";
-import type { ResourceItem, ResourceNote, ResourceSave } from "@/types/models";
+import {
+  saveResourceNote,
+  subscribeToResourceNote,
+  toggleResourceSave,
+  updateResource,
+} from "@/features/resources/resourceService";
+import type { ResourceItem, ResourceSave } from "@/types/models";
 
-const EMPTY_RESOURCE_NOTES: ResourceNote[] = [];
 const EMPTY_RESOURCE_SAVES: ResourceSave[] = [];
+const NOTE_AUTOSAVE_DELAY_MS = 1_200;
 
 const findResource = (resources: ResourceItem[], resourceId?: string) =>
   resources.find((resource) => resource.id === resourceId || resource.slug === resourceId);
@@ -72,13 +77,6 @@ export const ResourceDetailPage = () => {
     () => (currentUser ? [where("userId", "==", currentUser.id)] : []),
     [currentUser?.id],
   );
-  const noteState = useSeededFirestoreCollection<ResourceNote>(
-    "resourceNotes",
-    EMPTY_RESOURCE_NOTES,
-    noteConstraints,
-    Boolean(currentUser),
-    currentUser ? `resource-notes:${currentUser.id}` : undefined,
-  );
   const saveState = useSeededFirestoreCollection<ResourceSave>(
     "resourceSaves", EMPTY_RESOURCE_SAVES, noteConstraints, Boolean(currentUser),
     currentUser ? `resource-saves:${currentUser.id}` : undefined,
@@ -95,12 +93,56 @@ export const ResourceDetailPage = () => {
   const [saveMessage, setSaveMessage] = useState("");
   const [optimisticSave, setOptimisticSave] = useState<boolean | null>(null);
 
-  const savedNote = noteState.data.find((note) => note.resourceId === resource?.id);
   const persistedIsSaved = saveState.data.some((save) => save.resourceId === resource?.id);
   const isSaved = optimisticSave ?? persistedIsSaved;
+  const resourceKey = resource?.id;
+  const userKey = currentUser?.id;
+  // Tracks the text last known to be in Firestore, so autosave can tell an
+  // unsaved edit apart from an echo of the document it just wrote.
+  const persistedNoteRef = useRef<string | null>(null);
+
   useEffect(() => {
-    setPersonalNote(savedNote?.content ?? "");
-  }, [savedNote?.content, resource?.id]);
+    persistedNoteRef.current = null;
+    setPersonalNote("");
+    setNoteMessage("");
+
+    if (!resourceKey || !userKey) return;
+
+    return subscribeToResourceNote(
+      resourceKey,
+      userKey,
+      (note) => {
+        const content = note?.content ?? "";
+        persistedNoteRef.current = content;
+        // Never clobber text the reader is still typing.
+        setPersonalNote((current) => (current.trim() === "" ? content : current));
+      },
+      (message) => setNoteMessage(message),
+    );
+  }, [resourceKey, userKey]);
+
+  // Autosave, so notes survive navigating away without pressing Save.
+  useEffect(() => {
+    if (!resourceKey || !userKey) return;
+    if (persistedNoteRef.current === null) return;
+    if (personalNote === persistedNoteRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      void saveResourceNote(resourceKey, userKey, personalNote)
+        .then(() => {
+          persistedNoteRef.current = personalNote;
+          setNoteMessage("Notes saved privately.");
+        })
+        .catch((error: unknown) => {
+          setNoteMessage(
+            error instanceof Error ? error.message : "Unable to save notes.",
+          );
+        });
+    }, NOTE_AUTOSAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [personalNote, resourceKey, userKey]);
+
   useEffect(() => {
     if (optimisticSave !== null && persistedIsSaved === optimisticSave) {
       setOptimisticSave(null);
@@ -176,10 +218,14 @@ export const ResourceDetailPage = () => {
     }
   };
   const savePersonalNote = async () => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setNoteMessage("Sign in to keep private notes on this resource.");
+      return;
+    }
     setIsNoteSaving(true);
     try {
       await saveResourceNote(resource.id, currentUser.id, personalNote);
+      persistedNoteRef.current = personalNote;
       setNoteMessage("Notes saved privately.");
     } catch (error) {
       setNoteMessage(error instanceof Error ? error.message : "Unable to save notes.");
@@ -197,7 +243,7 @@ export const ResourceDetailPage = () => {
     const nextSaved = !isSaved;
     setOptimisticSave(nextSaved);
     try {
-      const saved = await toggleResourceSave(resource.id, currentUser.id);
+      const saved = await toggleResourceSave(resource.id, currentUser.id, isSaved);
       setOptimisticSave(saved);
       setSaveMessage(saved ? "Saved to your resources." : "Removed from saved resources.");
     } catch (error) {
@@ -236,8 +282,14 @@ export const ResourceDetailPage = () => {
             <span>Curated by {resource.curatedBy}</span>
           </div>
           <div className="button-row" style={{ marginTop: "1rem" }}>
-            <button type="button" className={isSaved ? "forum-action-button is-favorite" : "btn btn-secondary"} disabled={isSaveBusy} onClick={() => void toggleSaved()}>
-              <Bookmark size={16} /> {isSaved ? "Saved" : "Save"}
+            <button
+              type="button"
+              className="btn btn-toggle"
+              aria-pressed={isSaved}
+              disabled={isSaveBusy}
+              onClick={() => void toggleSaved()}
+            >
+              <Bookmark size={16} aria-hidden="true" /> {isSaved ? "Saved" : "Save"}
             </button>
             {isOwner ? <button type="button" className="btn btn-ghost" onClick={beginEditing}>Edit resource</button> : null}
             {!isQuickRead && resource.externalUrl ? (
@@ -318,7 +370,12 @@ export const ResourceDetailPage = () => {
               {isNoteSaving ? "Saving..." : "Save notes"}
             </button>
           </div>
-          {noteMessage ? <p className="meta-line">{noteMessage}</p> : null}
+          <p className="meta-line" role="status">
+            {noteMessage
+              || (persistedNoteRef.current !== null && personalNote !== persistedNoteRef.current
+                ? "Unsaved changes — saving automatically..."
+                : "Notes are private to you and save automatically.")}
+          </p>
         </aside>
       </section>
 

@@ -201,7 +201,7 @@ export const MessagesPage = () => {
     setIsSending(true);
     setPageError("");
     try {
-      await sendChatMessage(activeThread.id, currentUser, messageDraft);
+      await sendChatMessage(activeThread, currentUser, messageDraft);
       setMessageDraft("");
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Unable to send your message.");

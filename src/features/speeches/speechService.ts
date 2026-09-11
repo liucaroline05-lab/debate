@@ -5,6 +5,7 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import {
@@ -104,9 +105,12 @@ const formatStorageError = (error: unknown) => {
   return "Unable to upload the selected file to Firebase Storage.";
 };
 
-export const uploadSpeechAsset = async (speechInput?: NewSpeechInput | null) => {
-  var file: File | null | undefined = speechInput?.file;
-  
+export const uploadSpeechAsset = async (
+  speechInput?: NewSpeechInput | null,
+  speechId?: string,
+) => {
+  const file: File | null | undefined = speechInput?.file;
+
   if (!file) {
     return null;
   }
@@ -115,27 +119,33 @@ export const uploadSpeechAsset = async (speechInput?: NewSpeechInput | null) => 
     throw new Error("Firebase Storage is not configured.");
   }
 
-  // User metadata
+  // `sourceType` and `speechId` are what the summarizeUploadedSpeech Cloud
+  // Function keys off to transcribe and summarize the recording. Debate turns
+  // share this storage prefix but tag themselves `debate-turn` instead.
   const metadata: UploadMetadata = {
     contentType: file.type,
     customMetadata: {
-      'userId': speechInput?.userId || 'unknown',
-      'title': speechInput?.title || 'untitled',
-      'eventName': speechInput?.eventName || 'unknown',
-      'format': speechInput?.format || 'unknown',
-      'visibility': speechInput?.visibility || 'private',
-      'speakerName': speechInput?.speakerName || 'unknown',
-      'tags': JSON.stringify(speechInput?.tags || []),
-      'organizationTags': JSON.stringify(speechInput?.organizationTags || []),
+      sourceType: "speech-upload",
+      speechId: speechId ?? "",
+      userId: speechInput?.userId || "unknown",
+      title: speechInput?.title || "untitled",
+      eventName: speechInput?.eventName || "unknown",
+      format: speechInput?.format || "unknown",
+      visibility: speechInput?.visibility || "private",
+      speakerName: speechInput?.speakerName || "unknown",
+      tags: JSON.stringify(speechInput?.tags || []),
+      organizationTags: JSON.stringify(speechInput?.organizationTags || []),
     },
   };
 
-  const assetRef = ref(storage, `speeches/${Date.now()}-${file.name}`);
+  const storagePath = `speeches/${Date.now()}-${file.name}`;
+  const assetRef = ref(storage, storagePath);
   const uploadTask = uploadBytesResumable(assetRef, file, metadata);
 
   try {
     await withTimeout(uploadTaskToPromise(uploadTask), UPLOAD_TIMEOUT_MS);
-    return await withTimeout(getDownloadURL(assetRef), 8_000);
+    const downloadUrl = await withTimeout(getDownloadURL(assetRef), 8_000);
+    return { downloadUrl, storagePath };
   } catch (error) {
     uploadTask.cancel();
     throw new Error(formatStorageError(error));
@@ -149,7 +159,10 @@ export const createSpeechRecord = async (
     throw new Error("Firestore is not configured.");
   }
 
-  const mediaPath = await uploadSpeechAsset(input);
+  // The document id is reserved up front so it can be stamped onto the upload
+  // metadata: the summary function needs it to write the result back.
+  const speechRef = doc(collection(firestore, "speeches"));
+  const upload = await uploadSpeechAsset(input, speechRef.id);
 
   const speech: Omit<SpeechRecord, "id"> = {
     creatorId: input.userId,
@@ -164,17 +177,19 @@ export const createSpeechRecord = async (
     transcriptStatus: "Pending",
     tags: input.tags,
     organizationTags: input.organizationTags,
-    mediaPath: mediaPath ?? undefined,
+    mediaPath: upload?.downloadUrl ?? undefined,
+    mediaStoragePath: upload?.storagePath ?? undefined,
     commentsEnabled: input.commentsEnabled,
+    ...(upload ? { summaryStatus: "processing" as const } : {}),
   };
 
-  const docRef = await addDoc(collection(firestore, "speeches"), {
+  await setDoc(speechRef, {
     ...speech,
     createdAt: serverTimestamp(),
   });
 
   return {
-    id: docRef.id,
+    id: speechRef.id,
     ...speech,
   };
 };

@@ -6,10 +6,9 @@ import {
   FileAudio,
   Flag,
   MoreHorizontal,
-  Pause,
   Pencil,
+  Sparkles,
   Trash2,
-  Volume2,
 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -22,9 +21,35 @@ import {
 import { formatDateTime } from "@/lib/date";
 import { firestore } from "@/lib/firebase";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { SpeechComment, SpeechRecord } from "@/types/models";
+import type { SpeechComment, SpeechRecord, SpeechSummaryStatus } from "@/types/models";
 
 const EMPTY_SPEECH_COMMENTS: SpeechComment[] = [];
+
+const summaryStatusCopy: Record<SpeechSummaryStatus, string> = {
+  processing: "This recording is being transcribed and summarized. Check back shortly.",
+  completed: "The AI summary is ready.",
+  failed:
+    "The AI summary could not be generated for this recording. An administrator can check the function logs and retry.",
+};
+
+const EmptySummaryList = () => (
+  <p className="meta-line">Nothing in the transcript supported this section.</p>
+);
+
+const SummaryList = ({ title, items }: { title: string; items: string[] }) => (
+  <section className="speech-summary-section">
+    <h3>{title}</h3>
+    {items.length > 0 ? (
+      <ul>
+        {items.map((item, index) => (
+          <li key={`${item}-${index}`}>{item}</li>
+        ))}
+      </ul>
+    ) : (
+      <EmptySummaryList />
+    )}
+  </section>
+);
 
 const toFormState = (speech: SpeechRecord) => ({
   title: speech.title,
@@ -197,6 +222,7 @@ export const SpeechDetailPage = () => {
   }
 
   const fileName = getSpeechFileName(speech);
+  const aiSummary = speech.aiSummary;
 
   return (
     <>
@@ -274,29 +300,93 @@ export const SpeechDetailPage = () => {
             </div>
             <div className="speech-player-divider" />
             {speech.mediaPath ? (
-              <div className="speech-media-actions">
-                <audio className="speech-native-audio" controls src={speech.mediaPath}>
+              <div className="speech-playback-controls">
+                <audio
+                  className="speech-native-audio"
+                  controls
+                  preload="metadata"
+                  src={speech.mediaPath}
+                >
                   <a href={speech.mediaPath}>Open recording</a>
                 </audio>
-                <a className="btn btn-secondary" href={speech.mediaPath} download={fileName} target="_blank" rel="noreferrer">
+                <a
+                  className="btn btn-secondary"
+                  href={speech.mediaPath}
+                  download={fileName}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   <Download size={16} /> Download
                 </a>
               </div>
-            ) : null}
-            <div className="speech-player-display" aria-hidden="true">
-              <button type="button" className="speech-round-control" tabIndex={-1}>
-                <Pause size={18} />
-              </button>
-              <span>01:24</span>
-              <div className="speech-progress-track">
-                <div className="speech-progress-fill" />
-                <div className="speech-progress-thumb" />
-              </div>
-              <span>03:45</span>
-              <Volume2 size={20} />
-              <MoreHorizontal size={19} />
-            </div>
+            ) : (
+              <p className="card-copy">No recording is attached to this speech.</p>
+            )}
           </div>
+        </article>
+
+        <article className="app-card speech-summary-card">
+          <div className="speech-section-heading">
+            <h2 className="card-title">
+              <Sparkles size={18} aria-hidden="true" /> AI summary
+            </h2>
+            {speech.summaryStatus && speech.summaryStatus !== "completed" ? (
+              <span className="pill">{speech.summaryStatus}</span>
+            ) : null}
+          </div>
+
+          <p className="card-copy">
+            {aiSummary?.overview
+              ?? speech.summary
+              ?? (speech.summaryStatus
+                ? summaryStatusCopy[speech.summaryStatus]
+                : "An AI summary will appear here once this recording has been processed.")}
+          </p>
+          {speech.summaryError ? (
+            <p className="meta-line is-error">{speech.summaryError}</p>
+          ) : null}
+
+          {aiSummary ? (
+            <>
+              <SummaryList title="Main claims" items={aiSummary.mainClaims} />
+
+              <section className="speech-summary-section">
+                <h3>Evidence mentioned</h3>
+                {aiSummary.evidenceMentioned.length > 0 ? (
+                  <ul>
+                    {aiSummary.evidenceMentioned.map((evidence, index) => (
+                      <li key={`${evidence.description}-${index}`}>
+                        {evidence.description}
+                        {evidence.sourceAsStated
+                          ? ` — source stated as ${evidence.sourceAsStated}`
+                          : " — no source named in the recording"}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <EmptySummaryList />
+                )}
+              </section>
+
+              <section className="speech-summary-section">
+                <h3>Structure</h3>
+                {aiSummary.structure.length > 0 ? (
+                  <ul>
+                    {aiSummary.structure.map((section, index) => (
+                      <li key={`${section.section}-${index}`}>
+                        <strong>{section.section}</strong> — {section.description}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <EmptySummaryList />
+                )}
+              </section>
+
+              <SummaryList title="Delivery notes" items={aiSummary.deliveryNotes} />
+              <SummaryList title="Suggestions" items={aiSummary.suggestions} />
+            </>
+          ) : null}
         </article>
 
         <form className="app-card speech-metadata-card" onSubmit={handleSubmit}>
@@ -395,16 +485,23 @@ export const SpeechDetailPage = () => {
               <label htmlFor="status">Status</label>
               <input id="status" value={speech.status} readOnly />
             </div>
-            <label className="settings-toggle-row form-field full" htmlFor="speechDetailCommentsEnabled">
+            <button
+              type="button"
+              id="speechDetailCommentsEnabled"
+              className="settings-toggle-row form-field full"
+              aria-pressed={form.commentsEnabled}
+              disabled={!isEditing}
+              onClick={() =>
+                setForm((current) =>
+                  current ? { ...current, commentsEnabled: !current.commentsEnabled } : current,
+                )
+              }
+            >
               <span><strong>Comments</strong><span className="meta-line">Allow viewers to leave feedback.</span></span>
-              <input
-                id="speechDetailCommentsEnabled"
-                type="checkbox"
-                checked={form.commentsEnabled}
-                disabled={!isEditing}
-                onChange={(event) => setForm((current) => current ? { ...current, commentsEnabled: event.target.checked } : current)}
-              />
-            </label>
+              <span className={form.commentsEnabled ? "settings-toggle is-on" : "settings-toggle"}>
+                {form.commentsEnabled ? "On" : "Off"}
+              </span>
+            </button>
             <div className="form-field">
               <label htmlFor="transcriptStatus">Transcript status</label>
               <input id="transcriptStatus" value={speech.transcriptStatus} readOnly />

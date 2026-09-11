@@ -12,6 +12,7 @@ import {
   Tooltip,
 } from "chart.js";
 import { Bar, Radar } from "react-chartjs-2";
+import { Eye } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import {
   seededChannelMemberships,
@@ -395,6 +396,28 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     }
   };
 
+  const saveTabroomVisibility = async (nextValue: boolean) => {
+    if (isSavingTabroomVisibility) return;
+    const previousValue = showTabroomHistory;
+    setShowTabroomHistory(nextValue);
+    setIsSavingTabroomVisibility(true);
+    try {
+      await updateProfile({ showTabroomHistory: nextValue });
+      setMessage(
+        nextValue
+          ? "Your Tabroom history is now visible on your profile."
+          : "Your Tabroom history is now hidden from your profile.",
+      );
+    } catch (error) {
+      setShowTabroomHistory(previousValue);
+      setMessage(
+        error instanceof Error ? error.message : "Unable to save Tabroom visibility.",
+      );
+    } finally {
+      setIsSavingTabroomVisibility(false);
+    }
+  };
+
   const linkTabroom = async () => {
     if (!currentUser || isTabroomBusy) return;
     if (!tabroomEmail.trim() || !tabroomPassword) {
@@ -405,8 +428,10 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     setIsTabroomBusy(true);
     setMessage("");
     try {
-      await linkTabroomSession(tabroomEmail, tabroomPassword);
-      setMessage("Tabroom account linked. Future syncs will reuse the saved session.");
+      const result = await linkTabroomSession(tabroomEmail, tabroomPassword);
+      setMessage(
+        `Tabroom account linked and ${result.eventCount} ${result.eventCount === 1 ? "tournament" : "tournaments"} imported. Future syncs reuse the saved session.`,
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to link Tabroom.");
     } finally {
@@ -420,8 +445,10 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     setIsTabroomBusy(true);
     setMessage("");
     try {
-      await syncTabroomSession();
-      setMessage("Tabroom account data synced.");
+      const result = await syncTabroomSession();
+      setMessage(
+        `Tabroom synced: ${result.eventCount} ${result.eventCount === 1 ? "tournament" : "tournaments"} imported.`,
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to sync Tabroom.");
     } finally {
@@ -783,16 +810,18 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
 
             {isOwnProfile ? (
               <div className="profile-tabroom-visibility">
-                <label className="forum-action-button">
-                  <input type="checkbox" checked={showTabroomHistory} onChange={(event) => setShowTabroomHistory(event.target.checked)} />
-                  Display my Tabroom history on my profile
-                </label>
-                <button type="button" className="btn btn-secondary" disabled={isSavingTabroomVisibility} onClick={async () => {
-                  setIsSavingTabroomVisibility(true);
-                  try { await updateProfile({ showTabroomHistory }); setMessage("Tabroom visibility saved."); }
-                  catch (error) { setMessage(error instanceof Error ? error.message : "Unable to save Tabroom visibility."); }
-                  finally { setIsSavingTabroomVisibility(false); }
-                }}>{isSavingTabroomVisibility ? "Saving..." : "Save visibility"}</button>
+                <button
+                  type="button"
+                  className="btn btn-toggle"
+                  aria-pressed={showTabroomHistory}
+                  disabled={isSavingTabroomVisibility}
+                  onClick={() => void saveTabroomVisibility(!showTabroomHistory)}
+                >
+                  <Eye size={16} aria-hidden="true" />
+                  {isSavingTabroomVisibility
+                    ? "Saving..."
+                    : "Display my Tabroom history on my profile"}
+                </button>
               </div>
             ) : null}
 
@@ -825,6 +854,13 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
 
             {(isOwnProfile || profile.showTabroomHistory) ? <div className="list" style={{ marginTop: "1rem" }}>
               <p className="meta-line">Past debates and events logged through Tabroom and connected organizations</p>
+              {tabroomEvents.length === 0 ? (
+                <p className="card-copy">
+                  {isTabroomLinked
+                    ? "No tournaments were found on this Tabroom account yet."
+                    : "Link a Tabroom account to import your tournament history."}
+                </p>
+              ) : null}
               {tabroomEvents.map((event) => (
                 <a
                   key={event.id}

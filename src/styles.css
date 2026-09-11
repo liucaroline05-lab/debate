@@ -704,7 +704,8 @@ button {
 }
 
 .speech-detail-stack {
-  width: var(--content-width);
+  width: 100%;
+  max-width: var(--content-width);
   margin: 0 auto;
   display: grid;
   gap: 1.35rem;
@@ -725,8 +726,7 @@ button {
 
 .speech-file-row,
 .speech-attachment-row,
-.speech-section-heading,
-.speech-player-display {
+.speech-section-heading {
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -738,7 +738,11 @@ button {
 }
 
 .speech-section-heading .card-title,
-.speech-playback-card .card-title {
+.speech-playback-card .card-title,
+.speech-summary-card .card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   margin: 0;
 }
 
@@ -774,48 +778,6 @@ button {
 .speech-native-audio {
   width: 100%;
   margin-bottom: 0.9rem;
-}
-
-.speech-player-display {
-  color: var(--color-charcoal);
-}
-
-.speech-round-control {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 3rem;
-  height: 3rem;
-  border-radius: 50%;
-  border: 0;
-  background: rgba(208, 160, 65, 0.18);
-  color: #9b704f;
-}
-
-.speech-progress-track {
-  position: relative;
-  flex: 1;
-  height: 0.38rem;
-  border-radius: 999px;
-  background: rgba(53, 47, 42, 0.08);
-}
-
-.speech-progress-fill {
-  width: 52%;
-  height: 100%;
-  border-radius: inherit;
-  background: #c5a16d;
-}
-
-.speech-progress-thumb {
-  position: absolute;
-  top: 50%;
-  left: 52%;
-  width: 1rem;
-  height: 1rem;
-  border-radius: 50%;
-  background: #c49a68;
-  transform: translate(-50%, -50%);
 }
 
 .speech-attachment-row {
@@ -1289,8 +1251,11 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem 1.35rem;
+  gap: 0.55rem;
+  /* Matches .btn so the picker reads as the same control as Upload/Save. */
+  padding: 0.9rem 1.35rem;
   border-radius: 999px;
+  border: 1px solid transparent;
   background: var(--color-sand);
   color: var(--color-white);
   font-weight: 600;
@@ -1299,6 +1264,7 @@ button {
     transform var(--transition),
     background-color var(--transition);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .file-input-trigger:hover {
@@ -2572,6 +2538,11 @@ button {
   background: rgba(245, 239, 230, 0.72);
 }
 
+.settings-toggle-row:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
 .settings-toggle {
   display: inline-flex;
   align-items: center;
@@ -3326,15 +3297,9 @@ button {
   .debate-panel-header,
   .debate-panel-footer,
   .debate-entry-footer,
-  .speech-detail-header,
-  .speech-player-display {
+  .speech-detail-header {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .speech-progress-track {
-    width: 100%;
-    flex: 0 0 auto;
   }
 
   .settings-toggle-row {
@@ -3966,17 +3931,6 @@ button {
   padding-right: 0.25rem;
 }
 
-.speech-media-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.speech-media-actions audio {
-  flex: 1 1 24rem;
-}
-
 .speech-comments-card .forum-comment-form {
   margin-top: 1rem;
 }
@@ -4037,8 +3991,7 @@ button {
   }
 
   .debate-join-row,
-  .forum-group-join,
-  .speech-media-actions {
+  .forum-group-join {
     width: 100%;
     flex-direction: column;
     align-items: stretch;
@@ -4047,4 +4000,146 @@ button {
   .resource-featured-row {
     padding-inline: 2.9rem;
   }
+}
+
+
+/* --- Async debate: completed cards -------------------------------------- */
+
+/* Reaction rows sit flush against the rounded card edge unless they are
+   padded to match the header/footer gutters. */
+.debate-panel > .forum-post-actions,
+.debate-panel > .forum-comments-panel > .forum-post-actions {
+  margin: 0;
+  padding: 1rem 1.5rem 1.25rem;
+}
+
+.debate-panel > .forum-post-actions + .forum-comments-panel {
+  padding-top: 1rem;
+}
+
+/* --- Community: threaded comments --------------------------------------- */
+
+.forum-comment-thread {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.forum-comment-replies {
+  display: grid;
+  gap: 0.6rem;
+  margin-left: 1.1rem;
+  padding-left: 1rem;
+  border-left: 2px solid rgba(53, 47, 42, 0.1);
+}
+
+.forum-comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.forum-comment-actions .forum-action-button {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.forum-reply-form {
+  margin-top: 0.75rem;
+}
+
+.forum-reply-form input {
+  padding: 0.65rem 0.85rem;
+  border-radius: 14px;
+}
+
+@media (max-width: 720px) {
+  .forum-comment-replies {
+    margin-left: 0.4rem;
+    padding-left: 0.7rem;
+  }
+}
+
+/* --- Speech detail ------------------------------------------------------ */
+
+.speech-playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.speech-playback-controls .speech-native-audio {
+  flex: 1 1 22rem;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.speech-summary-card .card-copy + .card-copy {
+  margin-top: 0.75rem;
+}
+
+.speech-summary-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.speech-summary-section {
+  margin-top: 1.35rem;
+}
+
+.speech-summary-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.02rem;
+}
+
+.speech-summary-section ul {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+@media (max-width: 720px) {
+  .speech-playback-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* --- Toggle buttons ------------------------------------------------------ */
+
+/* A .btn-shaped on/off control. Save / favourite / filter toggles used to be a
+   bare checkbox inside a small pill, which did not match any other button on
+   the page. Pair with .btn and drive the state from aria-pressed. */
+.btn-toggle {
+  background: rgba(255, 253, 248, 0.8);
+  color: var(--color-charcoal);
+  border-color: rgba(53, 47, 42, 0.14);
+}
+
+.btn-toggle svg {
+  flex: 0 0 auto;
+  fill: none;
+  transition: fill var(--transition), color var(--transition);
+}
+
+.btn-toggle[aria-pressed="true"] {
+  background: rgba(208, 160, 65, 0.16);
+  border-color: rgba(208, 160, 65, 0.45);
+  color: #7f5d1d;
+}
+
+/* Once saved/favourited the outline icon fills in. */
+.btn-toggle[aria-pressed="true"] svg {
+  color: var(--color-gold);
+  fill: var(--color-gold);
+}
+
+.btn-toggle:disabled svg {
+  opacity: 0.7;
 }

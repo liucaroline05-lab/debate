@@ -205,18 +205,23 @@ export const SpeechUploadPage = () => {
                 placeholder="What should reviewers listen for?"
               />
             </div>
-            <label className="settings-toggle-row form-field full" htmlFor="speechCommentsEnabled">
+            <button
+              type="button"
+              id="speechCommentsEnabled"
+              className="settings-toggle-row form-field full"
+              aria-pressed={form.commentsEnabled}
+              onClick={() =>
+                setForm((current) => ({ ...current, commentsEnabled: !current.commentsEnabled }))
+              }
+            >
               <span>
                 <strong>Allow comments</strong>
                 <span className="meta-line">Let viewers leave feedback on the speech detail page.</span>
               </span>
-              <input
-                id="speechCommentsEnabled"
-                type="checkbox"
-                checked={form.commentsEnabled}
-                onChange={(event) => setForm((current) => ({ ...current, commentsEnabled: event.target.checked }))}
-              />
-            </label>
+              <span className={form.commentsEnabled ? "settings-toggle is-on" : "settings-toggle"}>
+                {form.commentsEnabled ? "On" : "Off"}
+              </span>
+            </button>
             <div className="form-field">
               <label htmlFor="tags">Tags</label>
               <input

@@ -4,6 +4,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   setDoc,
@@ -32,6 +33,9 @@ const requireFirestore = () => {
 const getMessagingPermission = (profile: UserProfile): MessagingPermission =>
   profile.preferences?.messaging?.whoCanMessage ?? "everyone";
 
+export const directThreadId = (senderId: string, recipientId: string) =>
+  `dm-${[senderId, recipientId].sort().join("--")}`;
+
 export const canStartConversation = async (
   senderId: string,
   recipient: UserProfile,
@@ -47,6 +51,13 @@ export const canStartConversation = async (
   return follow.exists();
 };
 
+const sortThreads = (threads: ChatThread[]) =>
+  [...threads].sort((left, right) => {
+    const leftTime = left.lastMessageAt ?? left.updatedAt ?? left.createdAt ?? "";
+    const rightTime = right.lastMessageAt ?? right.updatedAt ?? right.createdAt ?? "";
+    return rightTime.localeCompare(leftTime);
+  });
+
 export const subscribeToThreads = (
   userId: string,
   onThreads: (threads: ChatThread[]) => void,
@@ -61,14 +72,11 @@ export const subscribeToThreads = (
   return onSnapshot(
     threadsQuery,
     (snapshot) => {
-      const threads = snapshot.docs
-        .map((thread) => ({ id: thread.id, ...thread.data() }) as ChatThread)
-        .sort((left, right) => {
-          const leftTime = left.lastMessageAt ?? left.updatedAt;
-          const rightTime = right.lastMessageAt ?? right.updatedAt;
-          return rightTime.localeCompare(leftTime);
-        });
-      onThreads(threads);
+      onThreads(
+        sortThreads(
+          snapshot.docs.map((thread) => ({ id: thread.id, ...thread.data() }) as ChatThread),
+        ),
+      );
     },
     (error) => onError(error.message),
   );
@@ -97,28 +105,29 @@ export const subscribeToMessages = (
   );
 };
 
-const findExistingDirectThread = async (senderId: string, recipientId: string) =>
-  new Promise<ChatThread | null>((resolve, reject) => {
-    let unsubscribe: () => void = () => {};
-    unsubscribe = subscribeToThreads(
-      senderId,
-      (threads) => {
-        unsubscribe();
-        resolve(
-          threads.find(
-            (thread) =>
-              thread.type === "direct" &&
-              thread.participantIds.length === 2 &&
-              thread.participantIds.includes(recipientId),
-          ) ?? null,
-        );
-      },
-      (message) => {
-        unsubscribe();
-        reject(new Error(message));
-      },
-    );
-  });
+// A direct thread has a deterministic id, but reading it by id would be denied
+// (rather than reported as missing) when it does not exist yet, so look it up
+// through the same participant query the inbox uses.
+const findExistingDirectThread = async (senderId: string, recipientId: string) => {
+  const database = requireFirestore();
+  const snapshot = await getDocs(
+    query(
+      collection(database, "chatThreads"),
+      where("participantIds", "array-contains", senderId),
+    ),
+  );
+
+  return (
+    snapshot.docs
+      .map((thread) => ({ id: thread.id, ...thread.data() }) as ChatThread)
+      .find(
+        (thread) =>
+          thread.type === "direct" &&
+          thread.participantIds.length === 2 &&
+          thread.participantIds.includes(recipientId),
+      ) ?? null
+  );
+};
 
 export const startDirectThread = async (
   sender: UserProfile,
@@ -133,7 +142,7 @@ export const startDirectThread = async (
   }
 
   const participantIds = [sender.id, recipient.id].sort();
-  const threadId = `dm-${participantIds.join("--")}`;
+  const threadId = directThreadId(sender.id, recipient.id);
   const createdAt = new Date().toISOString();
 
   await setDoc(doc(database, "chatThreads", threadId), {
@@ -201,7 +210,7 @@ export const startGroupThread = async (
 };
 
 export const sendChatMessage = async (
-  threadId: string,
+  thread: ChatThread,
   author: UserProfile,
   content: string,
 ) => {
@@ -213,15 +222,21 @@ export const sendChatMessage = async (
   }
 
   const createdAt = new Date().toISOString();
+  // `participantIds` is denormalized onto every message so the read rule can
+  // authorize a message from the message itself. Resolving it through the
+  // parent thread instead costs one cross-document get() per returned
+  // document, which exceeds the 10-access-call budget Firestore allows a
+  // single query and makes the whole conversation fail to load.
   await addDoc(collection(database, "chatMessages"), {
-    threadId,
+    threadId: thread.id,
+    participantIds: thread.participantIds,
     authorId: author.id,
     authorName: author.displayName,
     content: normalizedContent,
     createdAt,
   } satisfies Omit<ChatMessage, "id">);
 
-  await updateDoc(doc(database, "chatThreads", threadId), {
+  await updateDoc(doc(database, "chatThreads", thread.id), {
     lastMessageText: normalizedContent.slice(0, 160),
     lastMessageAt: createdAt,
     lastMessageSenderId: author.id,
