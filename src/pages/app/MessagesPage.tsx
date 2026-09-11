@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { MessageCircle, Plus, Search, Send, UserRound, UsersRound, X } from "lucide-react";
+import {
+  AlertCircle,
+  MessageCircle,
+  Plus,
+  Search,
+  Send,
+  UserRound,
+  UsersRound,
+  X,
+} from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { seededUsers } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -52,6 +61,8 @@ export const MessagesPage = () => {
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isMessagesLoading, setIsMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState("");
   const [isThreadsLoading, setIsThreadsLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
@@ -121,19 +132,31 @@ export const MessagesPage = () => {
 
   useEffect(() => {
     setMessages([]);
-    if (!activeThreadId) return;
+    setMessagesError("");
+    if (!activeThreadId) {
+      setIsMessagesLoading(false);
+      return;
+    }
 
+    setIsMessagesLoading(true);
     try {
       return subscribeToMessages(
         activeThreadId,
         (nextMessages) => {
           setMessages(nextMessages);
-          setPageError("");
+          setMessagesError("");
+          setIsMessagesLoading(false);
         },
-        setPageError,
+        (message) => {
+          setMessagesError(message);
+          setIsMessagesLoading(false);
+        },
       );
     } catch (error) {
-      setPageError(error instanceof Error ? error.message : "Unable to load this conversation.");
+      setMessagesError(
+        error instanceof Error ? error.message : "Unable to load this conversation.",
+      );
+      setIsMessagesLoading(false);
     }
   }, [activeThreadId]);
 
@@ -405,7 +428,18 @@ export const MessagesPage = () => {
               </header>
 
               <div className="messages-scroll-region" aria-live="polite">
-                {messages.length === 0 ? (
+                {messagesError ? (
+                  <div className="messages-conversation-empty is-error" role="alert">
+                    <span className="message-empty-icon"><AlertCircle size={28} /></span>
+                    <strong>This conversation could not be loaded.</strong>
+                    <p>{messagesError}</p>
+                  </div>
+                ) : isMessagesLoading ? (
+                  <div className="messages-conversation-empty">
+                    <span className="message-empty-icon"><MessageCircle size={28} /></span>
+                    <strong>Loading messages...</strong>
+                  </div>
+                ) : messages.length === 0 ? (
                   <div className="messages-conversation-empty">
                     <span className="message-empty-icon"><MessageCircle size={28} /></span>
                     <strong>This is the beginning of the conversation.</strong>

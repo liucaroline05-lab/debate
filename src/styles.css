@@ -4143,3 +4143,12 @@ button {
 .btn-toggle:disabled svg {
   opacity: 0.7;
 }
+
+.messages-conversation-empty.is-error strong {
+  color: var(--color-terracotta);
+}
+
+.messages-conversation-empty.is-error p {
+  max-width: 34rem;
+  margin-inline: auto;
+}

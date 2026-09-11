@@ -10,6 +10,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  type FirestoreError,
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase";
 import type {
@@ -32,6 +33,19 @@ const requireFirestore = () => {
 
 const getMessagingPermission = (profile: UserProfile): MessagingPermission =>
   profile.preferences?.messaging?.whoCanMessage ?? "everyone";
+
+const describeFirestoreError = (error: FirestoreError) => {
+  if (error.code === "permission-denied") {
+    return "You do not have permission to read this conversation. If that is unexpected, the Firestore rules may not be deployed yet.";
+  }
+  if (error.code === "failed-precondition") {
+    return `This conversation needs a Firestore index that does not exist yet. ${error.message}`;
+  }
+  if (error.code === "unavailable") {
+    return "Cannot reach Firestore right now. Check your connection and try again.";
+  }
+  return error.message;
+};
 
 export const directThreadId = (senderId: string, recipientId: string) =>
   `dm-${[senderId, recipientId].sort().join("--")}`;
@@ -78,7 +92,10 @@ export const subscribeToThreads = (
         ),
       );
     },
-    (error) => onError(error.message),
+    (error) => {
+      console.error("Inbox listener failed:", error.code, error.message);
+      onError(describeFirestoreError(error));
+    },
   );
 };
 
@@ -96,12 +113,40 @@ export const subscribeToMessages = (
   return onSnapshot(
     messagesQuery,
     (snapshot) => {
-      const messages = snapshot.docs
-        .map((message) => ({ id: message.id, ...message.data() }) as ChatMessage)
-        .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-      onMessages(messages);
+      // A throw inside this handler is NOT routed to the error callback, so it
+      // leaves the conversation permanently blank with nothing reported.
+      // Sorting on a document missing createdAt did exactly that, which is why
+      // a thread could show a preview in the inbox and nothing in the pane.
+      try {
+        const messages = snapshot.docs
+          .map((message) => {
+            const data = message.data() as Partial<ChatMessage>;
+            return {
+              ...data,
+              id: message.id,
+              threadId: data.threadId ?? threadId,
+              participantIds: data.participantIds ?? [],
+              authorId: data.authorId ?? "",
+              authorName: data.authorName ?? "Unknown",
+              content: data.content ?? "",
+              createdAt: data.createdAt ?? "",
+            } satisfies ChatMessage;
+          })
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+        onMessages(messages);
+      } catch (error) {
+        console.error("Could not read this conversation:", error);
+        onError(
+          error instanceof Error
+            ? error.message
+            : "This conversation could not be read.",
+        );
+      }
     },
-    (error) => onError(error.message),
+    (error) => {
+      console.error("Conversation listener failed:", error.code, error.message);
+      onError(describeFirestoreError(error));
+    },
   );
 };
 
