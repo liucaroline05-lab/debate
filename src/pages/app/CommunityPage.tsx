@@ -39,6 +39,7 @@ import {
   updatePostContent,
 } from "@/features/community/communityService";
 import { useAuth } from "@/features/auth/AuthContext";
+import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type { PostComment, PostCommentReaction, UserProfile } from "@/types/models";
 
@@ -172,6 +173,7 @@ export const CommunityPage = () => {
   const [menuPostId, setMenuPostId] = useState<string | null>(null);
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const [sharedPostId, setSharedPostId] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ title: string; url: string; postId: string } | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [composerFiles, setComposerFiles] = useState<File[]>([]);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -505,49 +507,14 @@ export const CommunityPage = () => {
     }
   };
 
-  const copyToClipboard = async (text: string) => {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return;
-    }
-
-    // Fallback for browsers/non-secure contexts without the async clipboard API.
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "absolute";
-    textarea.style.left = "-9999px";
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textarea);
-  };
-
-  const sharePost = async (postId: string, shareCount = 0) => {
-    const url = `${window.location.origin}/app/community#${postId}`;
-
-    try {
-      if (navigator.share) {
-        // Native share sheet (mobile / supported desktops).
-        await navigator.share({ title: "DebateSpace community post", url });
-      } else {
-        await copyToClipboard(url);
-        setSharedPostId(postId);
-        window.setTimeout(
-          () => setSharedPostId((current) => (current === postId ? null : current)),
-          2000,
-        );
-      }
-    } catch (error) {
-      // The user dismissing the native share sheet is not an error.
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return;
-      }
-      setMessage("Unable to share this post right now.");
-      return;
-    }
-
-    // Best-effort: record the share without blocking or breaking the copy above.
+  const sharePost = (postId: string, title: string, shareCount = 0) => {
+    setShareTarget({
+      postId,
+      title: title || "Debate Studio community post",
+      url: `${window.location.origin}/app/community#${postId}`,
+    });
+    setSharedPostId(postId);
+    // Best-effort: record the share without blocking the dialog.
     void incrementPostShareCount(postId, shareCount).catch(() => {});
   };
 
@@ -1107,10 +1074,11 @@ export const CommunityPage = () => {
                       <button
                         type="button"
                         className={justShared ? "forum-action-button is-share" : "forum-action-button"}
-                        onClick={() => void sharePost(post.id, post.shareCount)}
+                        aria-label="Share post"
+                        onClick={() => sharePost(post.id, post.title ?? "", post.shareCount)}
                       >
                         {justShared ? <Check size={16} /> : <Share2 size={16} />}{" "}
-                        {justShared ? "Copied" : post.shareCount ?? 0}
+                        {post.shareCount ?? 0}
                       </button>
                     </div>
                   </div>
@@ -1336,6 +1304,17 @@ export const CommunityPage = () => {
             </div>
           </section>
         </div>
+      ) : null}
+
+      {shareTarget ? (
+        <ShareToMessageDialog
+          title={shareTarget.title}
+          url={shareTarget.url}
+          onClose={() => {
+            setShareTarget(null);
+            setSharedPostId(null);
+          }}
+        />
       ) : null}
     </>
   );

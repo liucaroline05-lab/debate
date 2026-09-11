@@ -1,3 +1,5 @@
+import type { SpeechFormat } from "@/lib/speechFormats";
+
 export type UserRole = "student" | "coach";
 
 export type MessagingPermission = "everyone" | "following" | "nobody";
@@ -63,7 +65,7 @@ export interface SpeechRecord {
   creatorId?: string;
   title: string;
   eventName: string;
-  format: "Policy" | "Lincoln-Douglas" | "Public Forum" | "Congress" | "Extemp";
+  format: SpeechFormat;
   visibility?: "private" | "public";
   status: "Uploaded" | "Reviewing" | "Ready for Feedback";
   speakerName: string;
@@ -91,6 +93,18 @@ export interface SpeechComment {
   authorId: string;
   authorName: string;
   content: string;
+  createdAt: string;
+  likeCount?: number;
+  dislikeCount?: number;
+}
+
+export interface SpeechCommentReaction {
+  id: string;
+  commentId: string;
+  speechId: string;
+  userId: string;
+  like: boolean;
+  dislike: boolean;
   createdAt: string;
 }
 
@@ -500,9 +514,18 @@ export interface TabroomLink {
 export interface TabroomEvent {
   id: string;
   name: string;
+  /** Tournament start, ISO 8601. */
   date: string;
+  /** Tournament end, ISO 8601; absent on older imports. */
+  endDate?: string;
   result: string;
   sourceUrl: string;
+  location?: string;
+  /** "Student", "Coach", "Judge", or a combination. */
+  role?: string;
+  judgeCategory?: string;
+  schoolName?: string;
+  timezone?: string;
 }
 
 export interface TabroomImport {

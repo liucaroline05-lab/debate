@@ -11,6 +11,9 @@ const SUMMARY_MODEL = "gpt-5.6-luna";
 const TRANSCRIPTION_PROMPT_VERSION = "speech-transcription-v1";
 const SUMMARY_PROMPT_VERSION = "speech-summary-v1";
 const MAX_TRANSCRIPTION_BYTES = 25 * 1024 * 1024;
+// How long the trigger keeps retrying while waiting for the client to finish
+// writing the speech document.
+const MAX_DOCUMENT_WAIT_MS = 5 * 60 * 1000;
 const SUPPORTED_AUDIO_EXTENSIONS = new Set([
   ".m4a",
   ".mp3",
@@ -129,10 +132,21 @@ const parseSummary = (outputText: string): SpeechAiSummary => {
   return parsed as SpeechAiSummary;
 };
 
+class SpeechDocumentNotReadyError extends Error {
+  constructor(readonly speechId: string) {
+    super(`Speech document ${speechId} does not exist yet.`);
+  }
+}
+
 /**
  * Marks the speech as being summarized, and reports whether this invocation
  * won the claim. Prevents duplicate summaries when the storage trigger
  * retries.
+ *
+ * Throws SpeechDocumentNotReadyError when the document is missing, so the
+ * caller can let the trigger retry instead of dropping the upload: the client
+ * writes the document first, but a retried or externally uploaded object can
+ * still arrive before it.
  */
 const claimSpeechSummary = async (speechId: string, sourceEventId: string) => {
   const db = getFirestore();
@@ -141,7 +155,7 @@ const claimSpeechSummary = async (speechId: string, sourceEventId: string) => {
   return db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(speechRef);
     if (!snapshot.exists) {
-      return false;
+      throw new SpeechDocumentNotReadyError(speechId);
     }
 
     const speech = snapshot.data() as SpeechData | undefined;
@@ -311,7 +325,25 @@ export const summarizeUploadedSpeech = onObjectFinalized(
       return;
     }
 
-    if (!(await claimSpeechSummary(speechId, event.id))) {
+    try {
+      if (!(await claimSpeechSummary(speechId, event.id))) {
+        return;
+      }
+    } catch (error) {
+      if (!(error instanceof SpeechDocumentNotReadyError)) {
+        throw error;
+      }
+      // Retry while the write could still be in flight; past that, the record
+      // was most likely deleted and retrying forever would be pointless.
+      const uploadedAt = object.timeCreated
+        ? new Date(object.timeCreated).getTime()
+        : Number.NaN;
+      const ageMs = Number.isFinite(uploadedAt) ? Date.now() - uploadedAt : 0;
+      if (ageMs < MAX_DOCUMENT_WAIT_MS) {
+        console.info("Speech document not written yet; retrying.", { speechId, ageMs });
+        throw error;
+      }
+      console.warn("Giving up on a speech upload with no document.", { speechId, ageMs });
       return;
     }
 

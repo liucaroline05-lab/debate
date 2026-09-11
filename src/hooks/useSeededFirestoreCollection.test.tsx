@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 
 const mocks = vi.hoisted(() => ({
@@ -12,10 +12,23 @@ const mocks = vi.hoisted(() => ({
     }) => void;
     error: (error: Error) => void;
   }>,
+  unsubscribes: [] as Array<() => void>,
+  authCallback: null as ((user: { uid: string } | null) => void) | null,
 }));
 
 vi.mock("@/lib/firebase", () => ({
   firestore: {},
+  auth: {},
+}));
+
+vi.mock("firebase/auth", () => ({
+  onAuthStateChanged: (
+    _auth: unknown,
+    callback: (user: { uid: string } | null) => void,
+  ) => {
+    mocks.authCallback = callback;
+    return () => {};
+  },
 }));
 
 vi.mock("@/features/firestore/seed", () => ({
@@ -35,7 +48,9 @@ vi.mock("firebase/firestore", () => ({
     error: (snapshotError: Error) => void,
   ) => {
     mocks.listeners.push({ next, error });
-    return vi.fn();
+    const unsubscribe = vi.fn();
+    mocks.unsubscribes.push(unsubscribe);
+    return unsubscribe;
   }),
   query: vi.fn(() => ({})),
 }));
@@ -45,7 +60,18 @@ interface TestRecord {
   title: string;
 }
 
+const signIn = (uid: string | null) =>
+  act(() => {
+    mocks.authCallback?.(uid === null ? null : { uid });
+  });
+
 describe("useSeededFirestoreCollection", () => {
+  beforeEach(() => {
+    // Auth resolves before the assertions in most tests; the hook deliberately
+    // waits for it before attaching a listener.
+    signIn("test-owner");
+  });
+
   it("keeps the real document ID and restores the last snapshot after remount", () => {
     const cacheKey = "speeches:test-owner";
     const constraints: never[] = [];
@@ -61,7 +87,7 @@ describe("useSeededFirestoreCollection", () => {
     );
 
     act(() => {
-      mocks.listeners[0].next({
+      mocks.listeners.at(-1)?.next({
         docs: [{
           id: "actual-firestore-id",
           data: () => ({
@@ -94,7 +120,7 @@ describe("useSeededFirestoreCollection", () => {
     }]);
 
     act(() => {
-      mocks.listeners[1].error(new Error("temporary listener failure"));
+      mocks.listeners.at(-1)?.error(new Error("temporary listener failure"));
     });
 
     expect(second.result.current.data).toHaveLength(1);
@@ -129,5 +155,26 @@ describe("useSeededFirestoreCollection", () => {
     hook.rerender({ cacheKey: "speeches:owner:second-user" });
 
     expect(hook.result.current.data).toEqual([]);
+  });
+
+  it("re-attaches the listener when someone signs in", () => {
+    // Firestore never retries a rejected listener, so one attached while signed
+    // out stayed dead until the page was reloaded.
+    signIn(null);
+    const constraints: never[] = [];
+    const seedRecords: TestRecord[] = [];
+
+    renderHook(() =>
+      useSeededFirestoreCollection<TestRecord>("users", seedRecords, constraints),
+    );
+    const attachedWhileSignedOut = mocks.listeners.length;
+
+    act(() => {
+      mocks.listeners.at(-1)?.error(new Error("Missing or insufficient permissions."));
+    });
+
+    signIn("someone");
+
+    expect(mocks.listeners.length).toBe(attachedWhileSignedOut + 1);
   });
 });

@@ -1,28 +1,60 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import {
+  BookOpen,
+  LayoutDashboard,
+  MessageSquare,
+  Mic,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  Swords,
+  Users,
+} from "lucide-react";
 import { AuthOverlay } from "@/features/auth/AuthOverlay";
+import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { useAuth } from "@/features/auth/AuthContext";
 import { APP_NAME } from "@/lib/constants";
 
 const appLinks = [
-  { to: "/app/dashboard", label: "Dashboard" },
-  { to: "/app/speeches/new", label: "Record / Upload" },
-  { to: "/app/debates", label: "Async Debate" },
-  { to: "/app/resources", label: "Resources" },
-  { to: "/app/community", label: "Community" },
-  { to: "/app/messages", label: "Messages" },
-  { to: "/app/settings", label: "Settings" },
+  { to: "/app/dashboard", label: "Dashboard", Icon: LayoutDashboard },
+  { to: "/app/speeches/new", label: "Record / Upload", Icon: Mic },
+  { to: "/app/debates", label: "Async Debate", Icon: Swords },
+  { to: "/app/resources", label: "Resources", Icon: BookOpen },
+  { to: "/app/community", label: "Community", Icon: Users },
+  { to: "/app/messages", label: "Messages", Icon: MessageSquare },
+  { to: "/app/settings", label: "Settings", Icon: Settings },
 ];
+
+const SIDEBAR_STORAGE_KEY = "debate-studio:sidebar-collapsed";
+
+const readCollapsedPreference = () => {
+  try {
+    return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+};
 
 export const AppLayout = () => {
   const { currentUser, logout } = useAuth();
   const isLocked = !currentUser;
   const profileName = currentUser?.displayName ?? "Guest preview";
   const profileRole = currentUser?.role ?? "Log in to continue";
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(readCollapsedPreference);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(isSidebarCollapsed));
+    } catch {
+      // A blocked storage API just means the choice is not remembered.
+    }
+  }, [isSidebarCollapsed]);
 
   return (
     <div className="app-layout-shell">
       <div className={isLocked ? "app-layout-stage is-locked" : "app-layout-stage"}>
-        <div className="app-layout">
+        <div className={isSidebarCollapsed ? "app-layout is-sidebar-collapsed" : "app-layout"}>
           <aside className="app-sidebar-wrap">
             <div className="app-sidebar">
               <NavLink to="/app/dashboard" className="brand">
@@ -64,13 +96,15 @@ export const AppLayout = () => {
               )}
 
               <nav className="app-nav" aria-label="App sections">
-                {appLinks.map((link) => (
+                {appLinks.map(({ to, label, Icon }) => (
                   <NavLink
-                    key={link.to}
-                    to={link.to}
+                    key={to}
+                    to={to}
                     className={({ isActive }) => (isActive ? "active" : undefined)}
+                    title={isSidebarCollapsed ? label : undefined}
                   >
-                    {link.label}
+                    <Icon size={19} aria-hidden="true" />
+                    <span className="app-nav-label">{label}</span>
                   </NavLink>
                 ))}
               </nav>
@@ -80,12 +114,29 @@ export const AppLayout = () => {
           <div className="app-content">
             <div className="app-topbar">
               <div className="app-topbar-bar">
-                <div className="cluster" />
+                <div className="cluster">
+                  <button
+                    type="button"
+                    className="sidebar-toggle"
+                    aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                    aria-pressed={isSidebarCollapsed}
+                    onClick={() => setIsSidebarCollapsed((current) => !current)}
+                  >
+                    {isSidebarCollapsed ? (
+                      <PanelLeftOpen size={20} aria-hidden="true" />
+                    ) : (
+                      <PanelLeftClose size={20} aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
                 <div className="button-row">
                   {currentUser ? (
-                    <button type="button" className="btn btn-secondary" onClick={() => void logout()}>
-                      Log out
-                    </button>
+                    <>
+                      <NotificationsBell userId={currentUser.id} />
+                      <button type="button" className="btn btn-secondary" onClick={() => void logout()}>
+                        Log out
+                      </button>
+                    </>
                   ) : (
                     <span className="pill">Previewing the workspace</span>
                   )}

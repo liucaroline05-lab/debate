@@ -5,15 +5,15 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { createSpeechRecord } from "@/features/speeches/speechService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDateTime } from "@/lib/date";
+import { defaultSpeechFormat, speechFormatGroups } from "@/lib/speechFormats";
 import type { SpeechRecord } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
 
 const initialForm = {
   title: "",
   eventName: "",
-  format: "Public Forum" as SpeechRecord["format"],
+  format: defaultSpeechFormat as SpeechRecord["format"],
   visibility: "private" as NonNullable<SpeechRecord["visibility"]>,
-  speakerName: "",
   coachNotes: "",
   tags: "delivery, framing",
   organizationTags: "feedback-requested",
@@ -77,6 +77,7 @@ export const SpeechUploadPage = () => {
       const speech = await createSpeechRecord({
         ...form,
         userId: currentUser.id,
+        speakerName: currentUser.displayName?.trim() || "Speaker",
         tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
         organizationTags: form.organizationTags
           .split(",")
@@ -151,27 +152,14 @@ export const SpeechUploadPage = () => {
                   }))
                 }
               >
-                <option>Policy</option>
-                <option>Lincoln-Douglas</option>
-                <option>Public Forum</option>
-                <option>Congress</option>
-                <option>Extemp</option>
+                {speechFormatGroups.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.formats.map((format) => (
+                      <option key={format} value={format}>{format}</option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
-            </div>
-            <div className="form-field">
-              <label htmlFor="speakerName">Speaker name</label>
-              <input
-                id="speakerName"
-                value={form.speakerName}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    speakerName: event.target.value,
-                  }))
-                }
-                placeholder="Maya Rivera"
-                required
-              />
             </div>
             <div className="form-field">
               <label htmlFor="visibility">Visibility</label>

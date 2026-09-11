@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
 import {
@@ -8,6 +8,8 @@ import {
   MoreHorizontal,
   Pencil,
   Sparkles,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
@@ -16,14 +18,22 @@ import {
   deleteSpeechRecord,
   addSpeechComment,
   reportSpeechRecord,
+  toggleSpeechCommentReaction,
   updateSpeechRecord,
 } from "@/features/speeches/speechService";
 import { formatDateTime } from "@/lib/date";
+import { speechFormatGroups } from "@/lib/speechFormats";
 import { firestore } from "@/lib/firebase";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { SpeechComment, SpeechRecord, SpeechSummaryStatus } from "@/types/models";
+import type {
+  SpeechComment,
+  SpeechCommentReaction,
+  SpeechRecord,
+  SpeechSummaryStatus,
+} from "@/types/models";
 
 const EMPTY_SPEECH_COMMENTS: SpeechComment[] = [];
+const EMPTY_SPEECH_COMMENT_REACTIONS: SpeechCommentReaction[] = [];
 
 const summaryStatusCopy: Record<SpeechSummaryStatus, string> = {
   processing: "This recording is being transcribed and summarized. Check back shortly.",
@@ -95,6 +105,31 @@ export const SpeechDetailPage = () => {
     "speechComments",
     EMPTY_SPEECH_COMMENTS,
   );
+  const commentReactionState = useSeededFirestoreCollection<SpeechCommentReaction>(
+    "speechCommentReactions",
+    EMPTY_SPEECH_COMMENT_REACTIONS,
+  );
+  const [commentVoteOverrides, setCommentVoteOverrides] = useState<
+    Record<string, { like: boolean; dislike: boolean }>
+  >({});
+
+  const myCommentVotes = useMemo(() => {
+    const map = new Map<string, { like: boolean; dislike: boolean }>();
+    commentReactionState.data.forEach((reaction) => {
+      if (reaction.userId === currentUser?.id) {
+        map.set(reaction.commentId, {
+          like: Boolean(reaction.like),
+          dislike: Boolean(reaction.dislike),
+        });
+      }
+    });
+    return map;
+  }, [commentReactionState.data, currentUser?.id]);
+
+  const getMyCommentVote = (commentId: string) =>
+    commentVoteOverrides[commentId]
+    ?? myCommentVotes.get(commentId)
+    ?? { like: false, dislike: false };
 
   const isOwner = Boolean(speech?.creatorId && speech.creatorId === currentUser?.id);
   const isEditing = isOwner && searchParams.get("mode") === "edit";
@@ -128,6 +163,21 @@ export const SpeechDetailPage = () => {
 
     return unsubscribe;
   }, [speechId]);
+
+  useEffect(() => {
+    setCommentVoteOverrides((current) => {
+      let next = current;
+      Object.entries(current).forEach(([commentId, override]) => {
+        const persisted = myCommentVotes.get(commentId);
+        if (!persisted) return;
+        if (persisted.like === override.like && persisted.dislike === override.dislike) {
+          if (next === current) next = { ...current };
+          delete next[commentId];
+        }
+      });
+      return next;
+    });
+  }, [myCommentVotes]);
 
   const closeEditMode = () => {
     setSearchParams({});
@@ -184,6 +234,43 @@ export const SpeechDetailPage = () => {
     await reportSpeechRecord(speech.id);
     setMenuOpen(false);
     setMessage("Speech reported.");
+  };
+
+  const voteOnComment = async (
+    comment: SpeechComment,
+    reaction: "like" | "dislike",
+  ) => {
+    if (!currentUser) {
+      setMessage("Sign in to react to feedback.");
+      return;
+    }
+
+    const previous = getMyCommentVote(comment.id);
+    const next = { ...previous };
+    if (reaction === "like") {
+      next.like = !next.like;
+      if (next.like) next.dislike = false;
+    } else {
+      next.dislike = !next.dislike;
+      if (next.dislike) next.like = false;
+    }
+
+    setCommentVoteOverrides((current) => ({ ...current, [comment.id]: next }));
+    try {
+      await toggleSpeechCommentReaction(
+        comment.id,
+        comment.speechId,
+        currentUser.id,
+        reaction,
+      );
+    } catch (error) {
+      setCommentVoteOverrides((current) => {
+        const restored = { ...current };
+        delete restored[comment.id];
+        return restored;
+      });
+      setMessage(error instanceof Error ? error.message : "Unable to save that vote.");
+    }
   };
 
   const submitComment = async () => {
@@ -438,11 +525,13 @@ export const SpeechDetailPage = () => {
                   )
                 }
               >
-                <option>Policy</option>
-                <option>Lincoln-Douglas</option>
-                <option>Public Forum</option>
-                <option>Congress</option>
-                <option>Extemp</option>
+                {speechFormatGroups.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.formats.map((format) => (
+                      <option key={format} value={format}>{format}</option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
             </div>
             <div className="form-field">
@@ -587,13 +676,36 @@ export const SpeechDetailPage = () => {
               {commentsState.data
                 .filter((comment) => comment.speechId === speech.id)
                 .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-                .map((comment) => (
-                  <div key={comment.id} className="list-item">
-                    <strong>{comment.authorName}</strong>
-                    <span className="card-copy">{comment.content}</span>
-                    <span className="meta-line">{formatDateTime(comment.createdAt)}</span>
-                  </div>
-                ))}
+                .map((comment) => {
+                  const vote = getMyCommentVote(comment.id);
+                  return (
+                    <div key={comment.id} className="list-item">
+                      <strong>{comment.authorName}</strong>
+                      <span className="card-copy">{comment.content}</span>
+                      <span className="meta-line">{formatDateTime(comment.createdAt)}</span>
+                      <div className="forum-comment-actions">
+                        <button
+                          type="button"
+                          className={vote.like ? "forum-action-button is-like" : "forum-action-button"}
+                          aria-pressed={vote.like}
+                          aria-label={"Like feedback from " + comment.authorName}
+                          onClick={() => void voteOnComment(comment, "like")}
+                        >
+                          <ThumbsUp size={14} /> {comment.likeCount ?? 0}
+                        </button>
+                        <button
+                          type="button"
+                          className={vote.dislike ? "forum-action-button is-dislike" : "forum-action-button"}
+                          aria-pressed={vote.dislike}
+                          aria-label={"Dislike feedback from " + comment.authorName}
+                          onClick={() => void voteOnComment(comment, "dislike")}
+                        >
+                          <ThumbsDown size={14} /> {comment.dislikeCount ?? 0}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
             <div className="forum-comment-form">
               <input
