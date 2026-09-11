@@ -646,7 +646,7 @@ export const DebatesPage = () => {
         <div className="row-between">
           <div>
             <p className="eyebrow">Async Debate</p>
-            <h1>Challenge opponents and debate round by round.</h1>
+            <h1>Challenge opponents</h1>
             <p>
               Create open or invite-only debates, submit each turn as a speech,
               and follow public rounds as a spectator.

@@ -24,7 +24,7 @@ export const ServicesPage = () => (
   <>
     <PageMeta
       title="Services"
-      description="See the core speech, debate, coaching, and community features planned for Debate Studio."
+      description="See the core speech, debate, coaching, and community features planned for DebateSpace."
     />
     <section className="section">
       <div className="page-shell">

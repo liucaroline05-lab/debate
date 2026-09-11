@@ -529,7 +529,7 @@ export const CommunityPage = () => {
     try {
       if (navigator.share) {
         // Native share sheet (mobile / supported desktops).
-        await navigator.share({ title: "Debate Studio community post", url });
+        await navigator.share({ title: "DebateSpace community post", url });
       } else {
         await copyToClipboard(url);
         setSharedPostId(postId);

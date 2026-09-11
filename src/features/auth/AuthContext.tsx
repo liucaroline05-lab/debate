@@ -93,7 +93,7 @@ const loadProfile = async (firebaseUser: User): Promise<UserProfile> => {
 
   const fallbackProfile = normalizeUserProfile({
     id: firebaseUser.uid,
-    displayName: firebaseUser.displayName || "Debate Studio Member",
+    displayName: firebaseUser.displayName || "DebateSpace Member",
     email: firebaseUser.email || "",
     avatarUrl: firebaseUser.photoURL || undefined,
     role: "student",

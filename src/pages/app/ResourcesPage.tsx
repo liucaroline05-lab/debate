@@ -197,7 +197,7 @@ export const ResourcesPage = () => {
         thumbnailFile: composer.resourceType === "Quick Read" ? null : composer.thumbnailFile,
         file: composer.resourceType === "Quick Read" ? null : composer.file,
         body: composer.resourceType === "Quick Read" ? "" : composer.body,
-        curatedBy: currentUser.displayName || "Debate Studio Member",
+        curatedBy: currentUser.displayName || "DebateSpace Member",
         creatorId: currentUser.id,
         creatorRole: currentUser.role,
         tags: composer.tags
@@ -225,7 +225,7 @@ export const ResourcesPage = () => {
         <div className="row-between">
           <div>
             <p className="eyebrow">Resources</p>
-            <h1>A curated library for research, rebuttal, and delivery.</h1>
+            <h1>A curated library</h1>
             <p>
               Browse topic hubs with media, notes, and reading guides built for
               the moments between rounds.

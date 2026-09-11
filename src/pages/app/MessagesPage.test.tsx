@@ -136,7 +136,7 @@ describe("MessagesPage", () => {
 
     await user.click(screen.getByRole("button", { name: "New message" }));
     const picker = screen.getByRole("region", { name: "Start a conversation" });
-    expect(within(picker).getByText("Debate Studio Member")).toBeInTheDocument();
+    expect(within(picker).getByText("DebateSpace Member")).toBeInTheDocument();
   });
 
   it("starts a new direct message from the people picker", async () => {

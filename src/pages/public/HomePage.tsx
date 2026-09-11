@@ -17,7 +17,7 @@ export const HomePage = () => (
             Build calm confidence, sharper cases, and better rounds.
           </h1>
           <p>
-            Debate Studio gives students and coaches a soft, structured place to
+            DebateSpace gives students and coaches a soft, structured place to
             upload speeches, run async debates, collect feedback, and stay
             connected between tournaments.
           </p>

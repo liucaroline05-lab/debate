@@ -1,4 +1,4 @@
-# Debate Studio Setup
+# DebateSpace Setup
 
 ## What is included
 - A Vite + React + TypeScript SPA scaffold

@@ -15,7 +15,7 @@ export const PublicLayout = () => (
         <div className="header-bar section-tight">
           <NavLink to="/" className="brand">
             <span className="brand-mark">
-              <span className="brand-orb" />
+              <img className="brand-icon" src="/debate-studio-icon.png" alt="" aria-hidden="true" />
               {APP_NAME}
             </span>
             <small>Speech, coaching, and community</small>
@@ -52,7 +52,7 @@ export const PublicLayout = () => (
         <div className="page-shell footer-grid">
           <div>
             <div className="brand-mark">
-              <span className="brand-orb" />
+              <img className="brand-icon" src="/debate-studio-icon.png" alt="" aria-hidden="true" />
               {APP_NAME}
             </div>
             <p className="footer-copy">

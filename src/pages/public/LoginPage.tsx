@@ -70,7 +70,7 @@ export const LoginPage = () => {
     <>
       <PageMeta
         title="Log In"
-        description="Access the Debate Studio dashboard, uploads, resources, and community."
+        description="Access the DebateSpace dashboard, uploads, resources, and community."
       />
       <section className="auth-layout">
         <form className="auth-card" onSubmit={handleSubmit}>

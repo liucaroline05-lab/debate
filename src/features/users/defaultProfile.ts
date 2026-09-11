@@ -21,7 +21,7 @@ export const normalizeUserProfile = (
   profile: Partial<UserProfile> | null | undefined,
 ): UserProfile => ({
   id: profile?.id ?? "",
-  displayName: profile?.displayName?.trim() || "Debate Studio Member",
+  displayName: profile?.displayName?.trim() || "DebateSpace Member",
   username: profile?.username?.trim() || undefined,
   email: profile?.email?.trim() || "",
   role: (profile?.role as UserRole | undefined) ?? "student",

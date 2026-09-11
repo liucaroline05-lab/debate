@@ -36,7 +36,7 @@ export const SignupPage = () => {
     <>
       <PageMeta
         title="Sign Up"
-        description="Create a Debate Studio account for students and coaches."
+        description="Create a DebateSpace account for students and coaches."
       />
       <section className="auth-layout">
         <form className="auth-card" onSubmit={handleSubmit}>

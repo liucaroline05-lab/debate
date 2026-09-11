@@ -717,7 +717,7 @@ export const seededResources: ResourceItem[] = [
     category: "Research",
     description:
       "A timed, repeatable workflow for turning a cold topic into credible, tagged, speech-ready evidence in a single focused sitting — built to stop the doom-scroll of open tabs and get cards into your team file with sources you can defend in cross.",
-    curatedBy: "Debate Studio",
+    curatedBy: "DebateSpace",
     creatorId: "user-debate-studio",
     creatorRole: "coach",
     saved: false,

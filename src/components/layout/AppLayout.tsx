@@ -27,7 +27,7 @@ export const AppLayout = () => {
             <div className="app-sidebar">
               <NavLink to="/app/dashboard" className="brand">
                 <span className="brand-mark">
-                  <span className="brand-orb" />
+                  <img className="brand-icon" src="/debate-studio-icon.png" alt="" aria-hidden="true" />
                   {APP_NAME}
                 </span>
                 <small>Speech workspace</small>

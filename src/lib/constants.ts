@@ -1,1 +1,1 @@
-export const APP_NAME = "Debate Studio";
+export const APP_NAME = "DebateSpace";

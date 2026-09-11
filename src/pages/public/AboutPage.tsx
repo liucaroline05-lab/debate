@@ -5,12 +5,12 @@ export const AboutPage = () => (
   <>
     <PageMeta
       title="About"
-      description="Learn how Debate Studio supports students and coaches with warm, structured debate practice."
+      description="Learn how DebateSpace supports students and coaches with warm, structured debate practice."
     />
     <section className="section">
       <div className="page-shell">
         <SectionHeading
-          eyebrow="About Debate Studio"
+          eyebrow="About DebateSpace"
           title="Designed for students, coaches, and the work between tournaments"
           description="This brand direction combines editorial softness with high-accountability practice tools so the platform feels calm but never vague."
         />
