@@ -5,8 +5,9 @@ import {
   query,
   type QueryConstraint,
 } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 import { mapFirestoreDocuments } from "@/features/firestore/mapDocuments";
-import { firestore } from "@/lib/firebase";
+import { auth, firestore } from "@/lib/firebase";
 
 interface SeededCollectionState<T> {
   data: T[];
@@ -14,8 +15,46 @@ interface SeededCollectionState<T> {
   error: string | null;
 }
 
+interface AuthSnapshot {
+  userId: string | null;
+  ready: boolean;
+}
+
 const EMPTY_QUERY_CONSTRAINTS: QueryConstraint[] = [];
 const collectionQueryCache = new Map<string, Array<{ id: string }>>();
+
+// Firestore terminates an onSnapshot listener permanently when it is rejected;
+// it never retries. The app renders its pages behind the sign-in overlay, so a
+// listener attached while signed out is denied by `isSignedIn()` rules and then
+// stays dead for the life of the page — which is why signing in left parts of
+// the UI blank until a manual refresh. Tracking auth here lets every collection
+// re-subscribe when the signed-in user changes.
+let authSnapshot: AuthSnapshot = auth
+  ? { userId: null, ready: false }
+  : { userId: null, ready: true };
+const authSubscribers = new Set<(snapshot: AuthSnapshot) => void>();
+
+if (auth) {
+  onAuthStateChanged(auth, (user) => {
+    authSnapshot = { userId: user?.uid ?? null, ready: true };
+    authSubscribers.forEach((notify) => notify(authSnapshot));
+  });
+}
+
+const useAuthSnapshot = () => {
+  const [snapshot, setSnapshot] = useState(authSnapshot);
+
+  useEffect(() => {
+    // Auth may have resolved between module load and this subscription.
+    setSnapshot(authSnapshot);
+    authSubscribers.add(setSnapshot);
+    return () => {
+      authSubscribers.delete(setSnapshot);
+    };
+  }, []);
+
+  return snapshot;
+};
 
 export const useSeededFirestoreCollection = <T extends { id: string }>(
   collectionName: string,
@@ -27,6 +66,7 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
   const seedRecordsRef = useRef(seedRecords);
   seedRecordsRef.current = seedRecords;
   const activeCacheKeyRef = useRef(cacheKey);
+  const { userId: authUserId, ready: isAuthReady } = useAuthSnapshot();
   const [state, setState] = useState<SeededCollectionState<T>>(() => {
     const cachedData = cacheKey
       ? (collectionQueryCache.get(cacheKey) as T[] | undefined) ?? []
@@ -75,6 +115,17 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
       };
     }
 
+    // Attaching before auth resolves would send the first request without a
+    // token and burn the listener on a permission error.
+    if (!isAuthReady) {
+      setState((current) =>
+        current.isLoading ? current : { ...current, isLoading: true },
+      );
+      return () => {
+        isMounted = false;
+      };
+    }
+
     const unsubscribe = onSnapshot(
       query(collection(firestore, collectionName), ...constraints),
       (snapshot) => {
@@ -98,6 +149,7 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
           return;
         }
 
+        console.error(`"${collectionName}" listener failed:`, error.message);
         setState((current) => ({
           ...current,
           isLoading: false,
@@ -110,7 +162,9 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
       isMounted = false;
       unsubscribe();
     };
-  }, [cacheKey, collectionName, constraints, enabled]);
+    // `authUserId` is a dependency so that signing in or out re-attaches every
+    // listener rather than leaving a rejected one in place.
+  }, [authUserId, cacheKey, collectionName, constraints, enabled, isAuthReady]);
 
   return state;
 };

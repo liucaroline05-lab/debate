@@ -123,4 +123,23 @@ describe("UserProfileView", () => {
       bio: "Updated bio.",
     });
   });
+
+  it("shows how many followers and follows the profile has", () => {
+    collectionState.dataByCollection.set("follows", [
+      { id: "f1", followerId: "james", followingId: "maya", createdAt: "" },
+      { id: "f2", followerId: "mia", followingId: "maya", createdAt: "" },
+      { id: "f3", followerId: "maya", followingId: "james", createdAt: "" },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <UserProfileView userId="maya" isOwnProfile />
+      </MemoryRouter>,
+    );
+
+    // The count and its label are separate nodes, so assert on the container.
+    const counts = document.querySelector(".profile-follow-counts");
+    expect(counts?.textContent).toContain("2 followers");
+    expect(counts?.textContent).toContain("1 following");
+  });
 });

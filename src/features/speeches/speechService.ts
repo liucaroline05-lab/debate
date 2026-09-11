@@ -4,10 +4,12 @@ import {
   collection,
   deleteDoc,
   doc,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
 } from "firebase/firestore";
+import type { SpeechFormat } from "@/lib/speechFormats";
 import {
   getDownloadURL,
   ref,
@@ -24,7 +26,7 @@ interface NewSpeechInput {
   userId: string;
   title: string;
   eventName: string;
-  format: SpeechRecord["format"];
+  format: SpeechFormat;
   visibility: NonNullable<SpeechRecord["visibility"]>;
   speakerName: string;
   coachNotes: string;
@@ -159,11 +161,7 @@ export const createSpeechRecord = async (
     throw new Error("Firestore is not configured.");
   }
 
-  // The document id is reserved up front so it can be stamped onto the upload
-  // metadata: the summary function needs it to write the result back.
   const speechRef = doc(collection(firestore, "speeches"));
-  const upload = await uploadSpeechAsset(input, speechRef.id);
-
   const speech: Omit<SpeechRecord, "id"> = {
     creatorId: input.userId,
     title: input.title,
@@ -177,20 +175,40 @@ export const createSpeechRecord = async (
     transcriptStatus: "Pending",
     tags: input.tags,
     organizationTags: input.organizationTags,
-    mediaPath: upload?.downloadUrl ?? undefined,
-    mediaStoragePath: upload?.storagePath ?? undefined,
     commentsEnabled: input.commentsEnabled,
-    ...(upload ? { summaryStatus: "processing" as const } : {}),
+    ...(input.file ? { summaryStatus: "processing" as const } : {}),
   };
 
+  // The document must exist *before* the file lands in Storage: finalizing the
+  // upload fires summarizeUploadedSpeech immediately, and that function gives
+  // up if there is no speech document to write the summary back to.
   await setDoc(speechRef, {
     ...speech,
     createdAt: serverTimestamp(),
   });
 
+  let upload: Awaited<ReturnType<typeof uploadSpeechAsset>> = null;
+  try {
+    upload = await uploadSpeechAsset(input, speechRef.id);
+  } catch (error) {
+    // Do not strand a speech record with no recording behind it.
+    await deleteDoc(speechRef).catch(() => undefined);
+    throw error;
+  }
+
+  if (upload) {
+    await updateDoc(speechRef, {
+      mediaPath: upload.downloadUrl,
+      mediaStoragePath: upload.storagePath,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
   return {
     id: speechRef.id,
     ...speech,
+    mediaPath: upload?.downloadUrl,
+    mediaStoragePath: upload?.storagePath,
   };
 };
 
@@ -210,7 +228,74 @@ export const addSpeechComment = async (
     authorName,
     content: trimmedContent,
     createdAt: new Date().toISOString(),
+    likeCount: 0,
+    dislikeCount: 0,
   } satisfies Omit<SpeechComment, "id">);
+};
+
+/**
+ * Like/dislike a speech comment. Mirrors community post comments: the per-user
+ * vote is its own document, the totals live on the comment.
+ */
+export const toggleSpeechCommentReaction = async (
+  commentId: string,
+  speechId: string,
+  userId: string,
+  reaction: "like" | "dislike",
+) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const database = firestore;
+  const commentRef = doc(database, "speechComments", commentId);
+  const reactionRef = doc(database, "speechCommentReactions", `${commentId}-${userId}`);
+
+  await runTransaction(database, async (transaction) => {
+    const commentSnapshot = await transaction.get(commentRef);
+    if (!commentSnapshot.exists()) {
+      throw new Error("That comment is no longer available.");
+    }
+
+    const reactionSnapshot = await transaction.get(reactionRef);
+    const existing = (reactionSnapshot.exists() ? reactionSnapshot.data() : null) as
+      | { like?: boolean; dislike?: boolean }
+      | null;
+
+    const previousLike = existing?.like ?? false;
+    const previousDislike = existing?.dislike ?? false;
+    const next = { like: previousLike, dislike: previousDislike };
+
+    if (reaction === "like") {
+      next.like = !previousLike;
+      if (next.like) next.dislike = false;
+    } else {
+      next.dislike = !previousDislike;
+      if (next.dislike) next.like = false;
+    }
+
+    transaction.set(
+      reactionRef,
+      {
+        commentId,
+        speechId,
+        userId,
+        ...next,
+        createdAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+
+    const data = commentSnapshot.data();
+    transaction.update(commentRef, {
+      likeCount:
+        ((data?.likeCount as number | undefined) ?? 0)
+        + Number(next.like)
+        - Number(previousLike),
+      dislikeCount:
+        ((data?.dislikeCount as number | undefined) ?? 0)
+        + Number(next.dislike)
+        - Number(previousDislike),
+      updatedAt: new Date().toISOString(),
+    });
+  });
 };
 
 export const updateSpeechRecord = async (

@@ -12,7 +12,7 @@ import {
   Tooltip,
 } from "chart.js";
 import { Bar, Radar } from "react-chartjs-2";
-import { Eye } from "lucide-react";
+import { CalendarClock, History, MapPin } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import {
   seededChannelMemberships,
@@ -179,6 +179,140 @@ const safeName = (value?: string | null, fallback = "Unknown Speaker") => {
 };
 
 const safeInitial = (value?: string | null) => safeName(value).charAt(0).toUpperCase();
+
+const TABROOM_PAGE_SIZE = 5;
+
+const formatEventDates = (event: TabroomEvent) => {
+  const start = new Date(event.date);
+  if (Number.isNaN(start.getTime())) return "Date unknown";
+
+  const startLabel = start.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const end = event.endDate ? new Date(event.endDate) : null;
+  if (!end || Number.isNaN(end.getTime()) || end.toDateString() === start.toDateString()) {
+    return startLabel;
+  }
+
+  return `${start.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+};
+
+const countdownLabel = (event: TabroomEvent) => {
+  const start = Date.parse(event.date);
+  if (!Number.isFinite(start)) return "";
+  const days = Math.ceil((start - Date.now()) / 86_400_000);
+  if (days <= 0) return "Happening now";
+  if (days === 1) return "Tomorrow";
+  if (days <= 30) return `In ${days} days`;
+  return "";
+};
+
+interface TabroomEventListProps {
+  upcoming: TabroomEvent[];
+  past: TabroomEvent[];
+  view: "upcoming" | "past";
+  onViewChange: (view: "upcoming" | "past") => void;
+  showAll: boolean;
+  onShowAll: () => void;
+  isLinked: boolean;
+}
+
+/**
+ * Tabroom tournaments, split so what is still ahead leads and history is one
+ * click away. Only a page of entries renders at a time; a linked account can
+ * carry dozens.
+ */
+const TabroomEventList = ({
+  upcoming,
+  past,
+  view,
+  onViewChange,
+  showAll,
+  onShowAll,
+  isLinked,
+}: TabroomEventListProps) => {
+  const events = view === "upcoming" ? upcoming : past;
+  const visible = showAll ? events : events.slice(0, TABROOM_PAGE_SIZE);
+
+  return (
+    <section className="tabroom-events">
+      <div className="settings-segment tabroom-event-tabs" role="group" aria-label="Tabroom tournaments">
+        <button
+          type="button"
+          className={view === "upcoming" ? "settings-segment-option is-on" : "settings-segment-option"}
+          aria-pressed={view === "upcoming"}
+          onClick={() => onViewChange("upcoming")}
+        >
+          <CalendarClock size={16} aria-hidden="true" /> Upcoming ({upcoming.length})
+        </button>
+        <button
+          type="button"
+          className={view === "past" ? "settings-segment-option is-on" : "settings-segment-option"}
+          aria-pressed={view === "past"}
+          onClick={() => onViewChange("past")}
+        >
+          <History size={16} aria-hidden="true" /> Past ({past.length})
+        </button>
+      </div>
+
+      {events.length === 0 ? (
+        <p className="card-copy">
+          {!isLinked
+            ? "Link a Tabroom account to import your tournament schedule."
+            : view === "upcoming"
+              ? "No upcoming tournaments are on this Tabroom account."
+              : "No past tournaments were found on this Tabroom account."}
+        </p>
+      ) : null}
+
+      <div className="list" style={{ marginTop: "1rem" }}>
+        {visible.map((event) => {
+          const countdown = view === "upcoming" ? countdownLabel(event) : "";
+          return (
+            <a
+              key={event.id}
+              href={event.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="list-item tabroom-event-item"
+            >
+              <span className="tabroom-event-heading">
+                <strong>{event.name}</strong>
+                {countdown ? <span className="pill">{countdown}</span> : null}
+              </span>
+              <span className="meta-line">{formatEventDates(event)}</span>
+              {event.location ? (
+                <span className="meta-line">
+                  <MapPin size={13} aria-hidden="true" /> {event.location}
+                </span>
+              ) : null}
+              {event.role || event.judgeCategory || event.schoolName ? (
+                <span className="pill-row" style={{ marginTop: "0.5rem" }}>
+                  {event.role ? <span className="forum-mini-pill">{event.role}</span> : null}
+                  {event.judgeCategory ? (
+                    <span className="forum-mini-pill subtle">{event.judgeCategory}</span>
+                  ) : null}
+                  {event.schoolName ? (
+                    <span className="forum-mini-pill subtle">{event.schoolName}</span>
+                  ) : null}
+                </span>
+              ) : null}
+            </a>
+          );
+        })}
+      </div>
+
+      {!showAll && events.length > TABROOM_PAGE_SIZE ? (
+        <button type="button" className="btn btn-ghost" style={{ marginTop: "1rem" }} onClick={onShowAll}>
+          Show all {events.length}
+        </button>
+      ) : null}
+    </section>
+  );
+};
+
 export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) => {
   const { currentUser, isDemoMode, updateProfile } = useAuth();
   const location = useLocation();
@@ -224,6 +358,8 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const [activeTab, setActiveTab] = useState<ProfileTab>("Overview");
   const [showTabroomHistory, setShowTabroomHistory] = useState(profile?.showTabroomHistory ?? false);
   const [isSavingTabroomVisibility, setIsSavingTabroomVisibility] = useState(false);
+  const [tabroomView, setTabroomView] = useState<"upcoming" | "past">("upcoming");
+  const [showAllTabroomEvents, setShowAllTabroomEvents] = useState(false);
 
   useEffect(() => {
     if (!profile) {
@@ -268,9 +404,39 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     () => normalizeProfileStats(statsState.data.find((entry) => entry.userId === userId)),
     [statsState.data, userId],
   );
+  // followersCount/followingCount on the profile document are never written,
+  // so derive both from the follows collection, which is the source of truth.
+  const followerCount = useMemo(
+    () => followsState.data.filter((follow) => follow.followingId === userId).length,
+    [followsState.data, userId],
+  );
+  const followingCount = useMemo(
+    () => followsState.data.filter((follow) => follow.followerId === userId).length,
+    [followsState.data, userId],
+  );
+
   const tabroomLink = tabroomLinksState.data.find((entry) => entry.userId === userId);
   const tabroomImport = tabroomImportsState.data.find((entry) => entry.userId === userId);
   const tabroomEvents = getTabroomEvents(tabroomImport);
+  const { upcomingTabroomEvents, pastTabroomEvents } = useMemo(() => {
+    const now = Date.now();
+    const upcoming: TabroomEvent[] = [];
+    const past: TabroomEvent[] = [];
+
+    tabroomEvents.forEach((event) => {
+      const endsAt = Date.parse(event.endDate || event.date);
+      if (Number.isFinite(endsAt) && endsAt >= now) {
+        upcoming.push(event);
+      } else {
+        past.push(event);
+      }
+    });
+
+    // Soonest-first for what is still ahead; most recent first for history.
+    upcoming.sort((left, right) => left.date.localeCompare(right.date));
+    past.sort((left, right) => right.date.localeCompare(left.date));
+    return { upcomingTabroomEvents: upcoming, pastTabroomEvents: past };
+  }, [tabroomEvents]);
   const isTabroomLinked = tabroomLink?.status === "linked" || tabroomLink?.status === "syncing";
   const isFollowing = followsState.data.some(
     (follow) =>
@@ -520,6 +686,15 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
               <div className="pill-row">
                 <span className="pill">{profile.role}</span>
                 {profile.username ? <span className="pill">@{profile.username}</span> : null}
+              </div>
+              <div className="profile-follow-counts">
+                <span>
+                  <strong>{followerCount}</strong>
+                  {followerCount === 1 ? " follower" : " followers"}
+                </span>
+                <span>
+                  <strong>{followingCount}</strong> following
+                </span>
               </div>
               {isOwnProfile ? (
                 <div className="stack" style={{ gap: "0.65rem" }}>
@@ -812,15 +987,20 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
               <div className="profile-tabroom-visibility">
                 <button
                   type="button"
-                  className="btn btn-toggle"
+                  className="settings-toggle-row"
                   aria-pressed={showTabroomHistory}
                   disabled={isSavingTabroomVisibility}
                   onClick={() => void saveTabroomVisibility(!showTabroomHistory)}
                 >
-                  <Eye size={16} aria-hidden="true" />
-                  {isSavingTabroomVisibility
-                    ? "Saving..."
-                    : "Display my Tabroom history on my profile"}
+                  <span>
+                    <strong>Display my Tabroom history</strong>
+                    <span className="meta-line">
+                      Show your imported tournaments and results on your public profile.
+                    </span>
+                  </span>
+                  <span className={showTabroomHistory ? "settings-toggle is-on" : "settings-toggle"}>
+                    {isSavingTabroomVisibility ? "..." : showTabroomHistory ? "On" : "Off"}
+                  </span>
                 </button>
               </div>
             ) : null}
@@ -852,30 +1032,20 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
               {tabroomImport?.errorMessage ? <p className="meta-line is-error">{tabroomImport.errorMessage}</p> : null}
             </> : null}
 
-            {(isOwnProfile || profile.showTabroomHistory) ? <div className="list" style={{ marginTop: "1rem" }}>
-              <p className="meta-line">Past debates and events logged through Tabroom and connected organizations</p>
-              {tabroomEvents.length === 0 ? (
-                <p className="card-copy">
-                  {isTabroomLinked
-                    ? "No tournaments were found on this Tabroom account yet."
-                    : "Link a Tabroom account to import your tournament history."}
-                </p>
-              ) : null}
-              {tabroomEvents.map((event) => (
-                <a
-                  key={event.id}
-                  href={event.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="list-item"
-                >
-                  <strong>{event.name}</strong>
-                  <span className="meta-line">
-                    {event.result} • {new Date(event.date).toLocaleDateString()}
-                  </span>
-                </a>
-              ))}
-            </div> : <p className="card-copy">This user has not chosen to display their Tabroom history.</p>}
+            {(isOwnProfile || profile.showTabroomHistory) ? (
+              <TabroomEventList
+                upcoming={upcomingTabroomEvents}
+                past={pastTabroomEvents}
+                view={tabroomView}
+                onViewChange={(nextView) => {
+                  setTabroomView(nextView);
+                  setShowAllTabroomEvents(false);
+                }}
+                showAll={showAllTabroomEvents}
+                onShowAll={() => setShowAllTabroomEvents(true)}
+                isLinked={isTabroomLinked}
+              />
+            ) : <p className="card-copy">This user has not chosen to display their Tabroom history.</p>}
           </article>
         </section> : null}
       </section>

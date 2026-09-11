@@ -2363,10 +2363,7 @@ button {
 }
 
 .profile-tabroom-visibility {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid rgba(53, 47, 42, 0.08);
 }
@@ -2536,6 +2533,19 @@ button {
   border-radius: 18px;
   border: 1px solid rgba(53, 47, 42, 0.08);
   background: rgba(245, 239, 230, 0.72);
+}
+
+/* The label and its explanation belong on separate lines; inline they read as
+   one run-on sentence. */
+.settings-toggle-row > span:first-child,
+.settings-toggle-row > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.settings-toggle-row .meta-line {
+  padding-left: 0;
 }
 
 .settings-toggle-row:disabled {
@@ -4151,4 +4161,327 @@ button {
 .messages-conversation-empty.is-error p {
   max-width: 34rem;
   margin-inline: auto;
+}
+
+/* --- Collapsible sidebar ------------------------------------------------- */
+
+.app-nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  white-space: nowrap;
+}
+
+.app-nav a svg {
+  flex: 0 0 auto;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 14px;
+  border: 1px solid rgba(53, 47, 42, 0.12);
+  background: rgba(255, 253, 248, 0.85);
+  color: var(--color-muted);
+  transition: color var(--transition), background-color var(--transition);
+}
+
+.sidebar-toggle:hover {
+  color: var(--color-charcoal);
+  background: var(--color-white);
+}
+
+/* The sidebar column is sized by the grid track, so collapsing narrows the
+   track and hides the labels rather than unmounting the nav. */
+.app-layout {
+  transition: grid-template-columns var(--transition);
+}
+
+.app-layout.is-sidebar-collapsed {
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+}
+
+.app-layout.is-sidebar-collapsed .app-nav-label,
+.app-layout.is-sidebar-collapsed .sidebar-profile-name,
+.app-layout.is-sidebar-collapsed .sidebar-profile-role,
+.app-layout.is-sidebar-collapsed .brand small {
+  display: none;
+}
+
+.app-layout.is-sidebar-collapsed .app-nav a {
+  justify-content: center;
+  padding-inline: 0.5rem;
+}
+
+.app-layout.is-sidebar-collapsed .brand-mark {
+  font-size: 0;
+  gap: 0;
+}
+
+.app-layout.is-sidebar-collapsed .sidebar-profile-avatar {
+  width: 2.8rem;
+  height: 2.8rem;
+}
+
+.app-layout.is-sidebar-collapsed .sidebar-profile-card,
+.app-layout.is-sidebar-collapsed .sidebar-profile-card-static {
+  padding: 0.75rem;
+}
+
+/* --- Notifications ------------------------------------------------------- */
+
+.notifications-wrap {
+  position: relative;
+}
+
+.notifications-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(53, 47, 42, 0.14);
+  background: rgba(255, 253, 248, 0.85);
+  color: var(--color-muted);
+  transition: color var(--transition), background-color var(--transition);
+}
+
+.notifications-trigger:hover {
+  color: var(--color-charcoal);
+  background: var(--color-white);
+}
+
+.notifications-badge {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--color-terracotta);
+  color: var(--color-white);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.notifications-panel {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  right: 0;
+  z-index: 40;
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border-radius: 20px;
+  border: 1px solid rgba(53, 47, 42, 0.1);
+  background: var(--color-white);
+  box-shadow: 0 18px 42px rgba(53, 47, 42, 0.18);
+}
+
+.notifications-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.notifications-empty {
+  margin: 0;
+}
+
+.notifications-list {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.notifications-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.7rem;
+  border-radius: 14px;
+  background: rgba(245, 239, 230, 0.6);
+  transition: background-color var(--transition);
+}
+
+.notifications-item:hover {
+  background: rgba(245, 239, 230, 0.95);
+}
+
+.notifications-item-icon {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(118, 128, 107, 0.16);
+  color: var(--color-moss);
+}
+
+.notifications-item-copy {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.notifications-item-copy span {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notifications-item-copy small {
+  color: rgba(53, 47, 42, 0.55);
+  font-size: 0.8rem;
+}
+
+/* --- Share to a conversation --------------------------------------------- */
+
+.share-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(36, 32, 28, 0.45);
+}
+
+.share-dialog {
+  width: min(34rem, 100%);
+  max-height: min(80vh, 44rem);
+  overflow-y: auto;
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-radius: 24px;
+  background: var(--color-white);
+  box-shadow: 0 24px 60px rgba(53, 47, 42, 0.28);
+}
+
+.share-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.share-dialog-header .card-title {
+  margin: 0.15rem 0 0;
+}
+
+.share-target-list {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.share-target-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 16px;
+  background: rgba(245, 239, 230, 0.6);
+}
+
+.share-target-name {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.share-target-name small {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+.share-target-row .btn {
+  padding: 0.55rem 1rem;
+  white-space: nowrap;
+}
+
+.share-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(53, 47, 42, 0.1);
+}
+
+.share-dialog-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Profile: follow counts and Tabroom events --------------------------- */
+
+.profile-follow-counts {
+  display: flex;
+  gap: 1.25rem;
+  color: var(--color-muted);
+}
+
+.profile-follow-counts strong {
+  color: var(--color-charcoal);
+}
+
+.tabroom-events {
+  margin-top: 1.25rem;
+}
+
+.tabroom-event-tabs {
+  width: 100%;
+}
+
+.tabroom-event-item {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.tabroom-event-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.tabroom-event-item .meta-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+@media (max-width: 900px) {
+  /* One column on small screens, collapsed or not. */
+  .app-layout.is-sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .app-layout.is-sidebar-collapsed .app-nav-label {
+    display: inline;
+  }
+
+  .share-dialog-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

@@ -53,6 +53,15 @@ service cloud.firestore {
       ]);
     }
 
+    function isCommentCounterUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        "likeCount",
+        "dislikeCount",
+        "replyCount",
+        "updatedAt"
+      ]);
+    }
+
     function hasValidDisplayName() {
       return request.resource.data.displayName is string
         && request.resource.data.displayName.size() > 0
@@ -126,15 +135,6 @@ service cloud.firestore {
       allow delete: if ownsExistingResource("authorId");
     }
 
-    function isCommentCounterUpdate() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        "likeCount",
-        "dislikeCount",
-        "replyCount",
-        "updatedAt"
-      ]);
-    }
-
     match /postComments/{commentId} {
       allow read: if true;
       allow create: if isSignedIn()
@@ -168,6 +168,17 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid;
+      // Vote tallies are maintained by any signed-in voter; the per-user vote
+      // itself lives in speechCommentReactions.
+      allow update: if isSignedIn()
+        && (isCommentCounterUpdate() || ownsExistingResource("authorId"));
+      allow delete: if ownsExistingResource("authorId");
+    }
+
+    match /speechCommentReactions/{reactionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
     }
 
     match /speeches/{speechId} {

@@ -552,8 +552,20 @@ interface TabroomEventRecord {
   id: string;
   name: string;
   date: string;
+  endDate: string;
   result: string;
   sourceUrl: string;
+  location: string;
+  role: string;
+  judgeCategory: string;
+  schoolName: string;
+  timezone: string;
+}
+
+interface TabroomTournamentSummary {
+  roles: string[];
+  judgeCategory: string;
+  schoolName: string;
 }
 
 const getTabroomSecretKey = () => {
@@ -695,35 +707,69 @@ const fetchTabroomProfile = async (token: string) => {
   return normalizeTabroomProfile(await response.json() as unknown);
 };
 
+const asOptionalString = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
+
+const formatTabroomLocation = (tourn: Record<string, unknown>) => {
+  const city = asOptionalString(tourn.city);
+  const state = asOptionalString(tourn.state);
+  const country = asOptionalString(tourn.country);
+  const parts = [city, state || country].filter(Boolean);
+  return parts.join(", ");
+};
+
 const asTabroomTournaments = (value: unknown) =>
   (Array.isArray(value) ? value : [])
     .filter((tourn): tourn is Record<string, unknown> =>
       Boolean(tourn) && typeof tourn === "object")
     .map((tourn) => ({
       id: Number(tourn.id),
-      name: typeof tourn.name === "string" ? tourn.name : "Tabroom tournament",
-      start: typeof tourn.start === "string" ? tourn.start : "",
-      end: typeof tourn.end === "string" ? tourn.end : "",
+      name: asOptionalString(tourn.name) || "Tabroom tournament",
+      start: asOptionalString(tourn.start),
+      end: asOptionalString(tourn.end),
+      location: formatTabroomLocation(tourn),
+      timezone: asOptionalString(tourn.tz),
     }))
     .filter((tourn) => Number.isFinite(tourn.id) && tourn.id > 0)
-    // Newest first, so the dashboard's recent-events surfaces stay recent.
+    // Newest first. The client re-sorts upcoming tournaments ascending so the
+    // next one to happen leads, but importing newest-first keeps the slice
+    // below biased toward current-season data.
     .sort((left, right) => (right.start || "").localeCompare(left.start || ""))
     .slice(0, maxImportedTournaments);
 
-const fetchTabroomRoleLabel = async (token: string, tournId: number) => {
+const emptyTournamentSummary: TabroomTournamentSummary = {
+  roles: [],
+  judgeCategory: "",
+  schoolName: "",
+};
+
+const fetchTabroomTournamentSummary = async (
+  token: string,
+  tournId: number,
+): Promise<TabroomTournamentSummary> => {
   try {
     const response = await authorizedTabroomRequest(`/user/tourns/${tournId}/summary`, token);
     if (!response.ok) {
-      return "";
+      return emptyTournamentSummary;
     }
-    const summary = await response.json() as { roles?: unknown };
+    const summary = await response.json() as { roles?: unknown; Judge?: unknown };
     const roles = Array.isArray(summary.roles)
-      ? summary.roles.filter((role): role is string => typeof role === "string")
+      ? summary.roles
+          .filter((role): role is string => typeof role === "string")
+          .map((role) => role.charAt(0).toUpperCase() + role.slice(1))
       : [];
-    return roles.map((role) => role.charAt(0).toUpperCase() + role.slice(1)).join(" • ");
+    const judge = summary.Judge && typeof summary.Judge === "object"
+      ? summary.Judge as Record<string, unknown>
+      : {};
+
+    return {
+      roles,
+      judgeCategory: asOptionalString(judge.categoryName),
+      schoolName: asOptionalString(judge.schoolName),
+    };
   } catch {
     // One failed enrichment must not fail the whole import.
-    return "";
+    return emptyTournamentSummary;
   }
 };
 
@@ -742,21 +788,41 @@ const importTabroomTournaments = async (token: string): Promise<TabroomEventReco
   }
 
   const tournaments = asTabroomTournaments(await response.json() as unknown);
-  const roleLabels = await Promise.all(
+  // Enrich the tournaments a student is most likely to care about: everything
+  // still upcoming, then the most recent past ones.
+  const now = Date.now();
+  const enrichmentOrder = [...tournaments.keys()].sort((left, right) => {
+    const leftUpcoming = Date.parse(tournaments[left].end || tournaments[left].start) >= now;
+    const rightUpcoming = Date.parse(tournaments[right].end || tournaments[right].start) >= now;
+    if (leftUpcoming !== rightUpcoming) return leftUpcoming ? -1 : 1;
+    return 0;
+  });
+  const enrichedIndexes = new Set(enrichmentOrder.slice(0, maxEnrichedTournaments));
+
+  const summaries = await Promise.all(
     tournaments.map((tourn, index) =>
-      index < maxEnrichedTournaments
-        ? fetchTabroomRoleLabel(token, tourn.id)
-        : Promise.resolve(""),
+      enrichedIndexes.has(index)
+        ? fetchTabroomTournamentSummary(token, tourn.id)
+        : Promise.resolve(emptyTournamentSummary),
     ),
   );
 
-  return tournaments.map((tourn, index) => ({
-    id: `tabroom-tourn-${tourn.id}`,
-    name: tourn.name,
-    date: tourn.start || tourn.end || new Date().toISOString(),
-    result: roleLabels[index] || "Entered",
-    sourceUrl: tabroomTournUrl(tourn.id),
-  }));
+  return tournaments.map((tourn, index) => {
+    const summary = summaries[index];
+    return {
+      id: `tabroom-tourn-${tourn.id}`,
+      name: tourn.name,
+      date: tourn.start || tourn.end || new Date().toISOString(),
+      endDate: tourn.end || tourn.start || "",
+      result: summary.roles.join(" • ") || "Entered",
+      sourceUrl: tabroomTournUrl(tourn.id),
+      location: tourn.location,
+      role: summary.roles.join(" • "),
+      judgeCategory: summary.judgeCategory,
+      schoolName: summary.schoolName,
+      timezone: tourn.timezone,
+    };
+  });
 };
 
 const tabroomProfileFields = (profile: TabroomProfileSummary) => ({
