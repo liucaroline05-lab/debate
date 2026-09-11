@@ -180,3 +180,6 @@ September 10, 2026:
 [ ] My Notes in resources only seems to save temporarily and disappears if coming back to the page after a while.
 [ ] My complete tab in Async Debate: the action buttons are all touching the corner without proper padding.
 [ ] In the channels card in the dashboard, it still does not display the channels that you are in.
+[ ] clicking on a speech in dashboard takes you to a page where it is too zoomed in, and there are two audio playback buttons, and neither of them work.
+[ ] the above page should also have an ai summary of the speech, similar to that of async debates
+[ ] buttons don't match, e.g. profile page, record/upload page, resources page, recent speeches page. should match the normal buttons with the pill shape and text in middle, e.g. the upload buttons. Once clicked, it should perform the action. Also, for the buttons that are for saving/favoriting something, fix it to the normal button and add the outline of favorite symbol at the front. Once clicked, it should be filled with yellow.

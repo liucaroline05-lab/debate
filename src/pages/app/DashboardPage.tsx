@@ -106,9 +106,9 @@ export const DashboardPage = () => {
 
       <header className="route-header">
         <p className="eyebrow">Dashboard</p>
-        <h1>Your debate week at a glance.</h1>
+        <h1>Your workspace.</h1>
         <p>
-          Uploaded speeches, next rounds, saved study material, and followed
+          Uploaded speeches, upcoming events, next rounds, saved study material, and followed
           channels are all organized here.
         </p>
       </header>
