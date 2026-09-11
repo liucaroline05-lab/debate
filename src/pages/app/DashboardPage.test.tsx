@@ -28,7 +28,7 @@ describe("DashboardPage", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: /your debate week at a glance/i }),
+      screen.getByRole("heading", { name: /your workspace/i }),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /recent speeches/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /resource library/i })).toBeInTheDocument();

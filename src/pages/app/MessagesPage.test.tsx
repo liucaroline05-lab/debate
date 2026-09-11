@@ -2,12 +2,14 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import { MessagesPage } from "@/pages/app/MessagesPage";
+import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import type { ChatMessage, ChatThread, UserProfile } from "@/types/models";
 
 const mocks = vi.hoisted(() => ({
   sendChatMessage: vi.fn(),
   startDirectThread: vi.fn(),
   startGroupThread: vi.fn(),
+  extraUsers: [] as unknown[],
 }));
 
 const preferences = {
@@ -81,7 +83,11 @@ vi.mock("@/features/auth/AuthContext", () => ({
 }));
 
 vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
-  useSeededFirestoreCollection: () => ({ data: [currentUser, james, mia], isLoading: false, error: null }),
+  useSeededFirestoreCollection: () => ({
+    data: [currentUser, james, mia, ...mocks.extraUsers],
+    isLoading: false,
+    error: null,
+  }),
 }));
 
 vi.mock("@/features/messages/messageService", () => ({
@@ -100,6 +106,7 @@ vi.mock("@/features/messages/messageService", () => ({
 
 describe("MessagesPage", () => {
   beforeEach(() => {
+    mocks.extraUsers = [];
     mocks.sendChatMessage.mockReset().mockResolvedValue(undefined);
     mocks.startDirectThread.mockReset().mockResolvedValue(thread.id);
     mocks.startGroupThread.mockReset().mockResolvedValue("group-1");
@@ -118,6 +125,20 @@ describe("MessagesPage", () => {
     expect(mocks.sendChatMessage).toHaveBeenCalledWith(thread, currentUser, "I’m in!");
   });
 
+  it("still renders when a user document is missing optional profile fields", async () => {
+    // Accounts created before organizationTags/displayName existed used to
+    // throw while rendering, which the router showed as "page not found".
+    mocks.extraUsers = [{ id: "legacy" }];
+    const user = userEvent.setup();
+    render(<MessagesPage />);
+
+    expect(screen.getByRole("heading", { name: /Keep the conversation going/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "New message" }));
+    const picker = screen.getByRole("region", { name: "Start a conversation" });
+    expect(within(picker).getByText("Debate Studio Member")).toBeInTheDocument();
+  });
+
   it("starts a new direct message from the people picker", async () => {
     const user = userEvent.setup();
     render(<MessagesPage />);
@@ -127,7 +148,12 @@ describe("MessagesPage", () => {
     await user.click(within(picker).getByRole("button", { name: /James Kim/ }));
     await user.click(screen.getByRole("button", { name: "Start conversation" }));
 
-    expect(mocks.startDirectThread).toHaveBeenCalledWith(currentUser, james);
+    // The page hands over a normalized profile, so missing optional fields on a
+    // raw Firestore document cannot reach the service.
+    expect(mocks.startDirectThread).toHaveBeenCalledWith(
+      currentUser,
+      normalizeUserProfile(james),
+    );
   });
 
   it("creates a named group chat with multiple people", async () => {
@@ -142,6 +168,10 @@ describe("MessagesPage", () => {
     await user.click(within(picker).getByRole("button", { name: /Mia Thompson/ }));
     await user.click(within(picker).getByRole("button", { name: "Start conversation" }));
 
-    expect(mocks.startGroupThread).toHaveBeenCalledWith(currentUser, "Nationals prep", [james, mia]);
+    expect(mocks.startGroupThread).toHaveBeenCalledWith(
+      currentUser,
+      "Nationals prep",
+      [normalizeUserProfile(james), normalizeUserProfile(mia)],
+    );
   });
 });

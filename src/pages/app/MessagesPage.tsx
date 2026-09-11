@@ -10,6 +10,7 @@ import {
   subscribeToMessages,
   subscribeToThreads,
 } from "@/features/messages/messageService";
+import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type { ChatMessage, ChatThread, UserProfile } from "@/types/models";
 
@@ -64,14 +65,21 @@ export const MessagesPage = () => {
   const [composerError, setComposerError] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
 
-  const userById = useMemo(
-    () => new Map(usersState.data.map((user) => [user.id, user])),
+  // Firestore user documents are raw here: older accounts predate fields like
+  // organizationTags, and reading one of those straight off the document threw
+  // during render, which the router reported as a missing page.
+  const people = useMemo(
+    () => usersState.data.map((user) => normalizeUserProfile(user)),
     [usersState.data],
+  );
+  const userById = useMemo(
+    () => new Map(people.map((user) => [user.id, user])),
+    [people],
   );
   const activeThread = threads.find((thread) => thread.id === activeThreadId);
   const availableUsers = useMemo(() => {
     const normalizedSearch = peopleSearch.trim().toLowerCase();
-    return usersState.data
+    return people
       .filter((user) => user.id !== currentUser?.id)
       .filter((user) => {
         if (!normalizedSearch) return true;
@@ -80,7 +88,7 @@ export const MessagesPage = () => {
           .includes(normalizedSearch);
       })
       .sort((left, right) => left.displayName.localeCompare(right.displayName));
-  }, [currentUser?.id, peopleSearch, usersState.data]);
+  }, [currentUser?.id, peopleSearch, people]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -134,7 +142,7 @@ export const MessagesPage = () => {
   }, [messages]);
 
   const threadPeople = (thread: ChatThread) =>
-    thread.participantIds
+    (thread.participantIds ?? [])
       .filter((userId) => userId !== currentUser?.id)
       .map((userId) => userById.get(userId))
       .filter((user): user is UserProfile => Boolean(user));
@@ -371,7 +379,7 @@ export const MessagesPage = () => {
                       <strong>{threadTitle(thread)}</strong>
                       <small>{formatMessageTime(thread.lastMessageAt ?? thread.updatedAt)}</small>
                     </span>
-                    <span>{thread.lastMessageText || (thread.type === "group" ? `${thread.memberCount} members` : "Start the conversation")}</span>
+                    <span>{thread.lastMessageText || (thread.type === "group" ? `${thread.memberCount ?? thread.participantIds?.length ?? 0} members` : "Start the conversation")}</span>
                   </span>
                 </button>
               );
@@ -387,8 +395,8 @@ export const MessagesPage = () => {
                   <h2>{threadTitle(activeThread)}</h2>
                   <span>
                     {activeThread.type === "group"
-                      ? `${activeThread.memberCount} members`
-                      : activePeople[0]?.organizationTags[0] || "Direct message"}
+                      ? `${activeThread.memberCount ?? activeThread.participantIds?.length ?? 0} members`
+                      : activePeople[0]?.organizationTags?.[0] || "Direct message"}
                   </span>
                 </div>
                 <div className="message-header-avatars" aria-label="Conversation members">

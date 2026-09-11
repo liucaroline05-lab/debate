@@ -142,10 +142,15 @@ export const ResourcesPage = () => {
     });
   }, [category, format, level, mediaType, query, resourceSaveState.data, resourceState.data, savedOnly]);
 
+  // The recommended strip is a Quick Read shelf, so saving an Article should
+  // not put it here: the entry has to have been published as a Quick Read.
   const featuredResources = useMemo(
     () => {
       const savedIds = new Set(resourceSaveState.data.map((save) => save.resourceId));
-      return resourceState.data.filter((resource) => savedIds.has(resource.id)).slice(0, 12);
+      return resourceState.data
+        .filter((resource) => resource.resourceType === "Quick Read")
+        .filter((resource) => savedIds.has(resource.id))
+        .slice(0, 12);
     },
     [resourceSaveState.data, resourceState.data],
   );

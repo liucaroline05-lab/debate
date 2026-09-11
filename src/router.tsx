@@ -16,6 +16,7 @@ import { ProfilePage } from "@/pages/app/ProfilePage";
 import { UserProfilePage } from "@/pages/app/UserProfilePage";
 import { SettingsPage } from "@/pages/app/SettingsPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
+import { RouteErrorPage } from "@/pages/RouteErrorPage";
 
 const withProviders = (element: ReactNode) => <AuthProvider>{element}</AuthProvider>;
 
@@ -47,7 +48,9 @@ export const router = createBrowserRouter([
   {
     path: "/app",
     element: withProviders(<ProtectedRoute />),
-    errorElement: withProviders(<NotFoundPage />),
+    // A page that throws while rendering used to fall through to the
+    // not-found page, so a crash looked exactly like a bad URL.
+    errorElement: withProviders(<RouteErrorPage />),
     children: [
       {
         element: <AppLayout />,
