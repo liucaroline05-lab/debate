@@ -135,3 +135,48 @@ My cost/quality recommendation:
 - Use the summary model only once, after all transcripts are complete—not once per audio file—then persist the result, prompt/model version, and transcript references in Firestore. Run it from a Cloud Function, not the browser, so the API key stays private.
 
 Current transcription and text-model pricing is in the [official OpenAI pricing docs](https://developers.openai.com/api/docs/pricing).
+
+
+=== Deploying to 'debate-b4abe'...
+
+i  deploying storage, firestore, functions
+Running command: npm --prefix "$RESOURCE_DIR" run build
+
+> build
+> tsc
+
+✔  functions: Finished running predeploy script.
+i  storage: ensuring required API firebasestorage.googleapis.com is enabled...
+i  firebase.storage: checking storage.rules for compilation errors...
+✔  firebase.storage: rules file storage.rules compiled successfully
+i  firestore: ensuring required API firestore.googleapis.com is enabled...
+i  firestore: ensuring required API firestore.googleapis.com is enabled...
+i  cloud.firestore: checking firestore.rules for compilation errors...
+✔  cloud.firestore: rules file firestore.rules compiled successfully
+i  functions: preparing codebase default for deployment
+i  functions: ensuring required API cloudfunctions.googleapis.com is enabled...
+i  functions: ensuring required API cloudbuild.googleapis.com is enabled...
+i  artifactregistry: ensuring required API artifactregistry.googleapis.com is enabled...
+⚠  functions: Runtime Node.js 20 was deprecated on 2026-04-30 and will be decommissioned on 2026-10-30, after which you will not be able to deploy without upgrading. Consider upgrading now to avoid disruption. See https://cloud.google.com/functions/docs/runtime-support for full details on the lifecycle policy
+i  functions: Loading and analyzing source code for codebase default to determine what to deploy
+Serving at port 8869
+
+i  extensions: ensuring required API firebaseextensions.googleapis.com is enabled...
+i  functions: preparing functions directory for uploading...
+i  functions: packaged /Users/carolineliu/Documents/GitHub/debate/functions (67.33 KB) for uploading
+
+Error: A function in region us-central1 cannot listen to a bucket in region us-west1
+
+Having trouble? Try firebase [command] --help
+
+
+
+
+September 10, 2026:
+[ ] Tabroom sync is still broken.
+[ ] Messages still don't work.
+[ ] The comments in the community tab should have like/dislike buttons similar to forums and also support replies to comments.
+[ ] Save button in resources still does not work.
+[ ] My Notes in resources only seems to save temporarily and disappears if coming back to the page after a while.
+[ ] My complete tab in Async Debate: the action buttons are all touching the corner without proper padding.
+[ ] In the channels card in the dashboard, it still does not display the channels that you are in.
