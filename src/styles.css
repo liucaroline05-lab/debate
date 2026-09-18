@@ -3990,7 +3990,139 @@ button {
   padding-right: 0.25rem;
 }
 
-.message-bubble a {
+.message-bubble.is-shared,
+.message-row.is-own .message-bubble.is-shared {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-charcoal);
+  white-space: normal;
+}
+
+.message-share-note {
+  margin-bottom: 0.35rem;
+  padding: 0.72rem 0.95rem;
+  border-radius: 8px 18px 18px 18px;
+  background: rgba(245, 239, 230, 0.95);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message-row.is-own .message-share-note {
+  border-radius: 18px 8px 18px 18px;
+  background: var(--color-moss);
+  color: var(--color-white);
+}
+
+.message-share-card {
+  display: block;
+  min-width: min(18rem, 70vw);
+  max-width: 27rem;
+  overflow: hidden;
+  border: 1px solid rgba(53, 47, 42, 0.12);
+  border-radius: 16px;
+  background: var(--color-white);
+  color: var(--color-charcoal);
+  text-decoration: none;
+  box-shadow: 0 5px 16px rgba(53, 47, 42, 0.08);
+  transition: border-color 150ms ease, transform 150ms ease;
+}
+
+.message-share-card:hover,
+.message-share-card:focus-visible {
+  border-color: var(--color-moss);
+  transform: translateY(-1px);
+}
+
+.message-share-media {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  height: 9rem;
+  gap: 2px;
+  background: rgba(245, 239, 230, 0.9);
+}
+
+.message-share-media.count-1 {
+  grid-template-columns: 1fr;
+}
+
+.message-share-media.count-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.message-share-media-item {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.message-share-media-item img,
+.message-share-media-item video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.message-share-play,
+.message-share-more {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  color: white;
+  background: rgba(36, 32, 28, 0.72);
+}
+
+.message-share-play {
+  inset: 50% auto auto 50%;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.message-share-more {
+  right: 0.5rem;
+  bottom: 0.5rem;
+  min-width: 2rem;
+  height: 1.6rem;
+  padding: 0 0.4rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.message-share-copy {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.8rem 0.95rem;
+}
+
+.message-share-kind {
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.message-share-copy strong {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.message-share-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-moss);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.message-bubble:not(.is-shared) a,
+.message-share-note a {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 0.2em;

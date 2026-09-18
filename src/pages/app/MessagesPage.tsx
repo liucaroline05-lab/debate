@@ -474,7 +474,7 @@ export const MessagesPage = () => {
                             <small>{formatMessageTime(message.createdAt)}</small>
                           </span>
                         ) : null}
-                        <p className="message-bubble"><MessageContent content={message.content} /></p>
+                        <MessageContent content={message.content} sharedPreview={message.sharedPreview} />
                       </div>
                     </div>
                   );

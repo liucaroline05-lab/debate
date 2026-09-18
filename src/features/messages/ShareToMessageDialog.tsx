@@ -9,12 +9,15 @@ import {
 } from "@/features/messages/messageService";
 import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { ChatThread, UserProfile } from "@/types/models";
+import type { ChatSharedPreview, ChatThread, UserProfile } from "@/types/models";
 
 interface ShareToMessageDialogProps {
   /** What is being shared, used to build the message body. */
   title: string;
   url: string;
+  previewKind: ChatSharedPreview["kind"];
+  media?: ChatSharedPreview["media"];
+  mediaCount?: number;
   onClose: () => void;
   allowCopyLink?: boolean;
   onBeforeSend?: (recipientIds: string[]) => Promise<void>;
@@ -30,7 +33,7 @@ const safeInitial = (value?: string) => value?.trim().charAt(0).toUpperCase() ||
  * Sends a link to an existing conversation or straight to a person, creating
  * the direct thread first when there is not one yet.
  */
-export const ShareToMessageDialog = ({ title, url, onClose, allowCopyLink = true, onBeforeSend }: ShareToMessageDialogProps) => {
+export const ShareToMessageDialog = ({ title, url, previewKind, media, mediaCount, onClose, allowCopyLink = true, onBeforeSend }: ShareToMessageDialogProps) => {
   const { currentUser } = useAuth();
   const usersState = useSeededFirestoreCollection("users", seededUsers);
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -130,7 +133,13 @@ export const ShareToMessageDialog = ({ title, url, onClose, allowCopyLink = true
       }
 
       await onBeforeSend?.(thread.participantIds.filter((id) => id !== currentUser.id));
-      await sendChatMessage(thread, currentUser, body);
+      await sendChatMessage(thread, currentUser, body, {
+        kind: previewKind,
+        title,
+        url,
+        ...(media?.length ? { media } : {}),
+        ...(mediaCount ? { mediaCount } : {}),
+      });
       setSentTargetId(target.id);
       window.setTimeout(() => setSentTargetId(""), 2_000);
     } catch (sendError) {

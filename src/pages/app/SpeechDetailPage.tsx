@@ -777,6 +777,7 @@ export const SpeechDetailPage = () => {
         <ShareToMessageDialog
           title={speech.title}
           url={`${window.location.origin}/app/speeches/${speech.id}`}
+          previewKind="speech"
           allowCopyLink={speech.visibility === "public"}
           onBeforeSend={speech.visibility === "private" && isOwner
             ? (recipientIds) => grantPrivateSpeechAccess(speech.id, currentUser!.id, recipientIds)

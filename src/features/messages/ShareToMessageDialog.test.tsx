@@ -61,6 +61,7 @@ const renderDialog = () =>
       <ShareToMessageDialog
         title="How do you weigh probability?"
         url="https://example.com/app/community#post-1"
+        previewKind="post"
         onClose={vi.fn()}
       />
     </MemoryRouter>,
@@ -85,6 +86,11 @@ describe("ShareToMessageDialog", () => {
       groupThread,
       currentUser,
       "How do you weigh probability? — https://example.com/app/community#post-1",
+      {
+        kind: "post",
+        title: "How do you weigh probability?",
+        url: "https://example.com/app/community#post-1",
+      },
     );
   });
 
@@ -103,6 +109,46 @@ describe("ShareToMessageDialog", () => {
       groupThread,
       currentUser,
       "Useful framing here\n\nHow do you weigh probability? — https://example.com/app/community#post-1",
+      {
+        kind: "post",
+        title: "How do you weigh probability?",
+        url: "https://example.com/app/community#post-1",
+      },
+    );
+  });
+
+  it("sends image and video thumbnails with a post preview", async () => {
+    const user = userEvent.setup();
+    const media = [
+      { kind: "image" as const, name: "Round photo", url: "https://example.com/round.jpg" },
+      { kind: "video" as const, name: "Round clip", url: "https://example.com/round.mp4" },
+    ];
+    render(
+      <MemoryRouter>
+        <ShareToMessageDialog
+          title="Round recap"
+          url="https://example.com/app/community?post=post-2"
+          previewKind="post"
+          media={media}
+          mediaCount={2}
+          onClose={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    const row = screen.getByText("Nationals prep").closest(".share-target-row");
+    await user.click(row!.querySelector("button")!);
+    expect(service.sendChatMessage).toHaveBeenCalledWith(
+      groupThread,
+      currentUser,
+      expect.stringContaining("Round recap"),
+      {
+        kind: "post",
+        title: "Round recap",
+        url: "https://example.com/app/community?post=post-2",
+        media,
+        mediaCount: 2,
+      },
     );
   });
 
@@ -124,6 +170,7 @@ describe("ShareToMessageDialog", () => {
       }),
       currentUser,
       expect.stringContaining("https://example.com/app/community#post-1"),
+      expect.objectContaining({ kind: "post" }),
     );
   });
 
@@ -135,6 +182,7 @@ describe("ShareToMessageDialog", () => {
         <ShareToMessageDialog
           title="Private speech"
           url="https://example.com/app/speeches/speech-1"
+          previewKind="speech"
           allowCopyLink={false}
           onBeforeSend={grant}
           onClose={vi.fn()}

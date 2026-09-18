@@ -1238,6 +1238,7 @@ export const DebatesPage = () => {
         <ShareToMessageDialog
           title={shareTarget.topic}
           url={`${window.location.origin}/app/debates/${shareTarget.id}`}
+          previewKind="debate"
           onClose={() => setShareTarget(null)}
         />
       ) : null}

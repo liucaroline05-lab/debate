@@ -15,6 +15,7 @@ import {
 import { firestore } from "@/lib/firebase";
 import type {
   ChatMessage,
+  ChatSharedPreview,
   ChatThread,
   MessagingPermission,
   UserProfile,
@@ -258,6 +259,7 @@ export const sendChatMessage = async (
   thread: ChatThread,
   author: UserProfile,
   content: string,
+  sharedPreview?: ChatSharedPreview,
 ) => {
   const database = requireFirestore();
   const normalizedContent = content.trim();
@@ -278,11 +280,14 @@ export const sendChatMessage = async (
     authorId: author.id,
     authorName: author.displayName,
     content: normalizedContent,
+    ...(sharedPreview ? { sharedPreview } : {}),
     createdAt,
   } satisfies Omit<ChatMessage, "id">);
 
   await updateDoc(doc(database, "chatThreads", thread.id), {
-    lastMessageText: normalizedContent.slice(0, 160),
+    lastMessageText: sharedPreview
+      ? `Shared ${sharedPreview.kind}: ${sharedPreview.title}`.slice(0, 160)
+      : normalizedContent.slice(0, 160),
     lastMessageAt: createdAt,
     lastMessageSenderId: author.id,
     updatedAt: createdAt,

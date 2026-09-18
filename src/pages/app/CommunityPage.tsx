@@ -41,7 +41,7 @@ import {
 import { useAuth } from "@/features/auth/AuthContext";
 import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { PostComment, PostCommentReaction, UserProfile } from "@/types/models";
+import type { CommunityPost, PostComment, PostCommentReaction, UserProfile } from "@/types/models";
 
 type ForumTab = "All Posts" | "Saved" | "Question" | "Speech Review" | "Tips & Strategies";
 type PostCategory = Exclude<ForumTab, "Saved">;
@@ -174,7 +174,12 @@ export const CommunityPage = () => {
   const [menuPostId, setMenuPostId] = useState<string | null>(null);
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const [sharedPostId, setSharedPostId] = useState<string | null>(null);
-  const [shareTarget, setShareTarget] = useState<{ title: string; url: string; postId: string } | null>(null);
+  const [shareTarget, setShareTarget] = useState<{
+    title: string;
+    url: string;
+    media: Array<{ kind: "image" | "video"; url: string; name: string }>;
+    mediaCount: number;
+  } | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [composerFiles, setComposerFiles] = useState<File[]>([]);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -519,15 +524,20 @@ export const CommunityPage = () => {
     }
   };
 
-  const sharePost = (postId: string, title: string, shareCount = 0) => {
+  const sharePost = (post: CommunityPost) => {
+    const media = (post.attachments ?? []).filter(
+      (attachment): attachment is typeof attachment & { kind: "image" | "video" } =>
+        attachment.kind === "image" || attachment.kind === "video",
+    );
     setShareTarget({
-      postId,
-      title: title || "Debate Studio community post",
-      url: `${window.location.origin}/app/community?post=${encodeURIComponent(postId)}`,
+      title: post.title || "Debate Studio community post",
+      url: `${window.location.origin}/app/community?post=${encodeURIComponent(post.id)}`,
+      media: media.slice(0, 3).map(({ kind, url, name }) => ({ kind, url, name })),
+      mediaCount: media.length,
     });
-    setSharedPostId(postId);
+    setSharedPostId(post.id);
     // Best-effort: record the share without blocking the dialog.
-    void incrementPostShareCount(postId, shareCount).catch(() => {});
+    void incrementPostShareCount(post.id, post.shareCount).catch(() => {});
   };
 
   const handleReaction = async (
@@ -1087,7 +1097,7 @@ export const CommunityPage = () => {
                         type="button"
                         className={justShared ? "forum-action-button is-share" : "forum-action-button"}
                         aria-label="Share post"
-                        onClick={() => sharePost(post.id, post.title ?? "", post.shareCount)}
+                        onClick={() => sharePost(post)}
                       >
                         {justShared ? <Check size={16} /> : <Share2 size={16} />}{" "}
                         {post.shareCount ?? 0}
@@ -1322,6 +1332,9 @@ export const CommunityPage = () => {
         <ShareToMessageDialog
           title={shareTarget.title}
           url={shareTarget.url}
+          previewKind="post"
+          media={shareTarget.media}
+          mediaCount={shareTarget.mediaCount}
           onClose={() => {
             setShareTarget(null);
             setSharedPostId(null);

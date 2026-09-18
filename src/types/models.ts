@@ -298,7 +298,16 @@ export interface ChatMessage {
   authorId: string;
   authorName: string;
   content: string;
+  sharedPreview?: ChatSharedPreview;
   createdAt: string;
+}
+
+export interface ChatSharedPreview {
+  kind: "post" | "debate" | "speech";
+  title: string;
+  url: string;
+  media?: Array<{ kind: "image" | "video"; url: string; name: string }>;
+  mediaCount?: number;
 }
 
 export interface DebateComment {
