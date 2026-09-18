@@ -1,4 +1,5 @@
 import type { SpeechFormat } from "@/lib/speechFormats";
+import type { SpeechTopicCategory } from "@/lib/speechTopics";
 
 export type UserRole = "student" | "coach";
 
@@ -67,6 +68,7 @@ export interface SpeechRecord {
   title: string;
   eventName: string;
   format: SpeechFormat;
+  topicCategory?: SpeechTopicCategory;
   visibility?: "private" | "public";
   status: "Uploaded" | "Reviewing" | "Ready for Feedback";
   speakerName: string;
@@ -76,6 +78,7 @@ export interface SpeechRecord {
   tags: string[];
   organizationTags: string[];
   mediaPath?: string;
+  mediaContentType?: string;
   mediaStoragePath?: string;
   commentsEnabled?: boolean;
   reported?: boolean;

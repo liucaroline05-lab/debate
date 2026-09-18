@@ -4,6 +4,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -27,6 +28,7 @@ interface NewSpeechInput {
   title: string;
   eventName: string;
   format: SpeechFormat;
+  topicCategory?: SpeechRecord["topicCategory"];
   visibility: NonNullable<SpeechRecord["visibility"]>;
   speakerName: string;
   coachNotes: string;
@@ -41,6 +43,7 @@ export type SpeechUpdateInput = Pick<
   | "title"
   | "eventName"
   | "format"
+  | "topicCategory"
   | "visibility"
   | "speakerName"
   | "coachNotes"
@@ -167,6 +170,7 @@ export const createSpeechRecord = async (
     title: input.title,
     eventName: input.eventName,
     format: input.format,
+    topicCategory: input.topicCategory ?? "Other",
     visibility: input.visibility,
     status: "Uploaded",
     speakerName: input.speakerName,
@@ -177,6 +181,7 @@ export const createSpeechRecord = async (
     organizationTags: input.organizationTags,
     commentsEnabled: input.commentsEnabled,
     ...(input.file ? { summaryStatus: "processing" as const } : {}),
+    ...(input.file ? { mediaContentType: input.file.type } : {}),
   };
 
   // The document must exist *before* the file lands in Storage: finalizing the
@@ -320,13 +325,27 @@ export const deleteSpeechRecord = async (speechId: string) => {
   await deleteDoc(doc(firestore, "speeches", speechId));
 };
 
-export const reportSpeechRecord = async (speechId: string) => {
+export const reportSpeechRecord = async (
+  speechId: string,
+  reporterId: string,
+  reason: "Harassment" | "Inappropriate content" | "Spam" | "Copyright" | "Other",
+  details = "",
+) => {
   if (!firestore) {
     throw new Error("Firestore is not configured.");
   }
+  if (!reporterId) throw new Error("Sign in before reporting a speech.");
+  if (details.length > 1000) throw new Error("Keep report details under 1,000 characters.");
 
-  await updateDoc(doc(firestore, "speeches", speechId), {
-    reported: true,
-    updatedAt: serverTimestamp(),
+  const reportRef = doc(firestore, "speechReports", reporterId, "reports", speechId);
+  if ((await getDoc(reportRef)).exists()) return false;
+  await setDoc(reportRef, {
+    speechId,
+    reporterId,
+    reason,
+    details: details.trim(),
+    status: "open",
+    createdAt: serverTimestamp(),
   });
+  return true;
 };

@@ -13,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
+import { SpeechMediaPlayer } from "@/components/speeches/SpeechMediaPlayer";
 import { useAuth } from "@/features/auth/AuthContext";
 import {
   deleteSpeechRecord,
@@ -23,6 +24,7 @@ import {
 } from "@/features/speeches/speechService";
 import { formatDateTime } from "@/lib/date";
 import { speechFormatGroups } from "@/lib/speechFormats";
+import { speechTopicCategories } from "@/lib/speechTopics";
 import { firestore } from "@/lib/firebase";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type {
@@ -65,6 +67,7 @@ const toFormState = (speech: SpeechRecord) => ({
   title: speech.title,
   eventName: speech.eventName,
   format: speech.format,
+  topicCategory: speech.topicCategory ?? "Other",
   visibility: speech.visibility ?? "private",
   speakerName: speech.speakerName,
   coachNotes: speech.coachNotes,
@@ -98,6 +101,12 @@ export const SpeechDetailPage = () => {
   const [isLoading, setIsLoading] = useState(Boolean(firestore && speechId));
   const [isSaving, setIsSaving] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(searchParams.get("report") === "1");
+  const [reportReason, setReportReason] = useState<"Harassment" | "Inappropriate content" | "Spam" | "Copyright" | "Other">("Inappropriate content");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportNotice, setReportNotice] = useState("");
+  const [reportError, setReportError] = useState("");
+  const [isReporting, setIsReporting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
@@ -227,13 +236,24 @@ export const SpeechDetailPage = () => {
   };
 
   const handleReport = async () => {
-    if (!speech) {
-      return;
+    if (!speech || !currentUser || isOwner || isReporting) return;
+    setReportError("");
+    setIsReporting(true);
+    try {
+      const created = await reportSpeechRecord(
+        speech.id,
+        currentUser.id,
+        reportReason,
+        reportDetails,
+      );
+      setReportNotice(created ? "Report submitted. Thank you." : "You have already reported this speech.");
+      setIsReportOpen(false);
+      setReportDetails("");
+    } catch (reportFailure) {
+      setReportError(reportFailure instanceof Error ? reportFailure.message : "Unable to submit report.");
+    } finally {
+      setIsReporting(false);
     }
-
-    await reportSpeechRecord(speech.id);
-    setMenuOpen(false);
-    setMessage("Speech reported.");
   };
 
   const voteOnComment = async (
@@ -360,7 +380,11 @@ export const SpeechDetailPage = () => {
                 <button
                   type="button"
                   className="forum-menu-item"
-                  onClick={() => void handleReport()}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setReportError("");
+                    setIsReportOpen(true);
+                  }}
                 >
                   <Flag size={16} /> Report
                 </button>
@@ -369,6 +393,8 @@ export const SpeechDetailPage = () => {
           ) : null}
         </div>
       </header>
+
+      {reportNotice ? <p className="speech-detail-notice" role="status">{reportNotice}</p> : null}
 
       <section className="speech-detail-stack">
         <article className="app-card speech-playback-card">
@@ -388,14 +414,11 @@ export const SpeechDetailPage = () => {
             <div className="speech-player-divider" />
             {speech.mediaPath ? (
               <div className="speech-playback-controls">
-                <audio
-                  className="speech-native-audio"
-                  controls
-                  preload="metadata"
+                <SpeechMediaPlayer
                   src={speech.mediaPath}
-                >
-                  <a href={speech.mediaPath}>Open recording</a>
-                </audio>
+                  fileName={fileName}
+                  contentType={speech.mediaContentType}
+                />
                 <a
                   className="btn btn-secondary"
                   href={speech.mediaPath}
@@ -532,6 +555,19 @@ export const SpeechDetailPage = () => {
                     ))}
                   </optgroup>
                 ))}
+              </select>
+            </div>
+            <div className="form-field">
+              <label htmlFor="speechDetailTopicCategory">Topic category</label>
+              <select
+                id="speechDetailTopicCategory"
+                value={form.topicCategory}
+                disabled={!isEditing}
+                onChange={(event) => setForm((current) => current
+                  ? { ...current, topicCategory: event.target.value as NonNullable<SpeechRecord["topicCategory"]> }
+                  : current)}
+              >
+                {speechTopicCategories.map((category) => <option key={category}>{category}</option>)}
               </select>
             </div>
             <div className="form-field">
@@ -726,6 +762,51 @@ export const SpeechDetailPage = () => {
           <article className="app-card"><h2 className="card-title">Comments are off</h2><p className="card-copy">The uploader disabled comments for this speech.</p></article>
         )}
       </section>
+      {isReportOpen && !isOwner ? (
+        <div className="community-modal-overlay" role="presentation" onMouseDown={() => !isReporting && setIsReportOpen(false)}>
+          <div
+            className="community-modal app-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="speechReportTitle"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h2 id="speechReportTitle" className="card-title">Report this speech</h2>
+            <p className="card-copy">Tell us what needs review. Your report is not shown to the speaker.</p>
+            <div className="form-field">
+              <label htmlFor="speechReportReason">Reason</label>
+              <select
+                id="speechReportReason"
+                value={reportReason}
+                onChange={(event) => setReportReason(event.target.value as typeof reportReason)}
+              >
+                <option>Inappropriate content</option>
+                <option>Harassment</option>
+                <option>Spam</option>
+                <option>Copyright</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div className="form-field" style={{ marginTop: "1rem" }}>
+              <label htmlFor="speechReportDetails">Details (optional)</label>
+              <textarea
+                id="speechReportDetails"
+                value={reportDetails}
+                maxLength={1000}
+                onChange={(event) => setReportDetails(event.target.value)}
+                placeholder="Add context that will help a reviewer."
+              />
+            </div>
+            {reportError ? <p className="speech-field-error" role="alert">{reportError}</p> : null}
+            <div className="button-row community-modal-actions">
+              <button type="button" className="btn btn-secondary" disabled={isReporting} onClick={() => setIsReportOpen(false)}>Cancel</button>
+              <button type="button" className="btn btn-primary" disabled={isReporting} onClick={() => void handleReport()}>
+                {isReporting ? "Submitting..." : "Submit report"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 };

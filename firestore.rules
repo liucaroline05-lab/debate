@@ -26,15 +26,6 @@ service cloud.firestore {
         );
     }
 
-    function isSpeechReportUpdate() {
-      return isSignedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          "reported",
-          "updatedAt"
-        ])
-        && request.resource.data.reported == true;
-    }
-
     // The AI speech summary is produced server-side by a Cloud Function, so
     // clients must never be able to write or edit it.
     function keepsServerManagedSpeechSummary() {
@@ -186,13 +177,29 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.creatorId == request.auth.uid
         && hasValidSpeechVisibility();
-      allow update: if (
-          ownsExistingResource("creatorId")
-          && hasValidSpeechVisibility()
-          && keepsServerManagedSpeechSummary()
-        )
-        || isSpeechReportUpdate();
+      allow update: if ownsExistingResource("creatorId")
+        && hasValidSpeechVisibility()
+        && keepsServerManagedSpeechSummary();
       allow delete: if ownsExistingResource("creatorId");
+    }
+
+    // Each member can file one report per public speech. Reports are private
+    // to the reporter; moderators read them through Admin SDK access.
+    match /speechReports/{userId}/reports/{speechId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId)
+        && request.resource.data.reporterId == userId
+        && request.resource.data.speechId == speechId
+        && request.resource.data.reason in [
+          "Harassment", "Inappropriate content", "Spam", "Copyright", "Other"
+        ]
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 1000
+        && request.resource.data.status == "open"
+        && get(/databases/$(database)/documents/speeches/$(speechId)).data.visibility == "public"
+        && get(/databases/$(database)/documents/speeches/$(speechId)).data.creatorId != userId;
+      allow update, delete: if false;
     }
 
     function debateData(debateId) {

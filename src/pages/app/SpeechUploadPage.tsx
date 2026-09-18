@@ -1,11 +1,13 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { NavLink } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
+import { Search, SlidersHorizontal, Upload, X } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { createSpeechRecord } from "@/features/speeches/speechService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDateTime } from "@/lib/date";
-import { defaultSpeechFormat, speechFormatGroups } from "@/lib/speechFormats";
+import { defaultSpeechFormat, speechFormatGroups, speechFormats } from "@/lib/speechFormats";
+import { speechTopicCategories } from "@/lib/speechTopics";
 import type { SpeechRecord } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
 
@@ -13,6 +15,7 @@ const initialForm = {
   title: "",
   eventName: "",
   format: defaultSpeechFormat as SpeechRecord["format"],
+  topicCategory: "Other" as NonNullable<SpeechRecord["topicCategory"]>,
   visibility: "private" as NonNullable<SpeechRecord["visibility"]>,
   coachNotes: "",
   tags: "delivery, framing",
@@ -26,6 +29,15 @@ export const SpeechUploadPage = () => {
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [fieldError, setFieldError] = useState<"title" | "eventName" | null>(null);
+  const [query, setQuery] = useState("");
+  const [formatFilter, setFormatFilter] = useState("All");
+  const [topicFilter, setTopicFilter] = useState("All");
+  const [visibilityFilter, setVisibilityFilter] = useState("All");
+  const [sortOrder, setSortOrder] = useState("Newest");
+  const titleRef = useRef<HTMLInputElement>(null);
+  const eventRef = useRef<HTMLInputElement>(null);
 
   const { currentUser } = useAuth();
   const currentUserId = currentUser?.id;
@@ -52,18 +64,53 @@ export const SpeechUploadPage = () => {
     "speeches:public",
   );
   const speechHistory = useMemo(() => {
-    const newestFirst = (left: SpeechRecord, right: SpeechRecord) =>
-      right.uploadedAt.localeCompare(left.uploadedAt);
-    const mine = [...ownSpeeches.data].sort(newestFirst);
+    const mine = [...ownSpeeches.data];
     const mineIds = new Set(mine.map((speech) => speech.id));
     return [
       ...mine,
-      ...publicSpeeches.data.filter((speech) => !mineIds.has(speech.id)).sort(newestFirst),
+      ...publicSpeeches.data.filter((speech) => !mineIds.has(speech.id)),
     ];
   }, [ownSpeeches.data, publicSpeeches.data]);
+  const filteredSpeeches = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    return speechHistory.filter((speech) => {
+      if (formatFilter !== "All" && speech.format !== formatFilter) return false;
+      if (topicFilter !== "All" && (speech.topicCategory ?? "Uncategorized") !== topicFilter) return false;
+      if (visibilityFilter !== "All" && (speech.visibility ?? "private") !== visibilityFilter.toLowerCase()) return false;
+      if (!search) return true;
+      return [
+        speech.title,
+        speech.eventName,
+        speech.format,
+        speech.topicCategory,
+        speech.speakerName,
+        speech.coachNotes,
+        ...(speech.tags ?? []),
+        ...(speech.organizationTags ?? []),
+      ].some((value) => value?.toLowerCase().includes(search));
+    }).sort((left, right) => sortOrder === "Title"
+      ? left.title.localeCompare(right.title)
+      : sortOrder === "Oldest"
+        ? left.uploadedAt.localeCompare(right.uploadedAt)
+        : right.uploadedAt.localeCompare(left.uploadedAt));
+  }, [formatFilter, query, sortOrder, speechHistory, topicFilter, visibilityFilter]);
+  const mySpeeches = filteredSpeeches.filter((speech) => speech.creatorId === currentUserId);
+  const otherSpeeches = filteredSpeeches.filter((speech) => speech.creatorId !== currentUserId);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (!form.title.trim()) {
+      setFieldError("title");
+      titleRef.current?.focus();
+      return;
+    }
+    if (!form.eventName.trim()) {
+      setFieldError("eventName");
+      eventRef.current?.focus();
+      return;
+    }
+    setFieldError(null);
 
     if (!currentUser) {
       setMessage("You must be signed in to upload a speech.");
@@ -89,6 +136,7 @@ export const SpeechUploadPage = () => {
       setMessage(`Saved "${speech.title}" and queued transcript processing.`);
       setForm(initialForm);
       setFile(null);
+      setIsUploadOpen(false);
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Unable to save your speech yet.",
@@ -105,40 +153,69 @@ export const SpeechUploadPage = () => {
         description="Upload a speech recording with metadata, transcript state, and coach feedback notes."
       />
       <header className="route-header">
-        <p className="eyebrow">Record / Upload</p>
-        <h1>Bring new speeches into the studio.</h1>
-        {/* <p>
-          The form is Firebase-ready for Storage uploads and Firestore metadata,
-          while still working as a demo flow before credentials are added.
-        </p> */}
+        <div className="row-between">
+          <div>
+            <p className="eyebrow">Speech library</p>
+            <h1>Find a speech worth revisiting.</h1>
+            <p>Search your recordings and public speeches shared by other members.</p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary forum-primary-cta"
+            aria-expanded={isUploadOpen}
+            onClick={() => {
+              setIsUploadOpen(true);
+              window.setTimeout(() => titleRef.current?.focus(), 0);
+            }}
+          >
+            <Upload size={18} /> Upload Speech
+          </button>
+        </div>
       </header>
 
-      <section className="speech-grid">
-        <form className="app-card" onSubmit={handleSubmit}>
+      {isUploadOpen ? (
+        <form className="app-card speech-upload-card composer-slide-down" onSubmit={handleSubmit} noValidate>
+          <div className="row-between speech-upload-heading">
+            <div>
+              <p className="eyebrow">New recording</p>
+              <h2 className="card-title">Upload a speech</h2>
+            </div>
+            <button type="button" className="forum-icon-button" aria-label="Close upload form" onClick={() => setIsUploadOpen(false)}>
+              <X size={18} />
+            </button>
+          </div>
           <div className="form-grid">
             <div className="form-field">
-              <label htmlFor="title">Speech title</label>
+              <label htmlFor="speechUploadTitle">Speech title</label>
               <input
-                id="title"
+                id="speechUploadTitle"
+                ref={titleRef}
                 value={form.title}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, title: event.target.value }))
-                }
+                aria-invalid={fieldError === "title"}
+                aria-describedby={fieldError === "title" ? "speechTitleError" : undefined}
+                onChange={(event) => {
+                  setForm((current) => ({ ...current, title: event.target.value }));
+                  if (fieldError === "title") setFieldError(null);
+                }}
                 placeholder="Name your speech!"
-                required
               />
+              {fieldError === "title" ? <span id="speechTitleError" className="speech-field-error" role="alert">Add a speech title before saving.</span> : null}
             </div>
             <div className="form-field">
-              <label htmlFor="eventName">Event / practice</label>
+              <label htmlFor="speechUploadEvent">Event / practice</label>
               <input
-                id="eventName"
+                id="speechUploadEvent"
+                ref={eventRef}
                 value={form.eventName}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, eventName: event.target.value }))
-                }
+                aria-invalid={fieldError === "eventName"}
+                aria-describedby={fieldError === "eventName" ? "speechEventError" : undefined}
+                onChange={(event) => {
+                  setForm((current) => ({ ...current, eventName: event.target.value }));
+                  if (fieldError === "eventName") setFieldError(null);
+                }}
                 placeholder="Choose your event"
-                required
               />
+              {fieldError === "eventName" ? <span id="speechEventError" className="speech-field-error" role="alert">Add an event or practice name before saving.</span> : null}
             </div>
             <div className="form-field">
               <label htmlFor="format">Format</label>
@@ -159,6 +236,19 @@ export const SpeechUploadPage = () => {
                     ))}
                   </optgroup>
                 ))}
+              </select>
+            </div>
+            <div className="form-field">
+              <label htmlFor="speechTopicCategory">Topic category</label>
+              <select
+                id="speechTopicCategory"
+                value={form.topicCategory}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  topicCategory: event.target.value as NonNullable<SpeechRecord["topicCategory"]>,
+                }))}
+              >
+                {speechTopicCategories.map((category) => <option key={category}>{category}</option>)}
               </select>
             </div>
             <div className="form-field">
@@ -264,35 +354,96 @@ export const SpeechUploadPage = () => {
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
               {isSubmitting ? "Saving..." : "Save speech"}
             </button>
+            <button type="button" className="btn btn-secondary" disabled={isSubmitting} onClick={() => setIsUploadOpen(false)}>
+              Cancel
+            </button>
           </div>
         </form>
+      ) : null}
 
-        <aside className="app-card speech-history-card">
-          <div className="row-between">
-            <div>
-              <span className="pill">Speech library</span>
-              <h2 className="card-title" style={{ marginTop: "0.75rem" }}>Past speeches</h2>
+      {message && !isUploadOpen ? <p className="speech-library-status" role="status">{message}</p> : null}
+
+      <section className="app-card resource-filter-panel speech-library-filters" aria-label="Search speeches">
+        <label className="forum-search resource-search" htmlFor="speechSearch">
+          <Search size={18} aria-hidden="true" />
+          <input
+            id="speechSearch"
+            type="search"
+            placeholder="Search titles, events, speakers, topics, or tags"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <details className="speech-filter-details">
+          <summary><SlidersHorizontal size={16} aria-hidden="true" /> Filters</summary>
+          <div className="resource-filter-grid">
+            <div className="form-field">
+              <label htmlFor="speechFormatFilter">Format</label>
+              <select id="speechFormatFilter" value={formatFilter} onChange={(event) => setFormatFilter(event.target.value)}>
+                <option>All</option>
+                {speechFormats.map((format) => <option key={format}>{format}</option>)}
+              </select>
             </div>
-            <span className="meta-line">Yours first</span>
+            <div className="form-field">
+              <label htmlFor="speechTopicFilter">Topic category</label>
+              <select id="speechTopicFilter" value={topicFilter} onChange={(event) => setTopicFilter(event.target.value)}>
+                <option>All</option>
+                {speechTopicCategories.map((category) => <option key={category}>{category}</option>)}
+                <option>Uncategorized</option>
+              </select>
+            </div>
+            <div className="form-field">
+              <label htmlFor="speechVisibilityFilter">Visibility</label>
+              <select id="speechVisibilityFilter" value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)}>
+                <option>All</option>
+                <option>Public</option>
+                <option>Private</option>
+              </select>
+            </div>
+            <div className="form-field">
+              <label htmlFor="speechSortOrder">Sort by</label>
+              <select id="speechSortOrder" value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}>
+                <option>Newest</option>
+                <option>Oldest</option>
+                <option>Title</option>
+              </select>
+            </div>
           </div>
-          <div className="list speech-history-list" style={{ marginTop: "1rem" }}>
-            {speechHistory.map((speech) => (
+        </details>
+        <span className="meta-line">{filteredSpeeches.length} speech{filteredSpeeches.length === 1 ? "" : "es"} found</span>
+      </section>
+
+      <section className="speech-library-sections" aria-label="Past speeches">
+        <article className="app-card speech-history-card">
+          <div className="row-between">
+            <h2 className="card-title">Your speeches</h2>
+            <span className="meta-line">{mySpeeches.length}</span>
+          </div>
+          <div className="list speech-history-list">
+            {mySpeeches.map((speech) => (
               <NavLink key={speech.id} to={`/app/speeches/${speech.id}`} className="list-item speech-list-item speech-list-link">
                 <strong>{speech.title}</strong>
-                <span className="meta-line">
-                  {speech.creatorId === currentUser?.id ? "Your speech" : speech.speakerName} · {speech.format} · {formatDateTime(speech.uploadedAt)}
-                </span>
+                <span className="meta-line">{speech.format} · {speech.topicCategory ?? "Uncategorized"} · {formatDateTime(speech.uploadedAt)}</span>
               </NavLink>
             ))}
           </div>
-          {speechHistory.length === 0 ? (
-            <p className="card-copy">
-              {ownSpeeches.isLoading || publicSpeeches.isLoading
-                ? "Loading your speech library..."
-                : "Your uploaded speeches and public community speeches will appear here."}
-            </p>
-          ) : null}
-        </aside>
+          {mySpeeches.length === 0 ? <p className="card-copy">{ownSpeeches.isLoading ? "Loading your speeches..." : "No speeches match your search yet."}</p> : null}
+        </article>
+        <article className="app-card speech-history-card">
+          <div className="row-between">
+            <h2 className="card-title">Community speeches</h2>
+            <span className="meta-line">{otherSpeeches.length}</span>
+          </div>
+          <div className="list speech-history-list">
+            {otherSpeeches.map((speech) => (
+              <NavLink key={speech.id} to={`/app/speeches/${speech.id}`} className="list-item speech-list-item speech-list-link">
+                <strong>{speech.title}</strong>
+                <span className="meta-line">{speech.speakerName} · {speech.format} · {speech.topicCategory ?? "Uncategorized"} · {formatDateTime(speech.uploadedAt)}</span>
+              </NavLink>
+            ))}
+          </div>
+          {otherSpeeches.length === 0 ? <p className="card-copy">{publicSpeeches.isLoading ? "Loading community speeches..." : "No community speeches match your search yet."}</p> : null}
+        </article>
       </section>
     </>
   );

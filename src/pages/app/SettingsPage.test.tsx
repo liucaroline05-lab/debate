@@ -64,16 +64,18 @@ describe("SettingsPage notification history", () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
 
-    const historyDays = screen.getByRole("spinbutton", { name: "Keep notifications for (days)" });
-    expect(historyDays).toHaveValue(30);
+    const historyDays = screen.getByRole("textbox", { name: "Keep notifications for (days)" });
+    expect(historyDays).toHaveValue("30");
     await user.clear(historyDays);
-    await user.type(historyDays, "14");
+    expect(historyDays).toHaveValue("");
+    await user.type(historyDays, "20");
+    expect(historyDays).toHaveValue("20");
     await user.click(screen.getByRole("button", { name: "Save notification settings" }));
 
     expect(mocks.updateProfile).toHaveBeenCalledWith({
       preferences: {
         ...profile.preferences,
-        notifications: { ...profile.preferences.notifications, historyDays: 14 },
+        notifications: { ...profile.preferences.notifications, historyDays: 20 },
       },
     });
     expect(await screen.findByText("Notification settings saved.")).toBeInTheDocument();

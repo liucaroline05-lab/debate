@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SpeechDetailPage } from "@/pages/app/SpeechDetailPage";
@@ -6,11 +7,13 @@ import type { SpeechRecord } from "@/types/models";
 
 const mocks = vi.hoisted(() => ({
   speech: null as SpeechRecord | null,
+  reportSpeechRecord: vi.fn(),
+  currentUserId: "owner" as string,
 }));
 
 vi.mock("@/features/auth/AuthContext", () => ({
   useAuth: () => ({
-    currentUser: { id: "owner", displayName: "Avery", role: "student" },
+    currentUser: { id: mocks.currentUserId, displayName: "Avery", role: "student" },
     authReady: true,
     isDemoMode: false,
   }),
@@ -23,7 +26,7 @@ vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
 vi.mock("@/features/speeches/speechService", () => ({
   addSpeechComment: vi.fn(),
   deleteSpeechRecord: vi.fn(),
-  reportSpeechRecord: vi.fn(),
+  reportSpeechRecord: mocks.reportSpeechRecord,
   updateSpeechRecord: vi.fn(),
 }));
 
@@ -79,16 +82,36 @@ const renderPage = () =>
 describe("SpeechDetailPage", () => {
   beforeEach(() => {
     mocks.speech = baseSpeech();
+    mocks.currentUserId = "owner";
+    mocks.reportSpeechRecord.mockReset().mockResolvedValue(true);
   });
 
-  it("renders a single working audio player for the recording", () => {
+  it("renders app-styled playback controls instead of browser-native controls", () => {
     const { container } = renderPage();
 
     const players = container.querySelectorAll("audio");
     expect(players).toHaveLength(1);
-    expect(players[0]).toHaveAttribute("controls");
+    expect(players[0]).not.toHaveAttribute("controls");
     expect(players[0]).toHaveAttribute("src", "https://example.com/speech.webm");
+    expect(screen.getByRole("button", { name: "Play recording" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Seek recording" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Download/ })).toBeInTheDocument();
+  });
+
+  it("opens a report form and submits a private report for another user's speech", async () => {
+    mocks.currentUserId = "viewer";
+    mocks.speech = baseSpeech({ creatorId: "owner", visibility: "public" });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Actions for Neg rebuttal drill" }));
+    await user.click(screen.getByRole("button", { name: "Report" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Reason" }), "Spam");
+    await user.type(screen.getByRole("textbox", { name: "Details (optional)" }), "Repeated ads");
+    await user.click(screen.getByRole("button", { name: "Submit report" }));
+
+    expect(mocks.reportSpeechRecord).toHaveBeenCalledWith("speech-1", "viewer", "Spam", "Repeated ads");
+    expect(await screen.findByText("Report submitted. Thank you.")).toBeInTheDocument();
   });
 
   it("shows the AI summary once processing has finished", () => {

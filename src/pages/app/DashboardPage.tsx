@@ -9,10 +9,7 @@ import {
   seededResources,
 } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
-import {
-  deleteSpeechRecord,
-  reportSpeechRecord,
-} from "@/features/speeches/speechService";
+import { deleteSpeechRecord } from "@/features/speeches/speechService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDate, formatDateTime } from "@/lib/date";
 import type {
@@ -113,12 +110,6 @@ export const DashboardPage = () => {
     setSpeechMessage("Speech deleted.");
   };
 
-  const handleReportSpeech = async (speechId: string) => {
-    await reportSpeechRecord(speechId);
-    setMenuSpeechId(null);
-    setSpeechMessage("Speech reported.");
-  };
-
   return (
     <>
       <PageMeta
@@ -191,13 +182,13 @@ export const DashboardPage = () => {
                           </button>
                         </>
                       ) : (
-                        <button
-                          type="button"
+                        <NavLink
                           className="forum-menu-item"
-                          onClick={() => void handleReportSpeech(speech.id)}
+                          to={`/app/speeches/${speech.id}?report=1`}
+                          onClick={() => setMenuSpeechId(null)}
                         >
                           <Flag size={16} /> Report
-                        </button>
+                        </NavLink>
                       )}
                     </div>
                   ) : null}

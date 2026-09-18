@@ -48,6 +48,7 @@ export const SettingsPage = () => {
     },
   };
   const [notifications, setNotifications] = useState(resolvedPreferences.notifications);
+  const [historyDaysDraft, setHistoryDaysDraft] = useState(String(resolvedPreferences.notifications.historyDays ?? 30));
   const [notificationMessage, setNotificationMessage] = useState("");
   const [isSavingNotifications, setIsSavingNotifications] = useState(false);
   const [debateDefaults, setDebateDefaults] = useState(resolvedPreferences.debateDefaults);
@@ -79,6 +80,7 @@ export const SettingsPage = () => {
       ...defaultUserPreferences.notifications,
       ...profile.preferences?.notifications,
     });
+    setHistoryDaysDraft(String(profile.preferences?.notifications?.historyDays ?? 30));
     setDebateDefaults({
       ...defaultUserPreferences.debateDefaults,
       ...profile.preferences?.debateDefaults,
@@ -201,8 +203,8 @@ export const SettingsPage = () => {
 
   const saveNotificationPreferences = async () => {
     if (isSavingNotifications) return;
-    const historyDays = notifications.historyDays ?? 30;
-    if (!Number.isInteger(historyDays) || historyDays < 1 || historyDays > 365) {
+    const historyDays = Number(historyDaysDraft);
+    if (!/^\d+$/.test(historyDaysDraft) || !Number.isInteger(historyDays) || historyDays < 1 || historyDays > 365) {
       setNotificationMessage("Choose a notification history between 1 and 365 days.");
       return;
     }
@@ -216,6 +218,7 @@ export const SettingsPage = () => {
           notifications: { ...notifications, historyDays },
         },
       });
+      setNotifications((current) => ({ ...current, historyDays }));
       setNotificationMessage(
         isDemoMode
           ? "Saved for this session. Connect Firebase to keep this setting."
@@ -488,21 +491,23 @@ export const SettingsPage = () => {
         <article className="app-card">
           <h2 className="card-title">Notifications</h2>
           <div className="stack" style={{ marginTop: "1rem" }}>
-            <div className="form-field">
-              <label htmlFor="notificationHistoryDays">Keep notifications for (days)</label>
-              <input
-                id="notificationHistoryDays"
-                type="number"
-                min={1}
-                max={365}
-                step={1}
-                value={notifications.historyDays ?? 30}
-                onChange={(event) => setNotifications((current) => ({
-                  ...current,
-                  historyDays: Number(event.target.value),
-                }))}
-              />
-              <span className="meta-line">Read and unread notifications appear in the bell for this long.</span>
+            <div className="settings-history-row">
+              <div>
+                <label htmlFor="notificationHistoryDays">Notification history</label>
+                <span className="meta-line">Keep read and unread items in the bell for 1–365 days.</span>
+              </div>
+              <div className="settings-history-control">
+                <input
+                  id="notificationHistoryDays"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  aria-label="Keep notifications for (days)"
+                  value={historyDaysDraft}
+                  onChange={(event) => setHistoryDaysDraft(event.target.value.replace(/\D/g, ""))}
+                />
+                <span>days</span>
+              </div>
             </div>
             <button
               type="button"
@@ -596,7 +601,7 @@ export const SettingsPage = () => {
           {messagingMessage ? <p className="meta-line" aria-live="polite">{messagingMessage}</p> : null}
         </article>
 
-        <article className="app-card">
+        <article className="app-card settings-debate-preferences-card">
           <h2 className="card-title">Debate preferences</h2>
           <div className="form-grid" style={{ marginTop: "1rem" }}>
             <div className="form-field">
