@@ -173,13 +173,26 @@ Having trouble? Try firebase [command] --help
 
 
 September 10, 2026:
-[ ] Tabroom sync is still broken.
-[ ] Messages still don't work.
-[ ] The comments in the community tab should have like/dislike buttons similar to forums and also support replies to comments.
-[ ] Save button in resources still does not work.
-[ ] My Notes in resources only seems to save temporarily and disappears if coming back to the page after a while.
-[ ] My complete tab in Async Debate: the action buttons are all touching the corner without proper padding.
-[ ] In the channels card in the dashboard, it still does not display the channels that you are in.
-[ ] clicking on a speech in dashboard takes you to a page where it is too zoomed in, and there are two audio playback buttons, and neither of them work.
+[X] Tabroom sync is still broken.
+[X] Messages still don't work.
+[X] The comments in the community tab should have like/dislike buttons similar to forums and also support replies to comments.
+[?] Save button in resources still does not work.
+[X] My Notes in resources only seems to save temporarily and disappears if coming back to the page after a while.
+[X] My complete tab in Async Debate: the action buttons are all touching the corner without proper padding.
+[X] In the channels card in the dashboard, it still does not display the channels that you are in.
+[X] clicking on a speech in dashboard takes you to a page where it is too zoomed in, and there are two audio playback buttons, and neither of them work.
 [ ] the above page should also have an ai summary of the speech, similar to that of async debates
-[ ] buttons don't match, e.g. profile page, record/upload page, resources page, recent speeches page. should match the normal buttons with the pill shape and text in middle, e.g. the upload buttons. Once clicked, it should perform the action. Also, for the buttons that are for saving/favoriting something, fix it to the normal button and add the outline of favorite symbol at the front. Once clicked, it should be filled with yellow.
+[X] buttons don't match, e.g. profile page, record/upload page, resources page, recent speeches page. should match the normal buttons with the pill shape and text in middle, e.g. the upload buttons. Once clicked, it should perform the action. Also, for the buttons that are for saving/favoriting something, fix it to the normal button and add the outline of favorite symbol at the front. Once clicked, it should be filled with yellow.
+[X] profile pages show how many followers the user has
+[?] reformat tabroom stuff, like dont display all of them at once, and also prioritize future events over past ones. sync more details of the events.
+[ ] comments on uploaded speeches should also have engagement options (e.g. like and dislike)
+[X] add more format options for upload speech page (speech events); remove "speaker name" textbox
+[?] make the sidebar collapsable
+[X] notifications bubble on top right corner
+[?] for posts that are sharable, clicking on the share button should make you able to send this to a person/group through messages
+[ ] make past speeches more organized; add filter dropdown similar to the resources page. similarly to the resources page, the speech page should have an upload button and the card for uploading should only appear once that button is clicked. otherwise, there should only be a search bar (like in resources) at the top and speeches below it. the search bar should have filters for format, topic category, etc. speeches uploaded by the user should be seperated by speeches uploaded by other users.
+[ ] "please fill out this field" error in speech page looks stylistically out of place and should be fixed to match the rest of the website
+[ ] speech playback bar looks different on safari than on chrome; make a standardized one that works on both browsers
+[ ] report button doesnt work
+
+[ ] Maybe (?): more social stuff kind of like social media but for debate, e.g. similar to instagram where you can upload videos
