@@ -69,6 +69,8 @@ const recoverLegacyShare = (content: string): { note: string; preview: ChatShare
       ? "debate"
       : /^\/app\/speeches\/[^/]+$/.test(parsed.pathname)
         ? "speech"
+        : /^\/app\/resources\/[^/]+$/.test(parsed.pathname)
+          ? "resource"
         : null;
   if (!kind) return null;
 

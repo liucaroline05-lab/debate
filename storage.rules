@@ -71,6 +71,12 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // Private chat attachments are moderated and written by Cloud Functions.
+    // Participants fetch them through an authorization-checking callable.
+    match /chatAttachments/{threadId}/{fileName} {
+      allow read, write: if false;
+    }
+
     // Speech recordings. The client path is not namespaced by uid, so ownership
     // can't be enforced by path -- require auth and validate the media instead.
     // Objects are immutable once written; deletes are not performed client-side.

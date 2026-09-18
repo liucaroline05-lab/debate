@@ -573,6 +573,7 @@ export const SettingsPage = () => {
           </div>
         </article>
 
+        <div className="settings-right-stack">
         <article className="app-card settings-messaging-card">
           <h2 className="card-title">Messaging privacy</h2>
           <p className="card-copy">Choose who can start a new DM or add you to a group chat.</p>
@@ -661,6 +662,7 @@ export const SettingsPage = () => {
             </div>
           </div>
         </article>
+        </div>
       </section>
     </>
   );

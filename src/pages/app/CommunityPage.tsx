@@ -168,6 +168,7 @@ export const CommunityPage = () => {
   }
   const authorName = safeName(author.displayName, "You");
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const [postContentMissing, setPostContentMissing] = useState(false);
   const [activeTab, setActiveTab] = useState<ForumTab>("All Posts");
   const [feedScope, setFeedScope] = useState<FeedScope>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -407,9 +408,11 @@ export const CommunityPage = () => {
 
   const createNewPost = async () => {
     if (!composer.content.trim()) {
-      setMessage("Write something before posting.");
+      setPostContentMissing(true);
+      composerRef.current?.focus();
       return;
     }
+    setPostContentMissing(false);
 
     try {
       await createPost({
@@ -659,13 +662,15 @@ export const CommunityPage = () => {
                 <label htmlFor="postContent">Post</label>
                 <textarea
                   id="postContent"
+                  aria-invalid={postContentMissing}
                   ref={composerRef}
                   value={composer.content}
                   onChange={(event) =>
-                    setComposer((current) => ({ ...current, content: event.target.value }))
+                    { setComposer((current) => ({ ...current, content: event.target.value })); setPostContentMissing(false); }
                   }
                   placeholder="Start the conversation..."
                 />
+                {postContentMissing ? <span className="speech-field-error" role="alert">Write something before posting.</span> : null}
               </div>
               <div className="form-field">
                 <label htmlFor="postCategory">Category</label>

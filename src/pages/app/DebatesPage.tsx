@@ -670,7 +670,8 @@ export const DebatesPage = () => {
           <div className="form-grid" style={{ marginTop: "1rem" }}>
             <div className="form-field full">
               <label htmlFor="inlineDebateTopic">Topic</label>
-              <input id="inlineDebateTopic" value={debateForm.topic} onChange={(event) => setDebateForm((current) => ({ ...current, topic: event.target.value }))} placeholder="Resolved: ..." autoFocus />
+              <input id="inlineDebateTopic" value={debateForm.topic} aria-invalid={modalMessage === "Add a debate topic before continuing."} onChange={(event) => { setDebateForm((current) => ({ ...current, topic: event.target.value })); setModalMessage(""); }} placeholder="Resolved: ..." autoFocus />
+              {modalMessage === "Add a debate topic before continuing." ? <span className="speech-field-error" role="alert">{modalMessage}</span> : null}
             </div>
             <div className="form-field">
               <label htmlFor="inlineDebateType">Debate type</label>

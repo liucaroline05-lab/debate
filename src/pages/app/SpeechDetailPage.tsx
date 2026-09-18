@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, where, type QueryConstraint } from "firebase/firestore";
 import {
   Download,
+  Bookmark,
   FileAudio,
   Flag,
   MoreHorizontal,
@@ -23,6 +24,7 @@ import {
   addSpeechComment,
   reportSpeechRecord,
   retrySpeechSummary,
+  toggleSpeechSave,
   toggleSpeechCommentReaction,
   updateSpeechRecord,
 } from "@/features/speeches/speechService";
@@ -35,11 +37,13 @@ import type {
   SpeechComment,
   SpeechCommentReaction,
   SpeechRecord,
+  SpeechSave,
   SpeechSummaryStatus,
 } from "@/types/models";
 
 const EMPTY_SPEECH_COMMENTS: SpeechComment[] = [];
 const EMPTY_SPEECH_COMMENT_REACTIONS: SpeechCommentReaction[] = [];
+const EMPTY_SPEECH_SAVES: SpeechSave[] = [];
 
 const summaryStatusCopy: Record<SpeechSummaryStatus, string> = {
   processing: "This recording is being transcribed and summarized. Check back shortly.",
@@ -108,6 +112,16 @@ export const SpeechDetailPage = () => {
   const [summaryRetryNotice, setSummaryRetryNotice] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [isSaveBusy, setIsSaveBusy] = useState(false);
+  const [optimisticSave, setOptimisticSave] = useState<boolean | null>(null);
+  const saveConstraints = useMemo<QueryConstraint[]>(
+    () => currentUser ? [where("userId", "==", currentUser.id)] : [],
+    [currentUser?.id],
+  );
+  const savesState = useSeededFirestoreCollection<SpeechSave>(
+    "speechSaves", EMPTY_SPEECH_SAVES, saveConstraints, Boolean(currentUser),
+    currentUser ? `speech-saves:${currentUser.id}` : undefined,
+  );
   const [isReportOpen, setIsReportOpen] = useState(searchParams.get("report") === "1");
   const [reportReason, setReportReason] = useState<"Harassment" | "Inappropriate content" | "Spam" | "Copyright" | "Other">("Inappropriate content");
   const [reportDetails, setReportDetails] = useState("");
@@ -148,6 +162,7 @@ export const SpeechDetailPage = () => {
     ?? { like: false, dislike: false };
 
   const isOwner = Boolean(speech?.creatorId && speech.creatorId === currentUser?.id);
+  const isSaved = optimisticSave ?? savesState.data.some((save) => save.speechId === speechId);
   const isEditing = isOwner && searchParams.get("mode") === "edit";
 
   useEffect(() => {
@@ -377,6 +392,20 @@ export const SpeechDetailPage = () => {
           </p>
         </div>
         <div className="button-row">
+          {currentUser ? <button type="button" className="btn btn-toggle" aria-pressed={isSaved} disabled={isSaveBusy} onClick={async () => {
+            if (!speechId) return;
+            const next = !isSaved;
+            setOptimisticSave(next);
+            setIsSaveBusy(true);
+            try {
+              await toggleSpeechSave(speechId, currentUser.id, isSaved);
+            } catch (cause) {
+              setOptimisticSave(null);
+              setError(cause instanceof Error ? cause.message : "Unable to update saved speeches.");
+            } finally {
+              setIsSaveBusy(false);
+            }
+          }}><Bookmark size={16} aria-hidden="true" /> {isSaved ? "Saved" : "Save"}</button> : null}
           {(speech.visibility === "public" || isOwner) ? (
             <button type="button" className="btn btn-secondary" onClick={() => setShareOpen(true)}>
               <Share2 size={16} aria-hidden="true" /> Share

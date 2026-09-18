@@ -142,4 +142,20 @@ describe("UserProfileView", () => {
     expect(counts?.textContent).toContain("2 followers");
     expect(counts?.textContent).toContain("1 following");
   });
+
+  it("links authored posts from Activity to the actual community post", async () => {
+    collectionState.dataByCollection.set("posts", [{ id: "post-42", authorId: "demo-user", title: "Tournament recap", category: "All Posts", replyCount: 0 }]);
+    render(<MemoryRouter><UserProfileView userId="demo-user" isOwnProfile /></MemoryRouter>);
+    await userEvent.click(screen.getByRole("tab", { name: "Activity" }));
+    expect(screen.getByRole("link", { name: /Tournament recap/ })).toHaveAttribute("href", "/app/community?post=post-42");
+  });
+
+  it("shows only synced events, not sync controls, on someone else's Tabroom tab", async () => {
+    collectionState.dataByCollection.set("users", [demoUser, { ...demoUser, id: "other", showTabroomHistory: true }]);
+    render(<MemoryRouter><UserProfileView userId="other" isOwnProfile={false} /></MemoryRouter>);
+    await userEvent.click(screen.getByRole("tab", { name: "Tabroom" }));
+    expect(screen.getByRole("heading", { name: "Synced events" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Tabroom sync" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Link Tabroom" })).not.toBeInTheDocument();
+  });
 });

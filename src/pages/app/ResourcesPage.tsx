@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileUp,
   Search,
+  SlidersHorizontal,
   Upload,
 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
@@ -15,6 +16,7 @@ import { useAuth } from "@/features/auth/AuthContext";
 import { createResource } from "@/features/resources/resourceService";
 import { where, type QueryConstraint } from "firebase/firestore";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
+import { speechFormats } from "@/lib/speechFormats";
 import type { ResourceItem, ResourceSave } from "@/types/models";
 
 const EMPTY_RESOURCE_SAVES: ResourceSave[] = [];
@@ -30,11 +32,7 @@ const levels: Array<"All" | ResourceItem["level"]> = ["All", "Starter", "Growth"
 const formats: Array<"All" | NonNullable<ResourceItem["format"]>> = [
   "All",
   "All Formats",
-  "Policy",
-  "Lincoln-Douglas",
-  "Public Forum",
-  "Congress",
-  "Extemp",
+  ...speechFormats,
 ];
 const mediaTypes: Array<"All" | NonNullable<ResourceItem["mediaType"]>> = [
   "All",
@@ -98,6 +96,7 @@ export const ResourcesPage = () => {
   const [message, setMessage] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [uploadFieldError, setUploadFieldError] = useState<"title" | "description" | "overview" | "content" | null>(null);
 
   const allTags = useMemo(
     () => Array.from(new Set(resourceState.data.flatMap((resource) => resource.tags))).sort(),
@@ -185,6 +184,17 @@ export const ResourcesPage = () => {
       setMessage("Sign in before uploading a resource.");
       return;
     }
+    const missing = !composer.title.trim() ? "title"
+      : !composer.description.trim() ? "description"
+      : composer.resourceType === "Quick Read" && !composer.longDescription.trim() ? "overview"
+      : composer.resourceType !== "Quick Read" && !composer.body.trim() && !composer.externalUrl.trim() && !composer.file ? "content"
+      : null;
+    if (missing) {
+      setUploadFieldError(missing);
+      document.getElementById(missing === "content" ? "resourceBody" : missing === "overview" ? "resourceLongDescription" : missing === "description" ? "resourceDescription" : "resourceTitle")?.focus();
+      return;
+    }
+    setUploadFieldError(null);
 
     setIsUploading(true);
     setMessage("");
@@ -206,6 +216,7 @@ export const ResourcesPage = () => {
           .filter(Boolean),
       });
       setComposer(initialComposer);
+      setUploadFieldError(null);
       setIsUploadOpen(false);
       setMessage("Resource uploaded.");
     } catch (error) {
@@ -289,11 +300,13 @@ export const ResourcesPage = () => {
             <label htmlFor="resourceTitle">Title</label>
             <input
               id="resourceTitle"
+              aria-invalid={uploadFieldError === "title"}
               ref={uploadTitleRef}
               value={composer.title}
-              onChange={(event) => setComposer((current) => ({ ...current, title: event.target.value }))}
+              onChange={(event) => { setComposer((current) => ({ ...current, title: event.target.value })); setUploadFieldError(null); }}
               placeholder="Evidence triage drill"
             />
+            {uploadFieldError === "title" ? <span className="speech-field-error" role="alert">Add a title before uploading.</span> : null}
           </div>
           <div className="form-field">
             <label htmlFor="resourceCategory">Category</label>
@@ -316,21 +329,25 @@ export const ResourcesPage = () => {
             <label htmlFor="resourceDescription">Short description</label>
             <input
               id="resourceDescription"
+              aria-invalid={uploadFieldError === "description"}
               value={composer.description}
               onChange={(event) =>
-                setComposer((current) => ({ ...current, description: event.target.value }))
+                { setComposer((current) => ({ ...current, description: event.target.value })); setUploadFieldError(null); }
               }
               placeholder="What will this help debaters do?"
             />
+            {uploadFieldError === "description" ? <span className="speech-field-error" role="alert">Add a short description before uploading.</span> : null}
           </div>
           <div className="form-field full">
             <label htmlFor="resourceLongDescription">{composer.resourceType === "Quick Read" ? "Overview" : "Long description"}</label>
             <textarea
               id="resourceLongDescription"
+              aria-invalid={uploadFieldError === "overview"}
               value={composer.longDescription}
-              onChange={(event) => setComposer((current) => ({ ...current, longDescription: event.target.value }))}
+              onChange={(event) => { setComposer((current) => ({ ...current, longDescription: event.target.value })); setUploadFieldError(null); }}
               placeholder="Give readers the full overview they will see on the resource page."
             />
+            {uploadFieldError === "overview" ? <span className="speech-field-error" role="alert">Add an overview for this quick read.</span> : null}
           </div>
           <div className="form-field">
             <label htmlFor="resourceLevel">Level</label>
@@ -398,7 +415,7 @@ export const ResourcesPage = () => {
               id="resourceLink"
               value={composer.externalUrl}
               onChange={(event) =>
-                setComposer((current) => ({ ...current, externalUrl: event.target.value }))
+                { setComposer((current) => ({ ...current, externalUrl: event.target.value })); setUploadFieldError(null); }
               }
               placeholder="https://..."
             />
@@ -412,10 +429,10 @@ export const ResourcesPage = () => {
                 accept="audio/*,video/*"
                 className="file-input-native"
                 onChange={(event) =>
-                  setComposer((current) => ({
+                  { setComposer((current) => ({
                     ...current,
                     file: event.target.files?.[0] ?? null,
-                  }))
+                  })); setUploadFieldError(null); }
                 }
               />
               <label htmlFor="resourceFile" className="file-input-trigger">
@@ -453,10 +470,12 @@ export const ResourcesPage = () => {
             <label htmlFor="resourceBody">Notes</label>
             <textarea
               id="resourceBody"
+              aria-invalid={uploadFieldError === "content"}
               value={composer.body}
-              onChange={(event) => setComposer((current) => ({ ...current, body: event.target.value }))}
+              onChange={(event) => { setComposer((current) => ({ ...current, body: event.target.value })); setUploadFieldError(null); }}
               placeholder="Add drills, instructions, examples, or context for the resource."
             />
+            {uploadFieldError === "content" ? <span className="speech-field-error" role="alert">Add notes, a link, or an audio/video file before uploading.</span> : null}
           </div> : null}
         </div>
 
@@ -483,12 +502,15 @@ export const ResourcesPage = () => {
         <label className="forum-search resource-search" htmlFor="resourceSearch">
           <Search size={18} />
           <input
+            type="search"
             id="resourceSearch"
             placeholder="Search titles, tags, curators, formats, or topic notes"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
+        <details className="speech-filter-details">
+          <summary><SlidersHorizontal size={16} aria-hidden="true" /> Filters</summary>
         <div className="resource-filter-grid">
           <div className="form-field">
             <label htmlFor="category">Category</label>
@@ -523,6 +545,7 @@ export const ResourcesPage = () => {
             </select>
           </div>
         </div>
+        </details>
         <div className="resource-filter-footer">
           <button
             type="button"

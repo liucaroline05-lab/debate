@@ -53,7 +53,14 @@ const speech = (id: string, overrides: Partial<SpeechRecord> = {}): SpeechRecord
 
 const renderPage = () => render(<MemoryRouter><SpeechUploadPage /></MemoryRouter>);
 
+const renderDirectUpload = () => render(<MemoryRouter initialEntries={["/app/speeches/new?upload=1"]}><SpeechUploadPage /></MemoryRouter>);
+
 describe("SpeechUploadPage", () => {
+  it("opens the upload form when linked from Upload another", () => {
+    renderDirectUpload();
+    expect(screen.getByRole("button", { name: "Upload Speech" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("Speech title")).toBeInTheDocument();
+  });
   beforeEach(() => {
     mocks.createSpeechRecord.mockReset().mockImplementation(async (input) => ({
       id: "new-speech",

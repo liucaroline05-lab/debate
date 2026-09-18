@@ -30,12 +30,14 @@ vi.mock("@/features/speeches/speechService", () => ({
   reportSpeechRecord: mocks.reportSpeechRecord,
   retrySpeechSummary: mocks.retrySpeechSummary,
   updateSpeechRecord: vi.fn(),
+  toggleSpeechSave: vi.fn(),
 }));
 
 vi.mock("@/lib/firebase", () => ({ firestore: {} }));
 
 vi.mock("firebase/firestore", () => ({
   doc: () => ({}),
+  where: () => ({}),
   onSnapshot: (
     _reference: unknown,
     onNext: (snapshot: {

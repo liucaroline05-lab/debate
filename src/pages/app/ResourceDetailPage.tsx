@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
-import { ArrowLeft, Bookmark, ExternalLink } from "lucide-react";
+import { ArrowLeft, Bookmark, ExternalLink, Share2 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { seededResources } from "@/data/firestoreSeeds";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { useAuth } from "@/features/auth/AuthContext";
+import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import {
   saveResourceNote,
   subscribeToResourceNote,
@@ -92,6 +93,7 @@ export const ResourceDetailPage = () => {
   const [isSaveBusy, setIsSaveBusy] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [optimisticSave, setOptimisticSave] = useState<boolean | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const persistedIsSaved = saveState.data.some((save) => save.resourceId === resource?.id);
   const isSaved = optimisticSave ?? persistedIsSaved;
@@ -291,6 +293,9 @@ export const ResourceDetailPage = () => {
             >
               <Bookmark size={16} aria-hidden="true" /> {isSaved ? "Saved" : "Save"}
             </button>
+            <button type="button" className="btn btn-secondary" onClick={() => setShareOpen(true)}>
+              <Share2 size={16} aria-hidden="true" /> Share
+            </button>
             {isOwner ? <button type="button" className="btn btn-ghost" onClick={beginEditing}>Edit resource</button> : null}
             {!isQuickRead && resource.externalUrl ? (
               <a className="btn btn-primary" href={resource.externalUrl} target="_blank" rel="noreferrer">
@@ -301,6 +306,18 @@ export const ResourceDetailPage = () => {
           {saveMessage ? <p className="meta-line" role="status">{saveMessage}</p> : null}
         </div>
       </section>
+
+      {shareOpen ? <ShareToMessageDialog
+        title={resource.title}
+        url={`${window.location.origin}/app/resources/${resource.slug || resource.id}`}
+        previewKind="resource"
+        media={resource.thumbnailUrl
+          ? [{ kind: "image", url: new URL(resource.thumbnailUrl, window.location.origin).href, name: resource.title }]
+          : resource.mediaType === "Video" && resource.mediaPath
+            ? [{ kind: "video", url: new URL(resource.mediaPath, window.location.origin).href, name: resource.title }]
+            : undefined}
+        onClose={() => setShareOpen(false)}
+      /> : null}
 
       {isEditing ? (
         <section className="app-card resource-upload-card">

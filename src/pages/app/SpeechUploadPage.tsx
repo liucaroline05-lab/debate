@@ -1,14 +1,14 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
-import { NavLink } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { NavLink, useSearchParams } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
-import { Search, SlidersHorizontal, Upload, X } from "lucide-react";
+import { Bookmark, Search, SlidersHorizontal, Upload, X } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { createSpeechRecord } from "@/features/speeches/speechService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDateTime } from "@/lib/date";
 import { defaultSpeechFormat, speechFormatGroups, speechFormats } from "@/lib/speechFormats";
 import { speechTopicCategories } from "@/lib/speechTopics";
-import type { SpeechRecord } from "@/types/models";
+import type { SpeechRecord, SpeechSave } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
 
 const initialForm = {
@@ -23,21 +23,32 @@ const initialForm = {
   commentsEnabled: true,
 };
 const EMPTY_SPEECH_SEEDS: SpeechRecord[] = [];
+const EMPTY_SPEECH_SAVES: SpeechSave[] = [];
 
 export const SpeechUploadPage = () => {
+  const [searchParams] = useSearchParams();
+  const openUploadFromUrl = searchParams.get("upload") === "1";
   const [form, setForm] = useState(initialForm);
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(openUploadFromUrl);
   const [fieldError, setFieldError] = useState<"title" | "eventName" | null>(null);
   const [query, setQuery] = useState("");
   const [formatFilter, setFormatFilter] = useState("All");
   const [topicFilter, setTopicFilter] = useState("All");
   const [visibilityFilter, setVisibilityFilter] = useState("All");
   const [sortOrder, setSortOrder] = useState("Newest");
+  const [savedOnly, setSavedOnly] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const eventRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (openUploadFromUrl) {
+      setIsUploadOpen(true);
+      window.setTimeout(() => titleRef.current?.focus(), 0);
+    }
+  }, [openUploadFromUrl]);
 
   const { currentUser } = useAuth();
   const currentUserId = currentUser?.id;
@@ -63,6 +74,13 @@ export const SpeechUploadPage = () => {
     true,
     "speeches:public",
   );
+  const savesState = useSeededFirestoreCollection<SpeechSave>(
+    "speechSaves",
+    EMPTY_SPEECH_SAVES,
+    useMemo<QueryConstraint[]>(() => currentUserId ? [where("userId", "==", currentUserId)] : [], [currentUserId]),
+    Boolean(currentUserId),
+    currentUserId ? `speech-saves:${currentUserId}` : undefined,
+  );
   const speechHistory = useMemo(() => {
     const mine = [...ownSpeeches.data];
     const mineIds = new Set(mine.map((speech) => speech.id));
@@ -73,7 +91,9 @@ export const SpeechUploadPage = () => {
   }, [ownSpeeches.data, publicSpeeches.data]);
   const filteredSpeeches = useMemo(() => {
     const search = query.trim().toLowerCase();
+    const savedIds = new Set(savesState.data.map((save) => save.speechId));
     return speechHistory.filter((speech) => {
+      if (savedOnly && !savedIds.has(speech.id)) return false;
       if (formatFilter !== "All" && speech.format !== formatFilter) return false;
       if (topicFilter !== "All" && (speech.topicCategory ?? "Uncategorized") !== topicFilter) return false;
       if (visibilityFilter !== "All" && (speech.visibility ?? "private") !== visibilityFilter.toLowerCase()) return false;
@@ -93,7 +113,7 @@ export const SpeechUploadPage = () => {
       : sortOrder === "Oldest"
         ? left.uploadedAt.localeCompare(right.uploadedAt)
         : right.uploadedAt.localeCompare(left.uploadedAt));
-  }, [formatFilter, query, sortOrder, speechHistory, topicFilter, visibilityFilter]);
+  }, [formatFilter, query, savedOnly, savesState.data, sortOrder, speechHistory, topicFilter, visibilityFilter]);
   const mySpeeches = filteredSpeeches.filter((speech) => speech.creatorId === currentUserId);
   const otherSpeeches = filteredSpeeches.filter((speech) => speech.creatorId !== currentUserId);
 
@@ -410,7 +430,12 @@ export const SpeechUploadPage = () => {
             </div>
           </div>
         </details>
-        <span className="meta-line">{filteredSpeeches.length} speech{filteredSpeeches.length === 1 ? "" : "es"} found</span>
+        <div className="resource-filter-footer">
+          <button type="button" className="btn btn-toggle" aria-pressed={savedOnly} onClick={() => setSavedOnly((current) => !current)}>
+            <Bookmark size={16} aria-hidden="true" /> Saved only
+          </button>
+          <span className="meta-line">{filteredSpeeches.length} speech{filteredSpeeches.length === 1 ? "" : "es"} found</span>
+        </div>
       </section>
 
       <section className="speech-library-sections" aria-label="Past speeches">

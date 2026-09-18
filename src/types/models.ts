@@ -102,6 +102,13 @@ export interface SpeechComment {
   dislikeCount?: number;
 }
 
+export interface SpeechSave {
+  id: string;
+  speechId: string;
+  userId: string;
+  createdAt: string;
+}
+
 export interface SpeechCommentReaction {
   id: string;
   commentId: string;
@@ -299,11 +306,20 @@ export interface ChatMessage {
   authorName: string;
   content: string;
   sharedPreview?: ChatSharedPreview;
+  attachment?: ChatAttachment;
   createdAt: string;
 }
 
+export interface ChatAttachment {
+  kind: "image" | "audio" | "document";
+  name: string;
+  contentType: string;
+  size: number;
+  storagePath: string;
+}
+
 export interface ChatSharedPreview {
-  kind: "post" | "debate" | "speech";
+  kind: "post" | "debate" | "speech" | "resource";
   title: string;
   url: string;
   media?: Array<{ kind: "image" | "video"; url: string; name: string }>;
@@ -344,7 +360,7 @@ export interface ResourceItem {
   creatorRole?: UserRole;
   saved: boolean;
   level: "Starter" | "Growth" | "Advanced";
-  format?: "Policy" | "Lincoln-Douglas" | "Public Forum" | "Congress" | "Extemp" | "All Formats";
+  format?: SpeechFormat | "All Formats";
   mediaType?: "Article" | "Audio" | "Video" | "Link" | "Worksheet";
   mediaPath?: string;
   externalUrl?: string;

@@ -882,12 +882,12 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
             <h2 className="card-title">Posts</h2>
             <div className="list" style={{ marginTop: "1rem" }}>
               {authoredPosts.map((post) => (
-                <div key={post.id} className="list-item">
+                <Link key={post.id} to={`/app/community?post=${encodeURIComponent(post.id)}`} className="list-item dashboard-list-link">
                   <strong>{post.title}</strong>
                   <span className="meta-line">
                     {post.category} • {post.likeCount ?? 0} likes • {post.replyCount} comments
                   </span>
-                </div>
+                </Link>
               ))}
             </div>
           </article>
@@ -907,9 +907,8 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
           </article>
         </section> : null}
 
-        {activeTab === "Tabroom" ? <section className="settings-grid"><article className="app-card" id="tabroom">
-            <h2 className="card-title">{isOwnProfile ? "Tabroom sync" : "Tabroom history"}</h2>
-            {isOwnProfile ? (
+        {activeTab === "Tabroom" ? <section className="settings-grid" id="tabroom">{isOwnProfile ? <article className="app-card">
+            <h2 className="card-title">Tabroom sync</h2>
               <div className="form-grid" style={{ marginTop: "1rem" }}>
                 {isTabroomLinked ? (
                   <>
@@ -977,11 +976,6 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
                   </>
                 )}
               </div>
-            ) : profile.showTabroomHistory ? (
-              <p className="card-copy">Public Tabroom history is shown below.</p>
-            ) : (
-              <p className="card-copy">This profile does not have a public Tabroom history.</p>
-            )}
 
             {isOwnProfile ? (
               <div className="profile-tabroom-visibility">
@@ -1032,6 +1026,9 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
               {tabroomImport?.errorMessage ? <p className="meta-line is-error">{tabroomImport.errorMessage}</p> : null}
             </> : null}
 
+          </article> : null}
+          <article className="app-card">
+            <h2 className="card-title">Synced events</h2>
             {(isOwnProfile || profile.showTabroomHistory) ? (
               <TabroomEventList
                 upcoming={upcomingTabroomEvents}
@@ -1043,7 +1040,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
                 }}
                 showAll={showAllTabroomEvents}
                 onShowAll={() => setShowAllTabroomEvents(true)}
-                isLinked={isTabroomLinked}
+                isLinked={isOwnProfile ? isTabroomLinked : true}
               />
             ) : <p className="card-copy">This user has not chosen to display their Tabroom history.</p>}
           </article>

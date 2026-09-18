@@ -26,6 +26,7 @@ export {
   transcribeDebateSpeech,
 } from "./debateAi";
 export { retrySpeechSummary, summarizeUploadedSpeech } from "./speechAi";
+export { sendModeratedChatAttachment, getChatAttachment } from "./chatAttachments";
 
 interface UploadProfilePhotoRequest {
   contentType?: unknown;

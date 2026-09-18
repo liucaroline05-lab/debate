@@ -23,6 +23,12 @@ const service = vi.hoisted(() => ({
 
 vi.mock("@/features/resources/resourceService", () => service);
 
+vi.mock("@/features/messages/ShareToMessageDialog", () => ({
+  ShareToMessageDialog: ({ title, url, previewKind }: { title: string; url: string; previewKind: string }) => (
+    <div role="dialog" aria-label="Share resource">{`${previewKind}: ${title} — ${url}`}</div>
+  ),
+}));
+
 const mocks = vi.hoisted(() => ({
   note: null as ResourceNote | null,
   saves: [] as ResourceSave[],
@@ -90,6 +96,12 @@ describe("ResourceDetailPage", () => {
         "true",
       ),
     );
+  });
+
+  it("offers a direct rich resource share", async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole("button", { name: "Share" }));
+    expect(screen.getByRole("dialog", { name: "Share resource" })).toHaveTextContent(`resource: Evidence triage drill — ${window.location.origin}/app/resources/evidence-triage`);
   });
 
   it("shows the note already stored for this reader", () => {

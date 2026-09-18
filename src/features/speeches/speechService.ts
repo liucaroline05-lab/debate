@@ -34,6 +34,17 @@ export const retrySpeechSummary = async (speechId: string) => {
   return (await retry({ speechId })).data.status;
 };
 
+export const toggleSpeechSave = async (speechId: string, userId: string, isSaved: boolean) => {
+  if (!firestore) throw new Error("Firebase is not configured.");
+  const saveRef = doc(firestore, "speechSaves", `${speechId}-${userId}`);
+  if (isSaved) {
+    await deleteDoc(saveRef);
+    return false;
+  }
+  await setDoc(saveRef, { speechId, userId, createdAt: new Date().toISOString() });
+  return true;
+};
+
 interface NewSpeechInput {
   userId: string;
   title: string;

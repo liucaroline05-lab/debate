@@ -3,6 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   MessageCircle,
+  Paperclip,
+  Mic,
+  Square,
   Plus,
   Search,
   Send,
@@ -14,6 +17,8 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { seededUsers } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
 import { MessageContent } from "@/features/messages/MessageContent";
+import { ChatAttachmentView } from "@/features/messages/ChatAttachmentView";
+import { sendChatAttachment, validateChatAttachment } from "@/features/messages/chatAttachmentService";
 import {
   sendChatMessage,
   startDirectThread,
@@ -70,6 +75,11 @@ export const MessagesPage = () => {
   const [isThreadsLoading, setIsThreadsLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentError, setAttachmentError] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("direct");
@@ -79,6 +89,14 @@ export const MessagesPage = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [composerError, setComposerError] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => () => {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.onstop = null;
+      recorderRef.current.stop();
+    }
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
 
   // Firestore user documents are raw here: older accounts predate fields like
   // organizationTags, and reading one of those straight off the document threw
@@ -238,17 +256,52 @@ export const MessagesPage = () => {
 
   const submitMessage = async (event: FormEvent) => {
     event.preventDefault();
-    if (!currentUser || !activeThread || !messageDraft.trim() || isSending) return;
+    if (!currentUser || !activeThread || (!messageDraft.trim() && !attachmentFile) || isSending) return;
 
     setIsSending(true);
     setPageError("");
     try {
-      await sendChatMessage(activeThread, currentUser, messageDraft);
+      if (attachmentFile) {
+        await sendChatAttachment(activeThread.id, attachmentFile, messageDraft);
+        setAttachmentFile(null);
+      } else {
+        await sendChatMessage(activeThread, currentUser, messageDraft);
+      }
       setMessageDraft("");
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Unable to send your message.");
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      recorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredType = ["audio/webm", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type));
+      if (!preferredType) throw new Error("Voice recording is not supported in this browser.");
+      recordingStreamRef.current = stream;
+      const recorder = new MediaRecorder(stream, { mimeType: preferredType });
+      recorderRef.current = recorder;
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const file = new File(chunks, `voice-message.${preferredType === "audio/mp4" ? "m4a" : "webm"}`, { type: preferredType });
+        try { validateChatAttachment(file); setAttachmentFile(file); setAttachmentError(""); }
+        catch (error) { setAttachmentError(error instanceof Error ? error.message : "Recording could not be attached."); }
+      };
+      recorder.start();
+      setIsRecording(true);
+      setAttachmentError("");
+    } catch (error) {
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+      setAttachmentError(error instanceof Error ? error.message : "Could not start recording.");
     }
   };
 
@@ -402,6 +455,14 @@ export const MessagesPage = () => {
                   key={thread.id}
                   className={activeThreadId === thread.id ? "message-thread-button is-active" : "message-thread-button"}
                   onClick={() => {
+                    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+                      recorderRef.current.onstop = null;
+                      recorderRef.current.stop();
+                      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+                      setIsRecording(false);
+                    }
+                    setAttachmentFile(null);
+                    setAttachmentError("");
                     setActiveThreadId(thread.id);
                     setSearchParams({ thread: thread.id });
                   }}
@@ -474,7 +535,10 @@ export const MessagesPage = () => {
                             <small>{formatMessageTime(message.createdAt)}</small>
                           </span>
                         ) : null}
-                        <MessageContent content={message.content} sharedPreview={message.sharedPreview} />
+                        {(!message.attachment || message.content !== `Shared ${message.attachment.kind}: ${message.attachment.name}`)
+                          ? <MessageContent content={message.content} sharedPreview={message.sharedPreview} />
+                          : null}
+                        {message.attachment ? <ChatAttachmentView message={message} /> : null}
                       </div>
                     </div>
                   );
@@ -483,6 +547,16 @@ export const MessagesPage = () => {
               </div>
 
               <form className="message-compose-bar" onSubmit={(event) => void submitMessage(event)}>
+                <label className="message-attach-button" aria-label="Attach a file" title="Attach a file"><Paperclip size={19} aria-hidden="true" />
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,audio/*,.pdf,.docx,.txt" onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    try { validateChatAttachment(file); setAttachmentFile(file); setAttachmentError(""); }
+                    catch (error) { setAttachmentError(error instanceof Error ? error.message : "This file cannot be attached."); }
+                    event.target.value = "";
+                  }} />
+                </label>
+                <button type="button" className="message-attach-button" aria-label={isRecording ? "Stop recording" : "Record a voice message"} onClick={() => void toggleRecording()}>{isRecording ? <Square size={17} /> : <Mic size={19} />}</button>
                 <label htmlFor="messageDraft" className="sr-only">Message {threadTitle(activeThread)}</label>
                 <textarea
                   id="messageDraft"
@@ -498,10 +572,15 @@ export const MessagesPage = () => {
                     }
                   }}
                 />
-                <button type="submit" className="message-send-button" disabled={isSending || !messageDraft.trim()} aria-label="Send message">
+                <button type="submit" className="message-send-button" disabled={isSending || (!messageDraft.trim() && !attachmentFile)} aria-label="Send message">
                   <Send size={19} aria-hidden="true" />
                 </button>
               </form>
+              {attachmentFile || attachmentError ? <div className="message-attachment-draft">
+                {attachmentFile ? <span>Attached: {attachmentFile.name} <button type="button" aria-label="Remove attachment" onClick={() => setAttachmentFile(null)}><X size={15} /></button></span> : null}
+                {attachmentError ? <span className="speech-field-error" role="alert">{attachmentError}</span> : null}
+                {attachmentFile ? <small>Checked by AI before sending. Maximum 4 MB.</small> : null}
+              </div> : null}
             </>
           ) : (
             <div className="messages-chat-empty">

@@ -184,6 +184,14 @@ service cloud.firestore {
       allow delete: if ownsExistingResource("creatorId");
     }
 
+    match /speechSaves/{saveId} {
+      allow read: if isSignedIn()
+        && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if ownsExistingResource("userId");
+    }
+
     // A private speech remains unlisted, but its creator can grant selected
     // message recipients access to the detail page by document ID.
     match /speechShares/{speechId}/recipients/{recipientId} {
@@ -461,6 +469,7 @@ service cloud.firestore {
         );
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid
+        && !("attachment" in request.resource.data)
         && request.resource.data.content is string
         && request.resource.data.content.size() > 0
         && request.resource.data.content.size() <= 4000

@@ -4,6 +4,12 @@ import { describe, expect, it } from "vitest";
 import { MessageContent } from "@/features/messages/MessageContent";
 
 describe("MessageContent", () => {
+  it("renders resource shares as rich internal cards", () => {
+    const url = `${window.location.origin}/app/resources/quick-read`;
+    render(<MemoryRouter><MessageContent content={`Quick read — ${url}`} sharedPreview={{ kind: "resource", title: "Quick read", url, media: [{ kind: "image", url: "https://example.com/cover.jpg", name: "Cover" }] }} /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: /Quick read/ })).toHaveAttribute("href", "/app/resources/quick-read");
+    expect(screen.getByRole("img", { name: "Cover" })).toBeInTheDocument();
+  });
   it("renders older shared post links as clickable title cards", () => {
     const url = `${window.location.origin}/app/community?post=post-1`;
     render(<MemoryRouter><MessageContent content={`Read this — ${url}`} /></MemoryRouter>);

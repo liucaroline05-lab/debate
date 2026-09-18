@@ -135,7 +135,7 @@ export const DashboardPage = () => {
                 Recent speeches
               </h2>
             </div>
-            <NavLink to="/app/speeches/new" className="btn btn-primary">
+            <NavLink to="/app/speeches/new?upload=1" className="btn btn-primary">
               Upload another
             </NavLink>
           </div>

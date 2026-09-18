@@ -33,5 +33,6 @@ describe("DashboardPage", () => {
     expect(screen.getByRole("heading", { name: /recent speeches/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /resource library/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /channels/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Upload another" })).toHaveAttribute("href", "/app/speeches/new?upload=1");
   });
 });

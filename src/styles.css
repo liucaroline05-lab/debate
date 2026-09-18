@@ -2335,8 +2335,11 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.settings-debate-preferences-card {
-  grid-column: 2;
+.settings-right-stack {
+  display: grid;
+  gap: 1.5rem;
+  align-content: start;
+  min-width: 0;
 }
 
 .settings-history-row {
@@ -2968,7 +2971,7 @@ button {
 
 .message-compose-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   gap: 0.75rem;
   padding: 1rem 1.2rem;
   border-top: 1px solid rgba(53, 47, 42, 0.08);
@@ -3990,6 +3993,74 @@ button {
   padding-right: 0.25rem;
 }
 
+.message-attach-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  align-self: end;
+  width: 2.75rem;
+  height: 3rem;
+  border: 0;
+  border-radius: 16px;
+  background: rgba(245, 239, 230, 0.9);
+  color: var(--color-moss);
+  cursor: pointer;
+}
+
+.message-attach-button input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.message-attachment-draft {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0 1.2rem 0.8rem;
+  background: rgba(255, 253, 248, 0.9);
+  font-size: 0.85rem;
+}
+
+.message-attachment-draft > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.message-attachment-draft button,
+.message-attachment a {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.message-attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 22rem;
+  margin-top: 0.35rem;
+  padding: 0.65rem;
+  border-radius: 14px;
+  background: rgba(245, 239, 230, 0.95);
+  overflow-wrap: anywhere;
+}
+
+.message-attachment img {
+  width: min(18rem, 100%);
+  max-height: 18rem;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.message-attachment audio { max-width: 15rem; }
+
 .message-bubble.is-shared,
 .message-row.is-own .message-bubble.is-shared {
   padding: 0;
@@ -4150,7 +4221,10 @@ button {
   font-weight: 600;
 }
 
-.speech-upload-card [aria-invalid="true"] {
+.speech-upload-card [aria-invalid="true"],
+.resource-upload-card [aria-invalid="true"],
+.debate-inline-composer [aria-invalid="true"],
+.forum-composer-card [aria-invalid="true"] {
   border-color: #b45b48;
   box-shadow: 0 0 0 3px rgba(180, 91, 72, 0.12);
 }

@@ -8,6 +8,7 @@ import type { ChatMessage, ChatThread, UserProfile } from "@/types/models";
 
 const mocks = vi.hoisted(() => ({
   sendChatMessage: vi.fn(),
+  sendChatAttachment: vi.fn(),
   startDirectThread: vi.fn(),
   startGroupThread: vi.fn(),
   extraUsers: [] as unknown[],
@@ -106,6 +107,11 @@ vi.mock("@/features/messages/messageService", () => ({
   startGroupThread: mocks.startGroupThread,
 }));
 
+vi.mock("@/features/messages/chatAttachmentService", () => ({
+  sendChatAttachment: mocks.sendChatAttachment,
+  validateChatAttachment: vi.fn(),
+}));
+
 const renderMessages = (initialEntry = "/app/messages") => render(
   <MemoryRouter initialEntries={[initialEntry]}>
     <MessagesPage />
@@ -117,6 +123,7 @@ describe("MessagesPage", () => {
     mocks.extraUsers = [];
     mocks.threads = [thread];
     mocks.sendChatMessage.mockReset().mockResolvedValue(undefined);
+    mocks.sendChatAttachment.mockReset().mockResolvedValue(undefined);
     mocks.startDirectThread.mockReset().mockResolvedValue(thread.id);
     mocks.startGroupThread.mockReset().mockResolvedValue("group-1");
   });
@@ -132,6 +139,17 @@ describe("MessagesPage", () => {
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
     expect(mocks.sendChatMessage).toHaveBeenCalledWith(thread, currentUser, "I’m in!");
+  });
+
+  it("sends an attached file through the moderated path", async () => {
+    const user = userEvent.setup();
+    renderMessages();
+    const file = new File(["Practice notes"], "notes.txt", { type: "text/plain" });
+    await user.upload(screen.getByLabelText("Attach a file"), file);
+    expect(screen.getByText(/Attached: notes.txt/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(mocks.sendChatAttachment).toHaveBeenCalledWith(thread.id, file, "");
+    expect(mocks.sendChatMessage).not.toHaveBeenCalled();
   });
 
   it("opens the conversation named in a notification link", async () => {
