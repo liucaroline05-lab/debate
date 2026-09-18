@@ -16,6 +16,8 @@ interface ShareToMessageDialogProps {
   title: string;
   url: string;
   onClose: () => void;
+  allowCopyLink?: boolean;
+  onBeforeSend?: (recipientIds: string[]) => Promise<void>;
 }
 
 type Target =
@@ -28,7 +30,7 @@ const safeInitial = (value?: string) => value?.trim().charAt(0).toUpperCase() ||
  * Sends a link to an existing conversation or straight to a person, creating
  * the direct thread first when there is not one yet.
  */
-export const ShareToMessageDialog = ({ title, url, onClose }: ShareToMessageDialogProps) => {
+export const ShareToMessageDialog = ({ title, url, onClose, allowCopyLink = true, onBeforeSend }: ShareToMessageDialogProps) => {
   const { currentUser } = useAuth();
   const usersState = useSeededFirestoreCollection("users", seededUsers);
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -127,6 +129,7 @@ export const ShareToMessageDialog = ({ title, url, onClose }: ShareToMessageDial
         };
       }
 
+      await onBeforeSend?.(thread.participantIds.filter((id) => id !== currentUser.id));
       await sendChatMessage(thread, currentUser, body);
       setSentTargetId(target.id);
       window.setTimeout(() => setSentTargetId(""), 2_000);
@@ -240,11 +243,15 @@ export const ShareToMessageDialog = ({ title, url, onClose }: ShareToMessageDial
         {error ? <p className="form-error" role="alert">{error}</p> : null}
 
         <div className="share-dialog-footer">
-          <span className="meta-line share-dialog-url">{url}</span>
-          <button type="button" className="btn btn-ghost" onClick={() => void copyLink()}>
-            {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
-            {copied ? "Copied" : "Copy link"}
-          </button>
+          <span className="meta-line share-dialog-url">
+            {allowCopyLink ? url : "Only people you send this private speech to can open it."}
+          </span>
+          {allowCopyLink ? (
+            <button type="button" className="btn btn-ghost" onClick={() => void copyLink()}>
+              {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+              {copied ? "Copied" : "Copy link"}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

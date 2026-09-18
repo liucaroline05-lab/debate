@@ -13,6 +13,7 @@ import {
 import { PageMeta } from "@/components/common/PageMeta";
 import { seededUsers } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
+import { MessageContent } from "@/features/messages/MessageContent";
 import {
   sendChatMessage,
   startDirectThread,
@@ -473,7 +474,7 @@ export const MessagesPage = () => {
                             <small>{formatMessageTime(message.createdAt)}</small>
                           </span>
                         ) : null}
-                        <p className="message-bubble">{message.content}</p>
+                        <p className="message-bubble"><MessageContent content={message.content} /></p>
                       </div>
                     </div>
                   );

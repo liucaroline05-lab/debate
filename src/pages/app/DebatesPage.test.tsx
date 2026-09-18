@@ -36,7 +36,7 @@ const service = vi.hoisted(() => ({
   createOpenChallenge: vi.fn(),
   createPrivateDebate: vi.fn(async () => ({ id: "new", inviteCode: "ABC123" })),
   finalizeDebateIfComplete: vi.fn(async () => true),
-  incrementDebateShareCount: vi.fn(),
+  incrementDebateShareCount: vi.fn(async () => {}),
   joinDebateByInviteCode: vi.fn(),
   markDebateChatRead: vi.fn(),
   submitDebateTurn: vi.fn(async () => ({
@@ -209,6 +209,23 @@ describe("DebatesPage — My Debates", () => {
 });
 
 describe("DebatesPage — Completed", () => {
+  it("opens the conversation-sharing dialog for a completed debate", () => {
+    mocks.collections.debates = [baseDebate({
+      id: "finished-round",
+      topic: "A finished round",
+      status: "Completed",
+      participantIds: ["me", "opp"],
+    })];
+
+    renderPage();
+    fireEvent.click(screen.getByRole("tab", { name: /^completed$/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Share A finished round" }));
+
+    expect(screen.getByRole("dialog", { name: "Share" })).toBeInTheDocument();
+    expect(screen.getByText(`${window.location.origin}/app/debates/finished-round`)).toBeInTheDocument();
+    expect(service.incrementDebateShareCount).toHaveBeenCalledWith("finished-round", undefined);
+  });
+
   it("separates the current user's completed debates from public community debates", () => {
     mocks.collections.debates = [
       baseDebate({

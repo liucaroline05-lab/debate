@@ -98,6 +98,25 @@ describe("SpeechDetailPage", () => {
     expect(screen.getByRole("link", { name: /Download/ })).toBeInTheDocument();
   });
 
+  it("offers link sharing for public speeches", async () => {
+    mocks.speech = baseSpeech({ visibility: "public" });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    expect(screen.getByRole("dialog", { name: "Share" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+  });
+
+  it("limits private speech sharing to the creator through messages", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    expect(screen.getByText(/Only people you send this private speech to/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy link" })).not.toBeInTheDocument();
+  });
+
   it("opens a report form and submits a private report for another user's speech", async () => {
     mocks.currentUserId = "viewer";
     mocks.speech = baseSpeech({ creatorId: "owner", visibility: "public" });

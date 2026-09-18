@@ -160,6 +160,7 @@ const ProfileHoverLink = ({
 export const CommunityPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedChannelId = searchParams.get("channel");
+  const selectedPostId = searchParams.get("post");
   const { currentUser } = useAuth();
   const author = currentUser;
   if (!author) {
@@ -333,6 +334,17 @@ export const CommunityPage = () => {
     selectedChannelId,
     usersState.data,
   ]);
+
+  useEffect(() => {
+    if (!selectedPostId || !postState.data.some((post) => post.id === selectedPostId)) return;
+    setActiveTab("All Posts");
+    setFeedScope("all");
+    setSearchQuery("");
+    const timer = window.setTimeout(() => {
+      document.getElementById(selectedPostId)?.scrollIntoView({ block: "center" });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedPostId, postState.data]);
 
   const practiceGroups = useMemo(
     () =>
@@ -511,7 +523,7 @@ export const CommunityPage = () => {
     setShareTarget({
       postId,
       title: title || "Debate Studio community post",
-      url: `${window.location.origin}/app/community#${postId}`,
+      url: `${window.location.origin}/app/community?post=${encodeURIComponent(postId)}`,
     });
     setSharedPostId(postId);
     // Best-effort: record the share without blocking the dialog.

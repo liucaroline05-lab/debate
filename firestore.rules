@@ -18,11 +18,12 @@ service cloud.firestore {
       return request.resource.data.visibility in ["private", "public"];
     }
 
-    function canReadSpeech() {
+    function canReadSpeech(speechId) {
       return isSignedIn()
         && (
           resource.data.visibility == "public"
           || resource.data.creatorId == request.auth.uid
+          || exists(/databases/$(database)/documents/speechShares/$(speechId)/recipients/$(request.auth.uid))
         );
     }
 
@@ -173,7 +174,7 @@ service cloud.firestore {
     }
 
     match /speeches/{speechId} {
-      allow read: if canReadSpeech();
+      allow read: if canReadSpeech(speechId);
       allow create: if isSignedIn()
         && request.resource.data.creatorId == request.auth.uid
         && hasValidSpeechVisibility();
@@ -181,6 +182,21 @@ service cloud.firestore {
         && hasValidSpeechVisibility()
         && keepsServerManagedSpeechSummary();
       allow delete: if ownsExistingResource("creatorId");
+    }
+
+    // A private speech remains unlisted, but its creator can grant selected
+    // message recipients access to the detail page by document ID.
+    match /speechShares/{speechId}/recipients/{recipientId} {
+      allow get: if isOwner(recipientId)
+        || (isSignedIn()
+          && get(/databases/$(database)/documents/speeches/$(speechId)).data.creatorId == request.auth.uid);
+      allow list: if false;
+      allow create, update: if isSignedIn()
+        && get(/databases/$(database)/documents/speeches/$(speechId)).data.creatorId == request.auth.uid
+        && request.resource.data.recipientId == recipientId
+        && request.resource.data.grantedBy == request.auth.uid;
+      allow delete: if isSignedIn()
+        && get(/databases/$(database)/documents/speeches/$(speechId)).data.creatorId == request.auth.uid;
     }
 
     // Each member can file one report per public speech. Reports are private

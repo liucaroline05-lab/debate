@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Bookmark,
-  Check,
   Clock3,
   Eye,
   MessageCircle,
@@ -29,6 +28,7 @@ import {
   toggleDebateReaction,
 } from "@/features/debates/debateService";
 import { useAuth } from "@/features/auth/AuthContext";
+import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDate, formatDateTime } from "@/lib/date";
 import type {
@@ -166,7 +166,7 @@ export const DebatesPage = () => {
   const [expandedCommentsId, setExpandedCommentsId] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [busyDebateId, setBusyDebateId] = useState<string | null>(null);
-  const [sharedDebateId, setSharedDebateId] = useState<string | null>(null);
+  const [shareTarget, setShareTarget] = useState<DebateThread | null>(null);
   const [debateForm, setDebateForm] = useState({
     topic: "",
     format: "Lincoln-Douglas" as DebateMatchRequest["format"],
@@ -448,28 +448,8 @@ export const DebatesPage = () => {
     }
   };
 
-  const handleShare = async (debate: DebateThread) => {
-    const url = `${window.location.origin}/app/debates/${debate.id}`;
-
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: debate.topic, url });
-      } else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-        setSharedDebateId(debate.id);
-        window.setTimeout(
-          () => setSharedDebateId((current) => (current === debate.id ? null : current)),
-          2000,
-        );
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return;
-      }
-      setBanner("Unable to share this debate right now.");
-      return;
-    }
-
+  const handleShare = (debate: DebateThread) => {
+    setShareTarget(debate);
     void incrementDebateShareCount(debate.id, debate.shareCount).catch(() => {});
   };
 
@@ -499,7 +479,6 @@ export const DebatesPage = () => {
     const disliked = reaction?.dislike ?? false;
     const favorited = reaction?.favorite ?? false;
     const commentsOpen = expandedCommentsId === debate.id;
-    const justShared = sharedDebateId === debate.id;
 
     return (
       <div className="forum-post-actions">
@@ -544,11 +523,11 @@ export const DebatesPage = () => {
         )}
         <button
           type="button"
-          className={justShared ? "forum-action-button is-share" : "forum-action-button"}
-          onClick={() => void handleShare(debate)}
+          className="forum-action-button"
+          aria-label={`Share ${debate.topic}`}
+          onClick={() => handleShare(debate)}
         >
-          {justShared ? <Check size={16} /> : <Share2 size={16} />}{" "}
-          {justShared ? "Copied" : debate.shareCount ?? 0}
+          <Share2 size={16} /> {debate.shareCount ?? 0}
         </button>
       </div>
     );
@@ -1253,6 +1232,14 @@ export const DebatesPage = () => {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {shareTarget ? (
+        <ShareToMessageDialog
+          title={shareTarget.topic}
+          url={`${window.location.origin}/app/debates/${shareTarget.id}`}
+          onClose={() => setShareTarget(null)}
+        />
       ) : null}
 
       {activeChatDebate ? (

@@ -7,6 +7,7 @@ import {
   Flag,
   MoreHorizontal,
   Pencil,
+  Share2,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
@@ -15,8 +16,10 @@ import {
 import { PageMeta } from "@/components/common/PageMeta";
 import { SpeechMediaPlayer } from "@/components/speeches/SpeechMediaPlayer";
 import { useAuth } from "@/features/auth/AuthContext";
+import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import {
   deleteSpeechRecord,
+  grantPrivateSpeechAccess,
   addSpeechComment,
   reportSpeechRecord,
   toggleSpeechCommentReaction,
@@ -101,6 +104,7 @@ export const SpeechDetailPage = () => {
   const [isLoading, setIsLoading] = useState(Boolean(firestore && speechId));
   const [isSaving, setIsSaving] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(searchParams.get("report") === "1");
   const [reportReason, setReportReason] = useState<"Harassment" | "Inappropriate content" | "Spam" | "Copyright" | "Other">("Inappropriate content");
   const [reportDetails, setReportDetails] = useState("");
@@ -345,52 +349,59 @@ export const SpeechDetailPage = () => {
             {speech.format} • {speech.eventName} • Uploaded {formatDateTime(speech.uploadedAt)}
           </p>
         </div>
-        <div className="forum-post-menu">
-          <button
-            type="button"
-            className="forum-icon-button"
-            aria-label={`Actions for ${speech.title}`}
-            onClick={() => setMenuOpen((current) => !current)}
-          >
-            <MoreHorizontal size={18} />
-          </button>
-          {menuOpen ? (
-            <div className="forum-menu-dropdown">
-              {isOwner ? (
-                <>
+        <div className="button-row">
+          {(speech.visibility === "public" || isOwner) ? (
+            <button type="button" className="btn btn-secondary" onClick={() => setShareOpen(true)}>
+              <Share2 size={16} aria-hidden="true" /> Share
+            </button>
+          ) : null}
+          <div className="forum-post-menu">
+            <button
+              type="button"
+              className="forum-icon-button"
+              aria-label={`Actions for ${speech.title}`}
+              onClick={() => setMenuOpen((current) => !current)}
+            >
+              <MoreHorizontal size={18} />
+            </button>
+            {menuOpen ? (
+              <div className="forum-menu-dropdown">
+                {isOwner ? (
+                  <>
+                    <button
+                      type="button"
+                      className="forum-menu-item"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setSearchParams({ mode: "edit" });
+                      }}
+                    >
+                      <Pencil size={16} /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="forum-menu-item"
+                      onClick={() => void handleDelete()}
+                    >
+                      <Trash2 size={16} /> Delete
+                    </button>
+                  </>
+                ) : (
                   <button
                     type="button"
                     className="forum-menu-item"
                     onClick={() => {
                       setMenuOpen(false);
-                      setSearchParams({ mode: "edit" });
+                      setReportError("");
+                      setIsReportOpen(true);
                     }}
                   >
-                    <Pencil size={16} /> Edit
+                    <Flag size={16} /> Report
                   </button>
-                  <button
-                    type="button"
-                    className="forum-menu-item"
-                    onClick={() => void handleDelete()}
-                  >
-                    <Trash2 size={16} /> Delete
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="forum-menu-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setReportError("");
-                    setIsReportOpen(true);
-                  }}
-                >
-                  <Flag size={16} /> Report
-                </button>
-              )}
-            </div>
-          ) : null}
+                )}
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -762,6 +773,17 @@ export const SpeechDetailPage = () => {
           <article className="app-card"><h2 className="card-title">Comments are off</h2><p className="card-copy">The uploader disabled comments for this speech.</p></article>
         )}
       </section>
+      {shareOpen ? (
+        <ShareToMessageDialog
+          title={speech.title}
+          url={`${window.location.origin}/app/speeches/${speech.id}`}
+          allowCopyLink={speech.visibility === "public"}
+          onBeforeSend={speech.visibility === "private" && isOwner
+            ? (recipientIds) => grantPrivateSpeechAccess(speech.id, currentUser!.id, recipientIds)
+            : undefined}
+          onClose={() => setShareOpen(false)}
+        />
+      ) : null}
       {isReportOpen && !isOwner ? (
         <div className="community-modal-overlay" role="presentation" onMouseDown={() => !isReporting && setIsReportOpen(false)}>
           <div

@@ -52,6 +52,23 @@ export type SpeechUpdateInput = Pick<
   | "commentsEnabled"
 >;
 
+export const grantPrivateSpeechAccess = async (
+  speechId: string,
+  creatorId: string,
+  recipientIds: string[],
+) => {
+  const db = firestore;
+  if (!db) throw new Error("Firebase is not configured.");
+  await Promise.all(
+    [...new Set(recipientIds.filter((id) => id && id !== creatorId))].map((recipientId) =>
+      setDoc(doc(db, "speechShares", speechId, "recipients", recipientId), {
+        recipientId,
+        grantedBy: creatorId,
+      }),
+    ),
+  );
+};
+
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number) =>
   new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => {

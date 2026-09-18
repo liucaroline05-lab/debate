@@ -126,4 +126,30 @@ describe("ShareToMessageDialog", () => {
       expect.stringContaining("https://example.com/app/community#post-1"),
     );
   });
+
+  it("grants selected recipients access before sending a private link", async () => {
+    const user = userEvent.setup();
+    const grant = vi.fn(async () => {});
+    render(
+      <MemoryRouter>
+        <ShareToMessageDialog
+          title="Private speech"
+          url="https://example.com/app/speeches/speech-1"
+          allowCopyLink={false}
+          onBeforeSend={grant}
+          onClose={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole("button", { name: "Copy link" })).not.toBeInTheDocument();
+    const row = screen.getByText("Nationals prep").closest(".share-target-row");
+    await user.click(row!.querySelector("button")!);
+
+    expect(grant).toHaveBeenCalledWith(["james"]);
+    expect(service.sendChatMessage).toHaveBeenCalled();
+    expect(grant.mock.invocationCallOrder[0]).toBeLessThan(
+      service.sendChatMessage.mock.invocationCallOrder[0],
+    );
+  });
 });
