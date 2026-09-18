@@ -1,4 +1,5 @@
 import { FirebaseError } from "firebase/app";
+import { httpsCallable } from "firebase/functions";
 import {
   addDoc,
   collection,
@@ -18,10 +19,20 @@ import {
   UploadMetadata,
   type UploadTaskSnapshot,
 } from "firebase/storage";
-import { firestore, storage } from "@/lib/firebase";
+import { firestore, functions, storage } from "@/lib/firebase";
 import type { SpeechComment, SpeechRecord } from "@/types/models";
 
 const UPLOAD_TIMEOUT_MS = 20_000;
+
+export const retrySpeechSummary = async (speechId: string) => {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  const retry = httpsCallable<{ speechId: string }, { status: string }>(
+    functions,
+    "retrySpeechSummary",
+    { timeout: 540_000 },
+  );
+  return (await retry({ speechId })).data.status;
+};
 
 interface NewSpeechInput {
   userId: string;

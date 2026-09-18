@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, extname } from "node:path";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { onObjectFinalized } from "firebase-functions/v2/storage";
+import { HttpsError, onCall } from "firebase-functions/v2/https";
 import OpenAI, { toFile } from "openai";
 import { openAiApiKey } from "./secrets";
+import { canClaimSpeechSummary, processingAgeMs, STALE_PROCESSING_MS } from "./speechAiClaim";
 
 const TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
 const SUMMARY_MODEL = "gpt-5.6-luna";
@@ -32,6 +34,20 @@ interface SpeechData {
   creatorId?: unknown;
   summaryStatus?: unknown;
   summaryProcessingEventId?: unknown;
+  summaryProcessingStartedAt?: unknown;
+  uploadedAt?: unknown;
+  mediaStoragePath?: unknown;
+  mediaPath?: unknown;
+}
+
+interface SpeechStorageObject {
+  name: string;
+  bucket: string;
+  metadata?: Record<string, unknown>;
+  size?: string | number;
+  contentType?: string;
+  generation?: string | number;
+  timeCreated?: string | Date;
 }
 
 interface SpeechAiSummary {
@@ -117,6 +133,18 @@ const isRetryableOpenAiError = (error: unknown) => {
 const transcriptDocumentId = (storagePath: string) =>
   createHash("sha256").update(storagePath).digest("hex");
 
+const speechStoragePath = (speech: SpeechData) => {
+  const stored = asString(speech.mediaStoragePath);
+  if (stored.startsWith("speeches/")) return stored;
+  try {
+    const encoded = new URL(asString(speech.mediaPath)).pathname.split("/o/")[1];
+    const decoded = encoded ? decodeURIComponent(encoded) : "";
+    return decoded.startsWith("speeches/") ? decoded : "";
+  } catch {
+    return "";
+  }
+};
+
 const parseSummary = (outputText: string): SpeechAiSummary => {
   const parsed = JSON.parse(outputText) as Partial<SpeechAiSummary>;
   if (
@@ -148,7 +176,11 @@ class SpeechDocumentNotReadyError extends Error {
  * writes the document first, but a retried or externally uploaded object can
  * still arrive before it.
  */
-const claimSpeechSummary = async (speechId: string, sourceEventId: string) => {
+const claimSpeechSummary = async (
+  speechId: string,
+  sourceEventId: string,
+  allowStaleTakeover = false,
+) => {
   const db = getFirestore();
   const speechRef = db.doc(`speeches/${speechId}`);
 
@@ -159,13 +191,7 @@ const claimSpeechSummary = async (speechId: string, sourceEventId: string) => {
     }
 
     const speech = snapshot.data() as SpeechData | undefined;
-    if (speech?.summaryStatus === "completed") {
-      return false;
-    }
-    if (
-      speech?.summaryStatus === "processing"
-      && speech.summaryProcessingEventId !== sourceEventId
-    ) {
+    if (!canClaimSpeechSummary(speech ?? {}, sourceEventId, allowStaleTakeover)) {
       return false;
     }
 
@@ -174,6 +200,7 @@ const claimSpeechSummary = async (speechId: string, sourceEventId: string) => {
       {
         summaryStatus: "processing",
         summaryProcessingEventId: sourceEventId,
+        summaryProcessingStartedAt: FieldValue.serverTimestamp(),
         summaryError: FieldValue.delete(),
         transcriptStatus: "Pending",
         updatedAt: FieldValue.serverTimestamp(),
@@ -295,22 +322,11 @@ const failSpeechSummary = async (speechId: string, message: string) => {
   );
 };
 
-/**
- * Transcribes a speech-library upload and then summarizes it, mirroring the
- * two-step pipeline used for async debates. Debate-turn uploads land in the
- * same `speeches/` prefix and are handled by `transcribeDebateSpeech`, so this
- * trigger only claims objects tagged `sourceType: "speech-upload"`.
- */
-export const summarizeUploadedSpeech = onObjectFinalized(
-  {
-    region: "us-west1",
-    memory: "1GiB",
-    timeoutSeconds: 540,
-    retry: true,
-    secrets: [openAiApiKey],
-  },
-  async (event) => {
-    const object = event.data;
+const processSpeechUpload = async (
+  object: SpeechStorageObject,
+  eventId: string,
+  allowStaleTakeover = false,
+) => {
     const storagePath = object.name;
     const metadata = object.metadata ?? {};
     const speechId = asString(metadata.speechId);
@@ -326,7 +342,8 @@ export const summarizeUploadedSpeech = onObjectFinalized(
     }
 
     try {
-      if (!(await claimSpeechSummary(speechId, event.id))) {
+      if (!(await claimSpeechSummary(speechId, eventId, allowStaleTakeover))) {
+        console.info("Speech summary claim skipped", { speechId, eventId });
         return;
       }
     } catch (error) {
@@ -335,9 +352,9 @@ export const summarizeUploadedSpeech = onObjectFinalized(
       }
       // Retry while the write could still be in flight; past that, the record
       // was most likely deleted and retrying forever would be pointless.
-      const uploadedAt = object.timeCreated
-        ? new Date(object.timeCreated).getTime()
-        : Number.NaN;
+      const uploadedAt = object.timeCreated instanceof Date
+        ? object.timeCreated.getTime()
+        : object.timeCreated ? Date.parse(object.timeCreated) : Number.NaN;
       const ageMs = Number.isFinite(uploadedAt) ? Date.now() - uploadedAt : 0;
       if (ageMs < MAX_DOCUMENT_WAIT_MS) {
         console.info("Speech document not written yet; retrying.", { speechId, ageMs });
@@ -377,7 +394,7 @@ export const summarizeUploadedSpeech = onObjectFinalized(
       transcriptionModel: TRANSCRIPTION_MODEL,
       transcriptionPromptVersion: TRANSCRIPTION_PROMPT_VERSION,
       sourceGeneration: object.generation ?? "",
-      sourceEventId: event.id,
+      sourceEventId: eventId,
     };
 
     let transcriptText: string;
@@ -442,5 +459,90 @@ export const summarizeUploadedSpeech = onObjectFinalized(
     }
 
     await summarizeSpeechTranscript(speechId, transcriptText, transcriptRef.path);
+};
+
+/**
+ * Transcribes a speech-library upload and then summarizes it, mirroring the
+ * two-step pipeline used for async debates. Debate-turn uploads land in the
+ * same `speeches/` prefix and are handled by `transcribeDebateSpeech`, so this
+ * trigger only claims objects tagged `sourceType: "speech-upload"`.
+ */
+export const summarizeUploadedSpeech = onObjectFinalized(
+  {
+    region: "us-west1",
+    memory: "1GiB",
+    timeoutSeconds: 540,
+    retry: true,
+    secrets: [openAiApiKey],
+  },
+  async (event) => {
+    await processSpeechUpload(event.data, event.id);
+  },
+);
+
+export const retrySpeechSummary = onCall(
+  {
+    region: "us-central1",
+    memory: "1GiB",
+    timeoutSeconds: 540,
+    secrets: [openAiApiKey],
+  },
+  async (request) => {
+    const userId = request.auth?.uid;
+    if (!userId) throw new HttpsError("unauthenticated", "Sign in to retry a speech summary.");
+    const speechId = request.data?.speechId;
+    if (typeof speechId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(speechId)) {
+      throw new HttpsError("invalid-argument", "A valid speech ID is required.");
+    }
+
+    const speechRef = getFirestore().doc(`speeches/${speechId}`);
+    const snapshot = await speechRef.get();
+    if (!snapshot.exists) throw new HttpsError("not-found", "Speech not found.");
+    const speech = snapshot.data() as SpeechData;
+    if (speech.creatorId !== userId) {
+      throw new HttpsError("permission-denied", "Only the uploader can retry this summary.");
+    }
+    if (speech.summaryStatus === "completed") return { status: "completed" };
+    if (speech.summaryStatus === "processing"
+      && asString(speech.summaryProcessingEventId)
+      && processingAgeMs(speech) < STALE_PROCESSING_MS) {
+      throw new HttpsError("failed-precondition", "This summary is already being processed.");
+    }
+
+    const storagePath = speechStoragePath(speech);
+    if (!storagePath.startsWith("speeches/")) {
+      throw new HttpsError("failed-precondition", "This speech has no recording to retry.");
+    }
+    const bucket = getStorage().bucket();
+    let object: SpeechStorageObject;
+    try {
+      const [metadata] = await bucket.file(storagePath).getMetadata();
+      object = {
+        name: storagePath,
+        bucket: bucket.name,
+        metadata: metadata.metadata,
+        size: metadata.size,
+        contentType: metadata.contentType,
+        generation: metadata.generation,
+        timeCreated: metadata.timeCreated,
+      };
+    } catch (error) {
+      console.error("Speech retry could not read recording metadata", { speechId, error: getErrorMessage(error) });
+      throw new HttpsError("failed-precondition", "The original recording is unavailable.");
+    }
+    if (object.metadata?.sourceType !== "speech-upload"
+      || object.metadata.speechId !== speechId
+      || object.metadata.userId !== userId) {
+      throw new HttpsError("failed-precondition", "The recording does not match this speech.");
+    }
+
+    try {
+      await processSpeechUpload(object, `manual-${randomUUID()}`, true);
+    } catch (error) {
+      console.error("Speech summary retry failed", { speechId, error: getErrorMessage(error) });
+      throw new HttpsError("internal", "The retry failed. Check the function logs and try again.");
+    }
+    const latest = await speechRef.get();
+    return { status: asString(latest.get("summaryStatus")) || "processing" };
   },
 );

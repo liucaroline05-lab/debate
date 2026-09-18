@@ -25,7 +25,7 @@ export {
   summarizeCompletedDebate,
   transcribeDebateSpeech,
 } from "./debateAi";
-export { summarizeUploadedSpeech } from "./speechAi";
+export { retrySpeechSummary, summarizeUploadedSpeech } from "./speechAi";
 
 interface UploadProfilePhotoRequest {
   contentType?: unknown;

@@ -22,6 +22,7 @@ import {
   grantPrivateSpeechAccess,
   addSpeechComment,
   reportSpeechRecord,
+  retrySpeechSummary,
   toggleSpeechCommentReaction,
   updateSpeechRecord,
 } from "@/features/speeches/speechService";
@@ -103,6 +104,8 @@ export const SpeechDetailPage = () => {
   const [form, setForm] = useState<ReturnType<typeof toFormState> | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(firestore && speechId));
   const [isSaving, setIsSaving] = useState(false);
+  const [isRetryingSummary, setIsRetryingSummary] = useState(false);
+  const [summaryRetryNotice, setSummaryRetryNotice] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(searchParams.get("report") === "1");
@@ -260,6 +263,26 @@ export const SpeechDetailPage = () => {
     }
   };
 
+  const handleRetrySummary = async () => {
+    if (!speech || !isOwner || isRetryingSummary) return;
+    setIsRetryingSummary(true);
+    setSummaryRetryNotice("");
+    try {
+      const status = await retrySpeechSummary(speech.id);
+      setSummaryRetryNotice(status === "completed"
+        ? "AI summary is ready."
+        : status === "failed"
+          ? "The retry failed. Check the summary error or try again later."
+          : "The summary is being processed. This page will update automatically.");
+    } catch (retryError) {
+      setSummaryRetryNotice(
+        retryError instanceof Error ? retryError.message : "Unable to retry the summary.",
+      );
+    } finally {
+      setIsRetryingSummary(false);
+    }
+  };
+
   const voteOnComment = async (
     comment: SpeechComment,
     reaction: "like" | "dislike",
@@ -334,6 +357,10 @@ export const SpeechDetailPage = () => {
 
   const fileName = getSpeechFileName(speech);
   const aiSummary = speech.aiSummary;
+  const canRetrySummary = isOwner && Boolean(speech.mediaStoragePath || speech.mediaPath)
+    && (speech.summaryStatus === "failed"
+      || (speech.summaryStatus === "processing"
+        && Date.now() - new Date(speech.uploadedAt).getTime() >= 10 * 60 * 1000));
 
   return (
     <>
@@ -466,6 +493,19 @@ export const SpeechDetailPage = () => {
           {speech.summaryError ? (
             <p className="meta-line is-error">{speech.summaryError}</p>
           ) : null}
+          {canRetrySummary ? (
+            <div className="button-row">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={isRetryingSummary}
+                onClick={() => void handleRetrySummary()}
+              >
+                {isRetryingSummary ? "Retrying summary..." : "Retry AI summary"}
+              </button>
+            </div>
+          ) : null}
+          {summaryRetryNotice ? <p className="meta-line" role="status">{summaryRetryNotice}</p> : null}
 
           {aiSummary ? (
             <>

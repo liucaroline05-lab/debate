@@ -8,6 +8,7 @@ import type { SpeechRecord } from "@/types/models";
 const mocks = vi.hoisted(() => ({
   speech: null as SpeechRecord | null,
   reportSpeechRecord: vi.fn(),
+  retrySpeechSummary: vi.fn(),
   currentUserId: "owner" as string,
 }));
 
@@ -27,6 +28,7 @@ vi.mock("@/features/speeches/speechService", () => ({
   addSpeechComment: vi.fn(),
   deleteSpeechRecord: vi.fn(),
   reportSpeechRecord: mocks.reportSpeechRecord,
+  retrySpeechSummary: mocks.retrySpeechSummary,
   updateSpeechRecord: vi.fn(),
 }));
 
@@ -66,6 +68,7 @@ const baseSpeech = (overrides: Partial<SpeechRecord> = {}): SpeechRecord => ({
   tags: [],
   organizationTags: [],
   mediaPath: "https://example.com/speech.webm",
+  mediaStoragePath: "speeches/speech.webm",
   commentsEnabled: false,
   ...overrides,
 });
@@ -84,6 +87,7 @@ describe("SpeechDetailPage", () => {
     mocks.speech = baseSpeech();
     mocks.currentUserId = "owner";
     mocks.reportSpeechRecord.mockReset().mockResolvedValue(true);
+    mocks.retrySpeechSummary.mockReset().mockResolvedValue("completed");
   });
 
   it("renders app-styled playback controls instead of browser-native controls", () => {
@@ -170,5 +174,15 @@ describe("SpeechDetailPage", () => {
     expect(
       screen.getByText(/being transcribed and summarized/),
     ).toBeInTheDocument();
+  });
+
+  it("lets the uploader retry a speech stuck in processing", async () => {
+    mocks.speech = baseSpeech({ summaryStatus: "processing" });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Retry AI summary" }));
+    expect(mocks.retrySpeechSummary).toHaveBeenCalledWith("speech-1");
+    expect(await screen.findByText(/AI summary is ready/)).toBeInTheDocument();
   });
 });
