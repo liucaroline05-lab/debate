@@ -4294,6 +4294,24 @@ button {
   margin-bottom: 0.75rem;
 }
 
+.notifications-mark-read,
+.notifications-settings-link {
+  display: inline-block;
+  margin-bottom: 0.65rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-moss);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notifications-settings-link {
+  margin: 0.75rem 0 0;
+}
+
 .notifications-empty {
   margin: 0;
 }
@@ -4317,6 +4335,24 @@ button {
 
 .notifications-item:hover {
   background: rgba(245, 239, 230, 0.95);
+}
+
+.notifications-item.is-unread {
+  background: rgba(118, 128, 107, 0.13);
+}
+
+.notifications-item-copy strong {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.notifications-unread-dot {
+  flex: 0 0 auto;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--color-terracotta);
 }
 
 .notifications-item-icon {

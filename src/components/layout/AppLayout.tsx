@@ -132,7 +132,10 @@ export const AppLayout = () => {
                 <div className="button-row">
                   {currentUser ? (
                     <>
-                      <NotificationsBell userId={currentUser.id} />
+                      <NotificationsBell
+                        userId={currentUser.id}
+                        historyDays={currentUser.preferences?.notifications?.historyDays}
+                      />
                       <button type="button" className="btn btn-secondary" onClick={() => void logout()}>
                         Log out
                       </button>

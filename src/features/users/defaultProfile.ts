@@ -6,6 +6,7 @@ export const defaultUserPreferences: UserPreferences = {
     debateTurnReminders: true,
     communityReplies: true,
     tournamentReminders: true,
+    historyDays: 30,
   },
   debateDefaults: {
     preferredFormat: "Public Forum",

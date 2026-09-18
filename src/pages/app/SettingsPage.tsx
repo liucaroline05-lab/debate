@@ -48,6 +48,8 @@ export const SettingsPage = () => {
     },
   };
   const [notifications, setNotifications] = useState(resolvedPreferences.notifications);
+  const [notificationMessage, setNotificationMessage] = useState("");
+  const [isSavingNotifications, setIsSavingNotifications] = useState(false);
   const [debateDefaults, setDebateDefaults] = useState(resolvedPreferences.debateDefaults);
   const [messagingPermission, setMessagingPermission] = useState<MessagingPermission>(
     resolvedPreferences.messaging.whoCanMessage,
@@ -195,6 +197,37 @@ export const SettingsPage = () => {
       ...current,
       [key]: !current[key],
     }));
+  };
+
+  const saveNotificationPreferences = async () => {
+    if (isSavingNotifications) return;
+    const historyDays = notifications.historyDays ?? 30;
+    if (!Number.isInteger(historyDays) || historyDays < 1 || historyDays > 365) {
+      setNotificationMessage("Choose a notification history between 1 and 365 days.");
+      return;
+    }
+
+    setNotificationMessage("");
+    setIsSavingNotifications(true);
+    try {
+      await updateProfile({
+        preferences: {
+          ...profile.preferences,
+          notifications: { ...notifications, historyDays },
+        },
+      });
+      setNotificationMessage(
+        isDemoMode
+          ? "Saved for this session. Connect Firebase to keep this setting."
+          : "Notification settings saved.",
+      );
+    } catch (error) {
+      setNotificationMessage(
+        error instanceof Error ? error.message : "Unable to save notification settings.",
+      );
+    } finally {
+      setIsSavingNotifications(false);
+    }
   };
 
   const saveDisplayName = async () => {
@@ -455,6 +488,22 @@ export const SettingsPage = () => {
         <article className="app-card">
           <h2 className="card-title">Notifications</h2>
           <div className="stack" style={{ marginTop: "1rem" }}>
+            <div className="form-field">
+              <label htmlFor="notificationHistoryDays">Keep notifications for (days)</label>
+              <input
+                id="notificationHistoryDays"
+                type="number"
+                min={1}
+                max={365}
+                step={1}
+                value={notifications.historyDays ?? 30}
+                onChange={(event) => setNotifications((current) => ({
+                  ...current,
+                  historyDays: Number(event.target.value),
+                }))}
+              />
+              <span className="meta-line">Read and unread notifications appear in the bell for this long.</span>
+            </div>
             <button
               type="button"
               className="settings-toggle-row"
@@ -507,6 +556,15 @@ export const SettingsPage = () => {
                 {notifications.tournamentReminders ? "On" : "Off"}
               </span>
             </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={isSavingNotifications}
+              onClick={() => void saveNotificationPreferences()}
+            >
+              {isSavingNotifications ? "Saving..." : "Save notification settings"}
+            </button>
+            {notificationMessage ? <p className="meta-line" role="status">{notificationMessage}</p> : null}
           </div>
         </article>
 

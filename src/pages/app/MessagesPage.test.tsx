@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 import { MessagesPage } from "@/pages/app/MessagesPage";
 import { normalizeUserProfile } from "@/features/users/defaultProfile";
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   startDirectThread: vi.fn(),
   startGroupThread: vi.fn(),
   extraUsers: [] as unknown[],
+  threads: [] as ChatThread[],
 }));
 
 const preferences = {
@@ -92,7 +94,7 @@ vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
 
 vi.mock("@/features/messages/messageService", () => ({
   subscribeToThreads: (_userId: string, onThreads: (threads: ChatThread[]) => void) => {
-    onThreads([thread]);
+    onThreads(mocks.threads);
     return () => {};
   },
   subscribeToMessages: (_threadId: string, onMessages: (messages: ChatMessage[]) => void) => {
@@ -104,9 +106,16 @@ vi.mock("@/features/messages/messageService", () => ({
   startGroupThread: mocks.startGroupThread,
 }));
 
+const renderMessages = (initialEntry = "/app/messages") => render(
+  <MemoryRouter initialEntries={[initialEntry]}>
+    <MessagesPage />
+  </MemoryRouter>,
+);
+
 describe("MessagesPage", () => {
   beforeEach(() => {
     mocks.extraUsers = [];
+    mocks.threads = [thread];
     mocks.sendChatMessage.mockReset().mockResolvedValue(undefined);
     mocks.startDirectThread.mockReset().mockResolvedValue(thread.id);
     mocks.startGroupThread.mockReset().mockResolvedValue("group-1");
@@ -114,7 +123,7 @@ describe("MessagesPage", () => {
 
   it("shows a private conversation and sends a message", async () => {
     const user = userEvent.setup();
-    render(<MessagesPage />);
+    renderMessages();
 
     expect(screen.getByRole("heading", { name: "James Kim" })).toBeInTheDocument();
     expect(screen.getAllByText("Want to compare cases?")).toHaveLength(2);
@@ -125,12 +134,22 @@ describe("MessagesPage", () => {
     expect(mocks.sendChatMessage).toHaveBeenCalledWith(thread, currentUser, "I’m in!");
   });
 
+  it("opens the conversation named in a notification link", async () => {
+    mocks.threads = [
+      thread,
+      { ...thread, id: "dm-mia--maya", participantIds: ["mia", "maya"] },
+    ];
+    renderMessages("/app/messages?thread=dm-mia--maya");
+
+    expect(await screen.findByRole("heading", { name: "Mia Thompson" })).toBeInTheDocument();
+  });
+
   it("still renders when a user document is missing optional profile fields", async () => {
     // Accounts created before organizationTags/displayName existed used to
     // throw while rendering, which the router showed as "page not found".
     mocks.extraUsers = [{ id: "legacy" }];
     const user = userEvent.setup();
-    render(<MessagesPage />);
+    renderMessages();
 
     expect(screen.getByRole("heading", { name: /Keep the conversation going/ })).toBeInTheDocument();
 
@@ -141,7 +160,7 @@ describe("MessagesPage", () => {
 
   it("starts a new direct message from the people picker", async () => {
     const user = userEvent.setup();
-    render(<MessagesPage />);
+    renderMessages();
 
     await user.click(screen.getByRole("button", { name: "New message" }));
     const picker = screen.getByRole("region", { name: "Start a conversation" });
@@ -158,7 +177,7 @@ describe("MessagesPage", () => {
 
   it("creates a named group chat with multiple people", async () => {
     const user = userEvent.setup();
-    render(<MessagesPage />);
+    renderMessages();
 
     await user.click(screen.getByRole("button", { name: "New message" }));
     const picker = screen.getByRole("region", { name: "Start a conversation" });

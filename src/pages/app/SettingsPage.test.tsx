@@ -58,3 +58,25 @@ describe("SettingsPage messaging privacy", () => {
   });
 });
 
+describe("SettingsPage notification history", () => {
+  it("saves the selected number of history days on the profile", async () => {
+    mocks.updateProfile.mockReset().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    const historyDays = screen.getByRole("spinbutton", { name: "Keep notifications for (days)" });
+    expect(historyDays).toHaveValue(30);
+    await user.clear(historyDays);
+    await user.type(historyDays, "14");
+    await user.click(screen.getByRole("button", { name: "Save notification settings" }));
+
+    expect(mocks.updateProfile).toHaveBeenCalledWith({
+      preferences: {
+        ...profile.preferences,
+        notifications: { ...profile.preferences.notifications, historyDays: 14 },
+      },
+    });
+    expect(await screen.findByText("Notification settings saved.")).toBeInTheDocument();
+  });
+});
+

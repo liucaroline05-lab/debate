@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   MessageCircle,
@@ -57,6 +58,8 @@ const ProfileAvatar = ({ user, small = false }: { user?: UserProfile; small?: bo
 
 export const MessagesPage = () => {
   const { currentUser } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedThreadId = searchParams.get("thread");
   const usersState = useSeededFirestoreCollection<UserProfile>("users", seededUsers);
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState("");
@@ -129,6 +132,12 @@ export const MessagesPage = () => {
       setIsThreadsLoading(false);
     }
   }, [currentUser]);
+
+  useEffect(() => {
+    if (requestedThreadId && threads.some((thread) => thread.id === requestedThreadId)) {
+      setActiveThreadId(requestedThreadId);
+    }
+  }, [requestedThreadId, threads]);
 
   useEffect(() => {
     setMessages([]);
@@ -217,6 +226,7 @@ export const MessagesPage = () => {
       }
 
       setActiveThreadId(threadId);
+      setSearchParams({ thread: threadId });
       resetComposer();
     } catch (error) {
       setComposerError(error instanceof Error ? error.message : "Unable to start this conversation.");
@@ -390,7 +400,10 @@ export const MessagesPage = () => {
                   type="button"
                   key={thread.id}
                   className={activeThreadId === thread.id ? "message-thread-button is-active" : "message-thread-button"}
-                  onClick={() => setActiveThreadId(thread.id)}
+                  onClick={() => {
+                    setActiveThreadId(thread.id);
+                    setSearchParams({ thread: thread.id });
+                  }}
                 >
                   {thread.type === "group" ? (
                     <span className="message-avatar message-avatar-fallback message-group-avatar" aria-hidden="true">

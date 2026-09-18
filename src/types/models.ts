@@ -10,6 +10,7 @@ export interface UserPreferences {
     debateTurnReminders: boolean;
     communityReplies: boolean;
     tournamentReminders: boolean;
+    historyDays?: number;
   };
   debateDefaults: {
     preferredFormat: "Policy" | "Lincoln-Douglas" | "Public Forum" | "Congress" | "Extemp";
@@ -207,6 +208,8 @@ export type DebateStatus =
 
 export interface DebateThread {
   id: string;
+  createdAt?: string;
+  updatedAt?: string;
   topic: string;
   format: string;
   status: DebateStatus;
