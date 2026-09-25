@@ -176,7 +176,7 @@ September 10, 2026:
 [X] Tabroom sync is still broken.
 [X] Messages still don't work.
 [X] The comments in the community tab should have like/dislike buttons similar to forums and also support replies to comments.
-[?] Save button in resources still does not work.
+[X] Save button in resources still does not work.
 [X] My Notes in resources only seems to save temporarily and disappears if coming back to the page after a while.
 [X] My complete tab in Async Debate: the action buttons are all touching the corner without proper padding.
 [X] In the channels card in the dashboard, it still does not display the channels that you are in.
@@ -184,15 +184,32 @@ September 10, 2026:
 [ ] the above page should also have an ai summary of the speech, similar to that of async debates
 [X] buttons don't match, e.g. profile page, record/upload page, resources page, recent speeches page. should match the normal buttons with the pill shape and text in middle, e.g. the upload buttons. Once clicked, it should perform the action. Also, for the buttons that are for saving/favoriting something, fix it to the normal button and add the outline of favorite symbol at the front. Once clicked, it should be filled with yellow.
 [X] profile pages show how many followers the user has
-[?] reformat tabroom stuff, like dont display all of them at once, and also prioritize future events over past ones. sync more details of the events.
-[ ] comments on uploaded speeches should also have engagement options (e.g. like and dislike)
+[X] reformat tabroom stuff, like dont display all of them at once, and also prioritize future events over past ones. sync more details of the events.
+[X] comments on uploaded speeches should also have engagement options (e.g. like and dislike)
 [X] add more format options for upload speech page (speech events); remove "speaker name" textbox
-[?] make the sidebar collapsable
+[X] make the sidebar collapsable
 [X] notifications bubble on top right corner
-[?] for posts that are sharable, clicking on the share button should make you able to send this to a person/group through messages
-[ ] make past speeches more organized; add filter dropdown similar to the resources page. similarly to the resources page, the speech page should have an upload button and the card for uploading should only appear once that button is clicked. otherwise, there should only be a search bar (like in resources) at the top and speeches below it. the search bar should have filters for format, topic category, etc. speeches uploaded by the user should be seperated by speeches uploaded by other users.
-[ ] "please fill out this field" error in speech page looks stylistically out of place and should be fixed to match the rest of the website
-[ ] speech playback bar looks different on safari than on chrome; make a standardized one that works on both browsers
-[ ] report button doesnt work
+[X] for posts that are sharable, clicking on the share button should make you able to send this to a person/group through messages
+[X] make past speeches more organized; add filter dropdown similar to the resources page. similarly to the resources page, the speech page should have an upload button and the card for uploading should only appear once that button is clicked. otherwise, there should only be a search bar (like in resources) at the top and speeches below it. the search bar should have filters for format, topic category, etc. speeches uploaded by the user should be seperated by speeches uploaded by other users.
+[X] "please fill out this field" error in speech page looks stylistically out of place and should be fixed to match the rest of the website
+[X] speech playback bar looks different on safari than on chrome; make a standardized one that works on both browsers
+[X] report button doesnt work
+[X] When sharing a post, make the link being send to the other user a direct clickable link that takes them to the post; share button for completed debates does not work, although it does seem to work in community. Also the Send to a conversation panel is cutoff in places within the popup and require scrolling. Just increase the size of the popup to accomodate.
+[X] Public speeches should be sharable; private can be direct shared by the creator through messages
+[X] the share popup for real posts is too big and requires scrolling unlike the share popup the demo posts have
+[X] standardize the search bars for resources and speech, add the "filters" button to the resources one, and add the "saved only" button to the speech one
+[X] update "format" filter in resources search bar to includes all the newly added ones
+[X] in every page with an upload function, for the unfilled parts for uploading, make them all like the error message in the speech upload page
+[X*] Events synced from tabroom should be more organized; for the user, the tabroom tab in the profile page should have the synced events in a seperate section on the right; for other users viewing a profile that isn't theirs, only the synced events should be shown (not the "tabroom sync" card)
+[X] make resources sharable (with the same rich card style as posts in community)
+[X] messages should have an option to share media (files, images, voice recordings, etc) with ai moderation
+[X] saving for speeches doesn't work right now
+[X] For profile pages, move the follow button down just a little bit, and above it, there are 3 vertical dots. Upon clicking, there is a share button (which lets you share the profile through messages), a report button, and a block button. In settings, there is a new option to see accounts you have blocked. 
+[X] in settings page, make the "account" card a little shorter; remove the extra space at the bottom.
+[X] In messages, add an option to delete and edit messages. If a message was deleted, say "message deleted" in the chat, and if a message was edited, say "edited" under the message.
+[X] For recent speeches, add the mouse hover effect other elements on the page use (the one with the green tint)
+[ ] 
+
+[ ] folders for speeches/async debates/resources. Clicking on a folder should show you a summarized version of everything put in there, and all are clickable and cna take you directly to that page. similar to google drive folders. You can also have an option to associate folders with specific tournaments.
 
 [ ] Maybe (?): more social stuff kind of like social media but for debate, e.g. similar to instagram where you can upload videos

@@ -714,7 +714,7 @@ export const MessagesPage = () => {
               {attachmentFile || attachmentError ? <div className="message-attachment-draft">
                 {attachmentFile ? <span>Attached: {attachmentFile.name} <button type="button" aria-label="Remove attachment" onClick={() => setAttachmentFile(null)}><X size={15} /></button></span> : null}
                 {attachmentError ? <span className="speech-field-error" role="alert">{attachmentError}</span> : null}
-                {attachmentFile ? <small>Checked by AI before sending. Maximum 4 MB.</small> : null}
+                {/* {attachmentFile ? <small>Checked by AI before sending. Maximum 4 MB.</small> : null} */}
               </div> : null}
             </>
           ) : (
