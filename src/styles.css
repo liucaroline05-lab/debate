@@ -2997,11 +2997,20 @@ button {
   overflow-wrap: anywhere;
 }
 
+.message-bubble:not(.is-shared) {
+  width: fit-content;
+  max-width: 100%;
+}
+
 .message-row.is-own .message-bubble {
   border-radius: 18px 8px 18px 18px;
   border-color: transparent;
   background: var(--color-moss);
   color: var(--color-white);
+}
+
+.message-row.is-own .message-bubble:not(.is-shared) {
+  margin-left: auto;
 }
 
 .message-entry-actions {

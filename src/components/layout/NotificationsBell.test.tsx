@@ -3,11 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationsBell } from "@/components/layout/NotificationsBell";
-import type { ChatMessage, DebateThread } from "@/types/models";
+import type { ChatMessage, DebateThread, UserBlock } from "@/types/models";
 
 const collectionState = vi.hoisted(() => ({
   messages: [] as ChatMessage[],
   debates: [] as DebateThread[],
+  blocks: [] as UserBlock[],
 }));
 
 vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
@@ -16,7 +17,9 @@ vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
       ? collectionState.messages
       : collectionName === "debates"
         ? collectionState.debates
-        : [],
+        : collectionName === "userBlocks"
+          ? collectionState.blocks
+          : [],
     isLoading: false,
     error: null,
   }),
@@ -38,6 +41,7 @@ describe("NotificationsBell", () => {
     window.localStorage.clear();
     collectionState.messages = [incomingMessage];
     collectionState.debates = [];
+    collectionState.blocks = [];
   });
 
   it("keeps unread items visible on open, then retains them as read", async () => {
@@ -85,6 +89,15 @@ describe("NotificationsBell", () => {
 
     expect(screen.getByText("Ready to debate?")).toBeInTheDocument();
     expect(screen.getByText("1 total")).toBeInTheDocument();
+  });
+
+  it("does not show notifications from accounts the viewer blocked", async () => {
+    collectionState.blocks = [{ id: "current-user-partner", blockerId: "current-user", blockedId: "partner", createdAt: recentAt }];
+    render(<MemoryRouter><NotificationsBell userId="current-user" /></MemoryRouter>);
+
+    await userEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    expect(screen.queryByText("Ready to debate?")).not.toBeInTheDocument();
+    expect(screen.getByText("0 total")).toBeInTheDocument();
   });
 
   it("shows all notifications within the chosen history and puts unread ones first", async () => {

@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 import { MessagesPage } from "@/pages/app/MessagesPage";
 import { normalizeUserProfile } from "@/features/users/defaultProfile";
-import type { ChatMessage, ChatThread, UserProfile } from "@/types/models";
+import type { ChatMessage, ChatThread, UserBlock, UserProfile } from "@/types/models";
 
 const mocks = vi.hoisted(() => ({
   sendChatMessage: vi.fn(),
@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   startDirectThread: vi.fn(),
   startGroupThread: vi.fn(),
   extraUsers: [] as unknown[],
+  blocks: [] as UserBlock[],
+  blocksLoading: false,
   threads: [] as ChatThread[],
   messages: [] as ChatMessage[],
 }));
@@ -89,11 +91,9 @@ vi.mock("@/features/auth/AuthContext", () => ({
 }));
 
 vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
-  useSeededFirestoreCollection: () => ({
-    data: [currentUser, james, mia, ...mocks.extraUsers],
-    isLoading: false,
-    error: null,
-  }),
+  useSeededFirestoreCollection: (collectionName: string) => collectionName === "userBlocks"
+    ? { data: mocks.blocks, isLoading: mocks.blocksLoading, error: null }
+    : { data: [currentUser, james, mia, ...mocks.extraUsers], isLoading: false, error: null },
 }));
 
 vi.mock("@/features/messages/messageService", () => ({
@@ -126,6 +126,8 @@ const renderMessages = (initialEntry = "/app/messages") => render(
 describe("MessagesPage", () => {
   beforeEach(() => {
     mocks.extraUsers = [];
+    mocks.blocks = [];
+    mocks.blocksLoading = false;
     mocks.threads = [thread];
     mocks.messages = [message];
     mocks.sendChatMessage.mockReset().mockResolvedValue(undefined);
@@ -218,6 +220,34 @@ describe("MessagesPage", () => {
       "Nationals prep",
       [normalizeUserProfile(james), normalizeUserProfile(mia)],
     );
+  });
+
+  it("hides a blocked member's group messages and inbox preview but keeps other messages", async () => {
+    const group = { ...thread, id: "group-1", type: "group" as const, name: "Practice group", participantIds: ["maya", "james", "mia"], memberCount: 3, lastMessageText: "Private blocked text", lastMessageSenderId: "james" };
+    mocks.threads = [group];
+    mocks.blocks = [{ id: "maya-james", blockerId: "maya", blockedId: "james", createdAt: "2026-09-01" }];
+    mocks.messages = [
+      { ...message, id: "blocked-1", threadId: group.id, participantIds: group.participantIds, content: "Private blocked text" },
+      { ...message, id: "visible-1", threadId: group.id, participantIds: group.participantIds, authorId: "mia", authorName: "Mia Thompson", content: "Visible from Mia" },
+      { ...message, id: "blocked-2", threadId: group.id, participantIds: group.participantIds, content: "Another blocked message" },
+    ];
+    renderMessages();
+
+    expect(await screen.findByText("Visible from Mia")).toBeInTheDocument();
+    expect(screen.queryByText("Private blocked text")).not.toBeInTheDocument();
+    expect(screen.queryByText("Another blocked message")).not.toBeInTheDocument();
+    expect(screen.getByText("Message from a blocked member hidden")).toBeInTheDocument();
+    expect(screen.getByText("Mia Thompson")).toBeInTheDocument();
+  });
+
+  it("does not show group content before blocked accounts have loaded", async () => {
+    mocks.threads = [{ ...thread, id: "group-1", type: "group", name: "Practice group", participantIds: ["maya", "james", "mia"], memberCount: 3, lastMessageText: "Should stay hidden" }];
+    mocks.blocksLoading = true;
+    mocks.messages = [{ ...message, threadId: "group-1", content: "Should stay hidden" }];
+    renderMessages();
+
+    expect(await screen.findByText("Loading group messages...")).toBeInTheDocument();
+    expect(screen.queryByText("Should stay hidden")).not.toBeInTheDocument();
   });
 
   it("lets the sender edit a plain text message", async () => {

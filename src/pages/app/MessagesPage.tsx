@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
+import { where, type QueryConstraint } from "firebase/firestore";
 import {
   AlertCircle,
   MessageCircle,
@@ -33,7 +34,7 @@ import {
 } from "@/features/messages/messageService";
 import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { ChatMessage, ChatThread, UserProfile } from "@/types/models";
+import type { ChatMessage, ChatThread, UserBlock, UserProfile } from "@/types/models";
 
 type ComposerMode = "direct" | "group";
 
@@ -72,6 +73,14 @@ export const MessagesPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedThreadId = searchParams.get("thread");
   const usersState = useSeededFirestoreCollection<UserProfile>("users", seededUsers);
+  const blockConstraints = useMemo<QueryConstraint[]>(
+    () => currentUser ? [where("blockerId", "==", currentUser.id)] : [],
+    [currentUser?.id],
+  );
+  const blocksState = useSeededFirestoreCollection<UserBlock>(
+    "userBlocks", [], blockConstraints, Boolean(currentUser),
+    currentUser ? `user-blocks:${currentUser.id}` : undefined,
+  );
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -123,6 +132,18 @@ export const MessagesPage = () => {
     [people],
   );
   const activeThread = threads.find((thread) => thread.id === activeThreadId);
+  const blockedUserIds = useMemo(
+    () => new Set(blocksState.data.filter((block) => block.blockerId === currentUser?.id).map((block) => block.blockedId)),
+    [blocksState.data, currentUser?.id],
+  );
+  const groupBlockListUnavailable = activeThread?.type === "group" && (blocksState.isLoading || Boolean(blocksState.error));
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => message.threadId === activeThreadId
+      && (activeThread?.type !== "group" || !blockedUserIds.has(message.authorId))),
+    [activeThread?.type, activeThreadId, blockedUserIds, messages],
+  );
+  const hasHiddenGroupMessages = activeThread?.type === "group"
+    && messages.some((message) => message.threadId === activeThreadId && blockedUserIds.has(message.authorId));
   const availableUsers = useMemo(() => {
     const normalizedSearch = peopleSearch.trim().toLowerCase();
     return people
@@ -217,6 +238,23 @@ export const MessagesPage = () => {
   const threadTitle = (thread: ChatThread) => {
     if (thread.type === "group") return thread.name || "Untitled group";
     return threadPeople(thread)[0]?.displayName ?? "Direct message";
+  };
+
+  const threadPreview = (thread: ChatThread) => {
+    const fallback = thread.type === "group"
+      ? `${thread.memberCount ?? thread.participantIds?.length ?? 0} members`
+      : "Start the conversation";
+    if (!thread.lastMessageText || thread.type !== "group") return thread.lastMessageText || fallback;
+    if (blocksState.isLoading || blocksState.error) return "Recent message";
+    if (thread.lastMessageSenderId && blockedUserIds.has(thread.lastMessageSenderId)) {
+      return "Message from a blocked member hidden";
+    }
+    // Older threads may not have a sender ID, so avoid displaying an
+    // unattributed preview when it could have come from a blocked member.
+    if (!thread.lastMessageSenderId && thread.participantIds?.some((id) => blockedUserIds.has(id))) {
+      return "Recent message";
+    }
+    return thread.lastMessageText;
   };
 
   const resetComposer = () => {
@@ -524,7 +562,7 @@ export const MessagesPage = () => {
                       <strong>{threadTitle(thread)}</strong>
                       <small>{formatMessageTime(thread.lastMessageAt ?? thread.updatedAt)}</small>
                     </span>
-                    <span>{thread.lastMessageText || (thread.type === "group" ? `${thread.memberCount ?? thread.participantIds?.length ?? 0} members` : "Start the conversation")}</span>
+                    <span>{threadPreview(thread)}</span>
                   </span>
                 </button>
               );
@@ -550,7 +588,13 @@ export const MessagesPage = () => {
               </header>
 
               <div className="messages-scroll-region" aria-live="polite">
-                {messagesError ? (
+                {groupBlockListUnavailable ? (
+                  <div className="messages-conversation-empty" role="status">
+                    <span className="message-empty-icon"><MessageCircle size={28} /></span>
+                    <strong>{blocksState.error ? "Group messages are unavailable." : "Loading group messages..."}</strong>
+                    {blocksState.error ? <p>Blocked accounts could not be checked, so this conversation is hidden for now.</p> : null}
+                  </div>
+                ) : messagesError ? (
                   <div className="messages-conversation-empty is-error" role="alert">
                     <span className="message-empty-icon"><AlertCircle size={28} /></span>
                     <strong>This conversation could not be loaded.</strong>
@@ -561,16 +605,16 @@ export const MessagesPage = () => {
                     <span className="message-empty-icon"><MessageCircle size={28} /></span>
                     <strong>Loading messages...</strong>
                   </div>
-                ) : messages.length === 0 ? (
+                ) : visibleMessages.length === 0 ? (
                   <div className="messages-conversation-empty">
                     <span className="message-empty-icon"><MessageCircle size={28} /></span>
-                    <strong>This is the beginning of the conversation.</strong>
-                    <p>Messages here are only visible to people in this chat.</p>
+                    <strong>{hasHiddenGroupMessages ? "No messages to show." : "This is the beginning of the conversation."}</strong>
+                    <p>{hasHiddenGroupMessages ? "Messages from blocked members are hidden." : "Messages here are only visible to people in this chat."}</p>
                   </div>
                 ) : null}
-                {messages.map((message, index) => {
+                {!groupBlockListUnavailable && !messagesError && !isMessagesLoading ? visibleMessages.map((message, index) => {
                   const isOwn = message.authorId === currentUser.id;
-                  const previous = messages[index - 1];
+                  const previous = visibleMessages[index - 1];
                   const showAuthor = !previous || previous.authorId !== message.authorId;
                   return (
                     <div key={message.id} className={isOwn ? "message-row is-own" : "message-row"}>
@@ -633,7 +677,7 @@ export const MessagesPage = () => {
                       </div>
                     </div>
                   );
-                })}
+                }) : null}
                 <div ref={messageEndRef} />
               </div>
 

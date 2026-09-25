@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { where, type QueryConstraint } from "firebase/firestore";
 import { seededDebates } from "@/data/firestoreSeeds";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { ChatMessage, DebateThread } from "@/types/models";
+import type { ChatMessage, DebateThread, UserBlock } from "@/types/models";
 
 export interface AppNotification {
   id: string;
@@ -15,6 +15,7 @@ export interface AppNotification {
 }
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
+const EMPTY_BLOCKS: UserBlock[] = [];
 const LAST_SEEN_STORAGE_PREFIX = "debate-studio:notifications-seen:";
 const READ_STORAGE_PREFIX = "debate-studio:notifications-read:";
 const DEFAULT_HISTORY_DAYS = 30;
@@ -67,16 +68,31 @@ export const useNotifications = (userId: string | undefined, historyDays?: numbe
     Boolean(userId),
     userId ? `notification-messages:${userId}` : undefined,
   );
+  const blockConstraints = useMemo<QueryConstraint[]>(
+    () => (userId ? [where("blockerId", "==", userId)] : []),
+    [userId],
+  );
+  const blocksState = useSeededFirestoreCollection<UserBlock>(
+    "userBlocks",
+    EMPTY_BLOCKS,
+    blockConstraints,
+    Boolean(userId),
+    userId ? `user-blocks:${userId}` : undefined,
+  );
   const debateState = useSeededFirestoreCollection("debates", seededDebates);
 
   const notifications = useMemo<AppNotification[]>(() => {
     if (!userId) return [];
     const cutoff = Date.now() - getHistoryDays(historyDays) * 24 * 60 * 60 * 1000;
+    const blockedUserIds = new Set(blocksState.data
+      .filter((block) => block.blockerId === userId)
+      .map((block) => block.blockedId));
 
-    const messageAlerts = messageState.data
+    const messageAlerts = (blocksState.isLoading || blocksState.error ? [] : messageState.data)
       .filter((message) =>
         Boolean(message.createdAt)
-        && message.authorId !== userId)
+        && message.authorId !== userId
+        && !blockedUserIds.has(message.authorId))
       .map((message) => ({
         id: `message-${message.id}`,
         kind: "message" as const,
@@ -136,7 +152,7 @@ export const useNotifications = (userId: string | undefined, historyDays?: numbe
         Number(right.isUnread) - Number(left.isUnread)
         || right.timestamp.localeCompare(left.timestamp),
       );
-  }, [debateState.data, historyDays, lastSeen, messageState.data, readById, userId]);
+  }, [blocksState.data, blocksState.error, blocksState.isLoading, debateState.data, historyDays, lastSeen, messageState.data, readById, userId]);
 
   const markRead = useCallback((notification: AppNotification) => {
     if (!userId) return;
