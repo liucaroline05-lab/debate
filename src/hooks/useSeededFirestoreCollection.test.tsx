@@ -5,6 +5,7 @@ import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollecti
 const mocks = vi.hoisted(() => ({
   listeners: [] as Array<{
     next: (snapshot: {
+      metadata?: { fromCache: boolean };
       docs: Array<{
         id: string;
         data: () => Record<string, unknown>;
@@ -38,15 +39,16 @@ vi.mock("@/features/firestore/seed", () => ({
 vi.mock("firebase/firestore", () => ({
   collection: vi.fn(() => ({})),
   onSnapshot: vi.fn((
-    _query: unknown,
-    next: (snapshot: {
+    ...args: unknown[]
+  ) => {
+    const next = args.at(-2) as (snapshot: {
+      metadata?: { fromCache: boolean };
       docs: Array<{
         id: string;
         data: () => Record<string, unknown>;
       }>;
-    }) => void,
-    error: (snapshotError: Error) => void,
-  ) => {
+    }) => void;
+    const error = args.at(-1) as (snapshotError: Error) => void;
     mocks.listeners.push({ next, error });
     const unsubscribe = vi.fn();
     mocks.unsubscribes.push(unsubscribe);
@@ -155,6 +157,45 @@ describe("useSeededFirestoreCollection", () => {
     hook.rerender({ cacheKey: "speeches:owner:second-user" });
 
     expect(hook.result.current.data).toEqual([]);
+  });
+
+  it("waits for a server snapshot when cached records could miss a new block", () => {
+    const cacheKey = "user-blocks:test-owner:fresh-check";
+    const constraints: never[] = [];
+    const seedRecords: TestRecord[] = [];
+    const cached = renderHook(() => useSeededFirestoreCollection<TestRecord>(
+      "userBlocks", seedRecords, constraints, true, cacheKey,
+    ));
+    act(() => {
+      mocks.listeners.at(-1)?.next({
+        docs: [{ id: "old-block", data: () => ({ title: "Old block" }) }],
+      });
+    });
+    cached.unmount();
+
+    const fresh = renderHook(() => useSeededFirestoreCollection<TestRecord>(
+      "userBlocks", seedRecords, constraints, true, cacheKey, true,
+    ));
+    expect(fresh.result.current.data).toEqual([]);
+    expect(fresh.result.current.isLoading).toBe(true);
+
+    act(() => {
+      mocks.listeners.at(-1)?.next({
+        metadata: { fromCache: true },
+        docs: [{ id: "old-block", data: () => ({ title: "Old block" }) }],
+      });
+    });
+    expect(fresh.result.current.data).toEqual([]);
+    expect(fresh.result.current.isLoading).toBe(true);
+
+    act(() => {
+      mocks.listeners.at(-1)?.next({
+        metadata: { fromCache: false },
+        docs: [{ id: "new-block", data: () => ({ title: "Current block" }) }],
+      });
+    });
+    expect(fresh.result.current.data).toEqual([{ id: "new-block", title: "Current block" }]);
+    expect(fresh.result.current.isLoading).toBe(false);
   });
 
   it("re-attaches the listener when someone signs in", () => {

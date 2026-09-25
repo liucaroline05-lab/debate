@@ -125,6 +125,7 @@ const renderMessages = (initialEntry = "/app/messages") => render(
 
 describe("MessagesPage", () => {
   beforeEach(() => {
+    window.sessionStorage.clear();
     mocks.extraUsers = [];
     mocks.blocks = [];
     mocks.blocksLoading = false;
@@ -149,6 +150,8 @@ describe("MessagesPage", () => {
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
     expect(mocks.sendChatMessage).toHaveBeenCalledWith(thread, currentUser, "I’m in!");
+    expect(screen.getByRole("textbox", { name: "Message James Kim" })).toHaveValue("");
+    expect(window.sessionStorage.getItem("debate-studio:message-draft:maya:dm-james--maya")).toBeNull();
   });
 
   it("sends an attached file through the moderated path", async () => {
@@ -222,6 +225,46 @@ describe("MessagesPage", () => {
     );
   });
 
+  it("keeps each chat's message draft separate and restores it within 15 minutes", async () => {
+    mocks.threads = [
+      thread,
+      { ...thread, id: "dm-mia--maya", participantIds: ["mia", "maya"] },
+    ];
+    const user = userEvent.setup();
+    renderMessages();
+
+    await user.type(screen.getByRole("textbox", { name: "Message James Kim" }), "Draft for James");
+    await user.click(screen.getByRole("button", { name: /Mia Thompson/ }));
+    const miaDraft = screen.getByRole("textbox", { name: "Message Mia Thompson" });
+    expect(miaDraft).toHaveValue("");
+    await user.type(miaDraft, "Draft for Mia");
+
+    await user.click(screen.getByRole("button", { name: /James Kim/ }));
+    expect(screen.getByRole("textbox", { name: "Message James Kim" })).toHaveValue("Draft for James");
+    await user.click(screen.getByRole("button", { name: /Mia Thompson/ }));
+    expect(screen.getByRole("textbox", { name: "Message Mia Thompson" })).toHaveValue("Draft for Mia");
+  });
+
+  it("discards a cached draft after 15 minutes away from its chat", async () => {
+    mocks.threads = [
+      thread,
+      { ...thread, id: "dm-mia--maya", participantIds: ["mia", "maya"] },
+    ];
+    let now = Date.now();
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const user = userEvent.setup();
+      renderMessages();
+      await user.type(screen.getByRole("textbox", { name: "Message James Kim" }), "Expired draft");
+      await user.click(screen.getByRole("button", { name: /Mia Thompson/ }));
+      now += 16 * 60 * 1000;
+      await user.click(screen.getByRole("button", { name: /James Kim/ }));
+      expect(screen.getByRole("textbox", { name: "Message James Kim" })).toHaveValue("");
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("hides a blocked member's group messages and inbox preview but keeps other messages", async () => {
     const group = { ...thread, id: "group-1", type: "group" as const, name: "Practice group", participantIds: ["maya", "james", "mia"], memberCount: 3, lastMessageText: "Private blocked text", lastMessageSenderId: "james" };
     mocks.threads = [group];
@@ -240,6 +283,26 @@ describe("MessagesPage", () => {
     expect(screen.getByText("Mia Thompson")).toBeInTheDocument();
   });
 
+  it("restores an unsent draft after leaving and reopening Messages", async () => {
+    const user = userEvent.setup();
+    const view = renderMessages();
+    await user.type(screen.getByRole("textbox", { name: "Message James Kim" }), "Still writing");
+    view.unmount();
+
+    renderMessages();
+    expect(await screen.findByRole("textbox", { name: "Message James Kim" })).toHaveValue("Still writing");
+  });
+
+  it("also hides an existing direct-message preview and messages from a blocked account", async () => {
+    mocks.blocks = [{ id: "maya-james", blockerId: "maya", blockedId: "james", createdAt: "2026-09-01" }];
+    mocks.threads = [{ ...thread, lastMessageSenderId: "james" }];
+    renderMessages();
+
+    expect(await screen.findByText("Message from a blocked member hidden")).toBeInTheDocument();
+    expect(screen.queryByText("Want to compare cases?")).not.toBeInTheDocument();
+    expect(screen.getByText("Messages from blocked members are hidden.")).toBeInTheDocument();
+  });
+
   it("does not show group content before blocked accounts have loaded", async () => {
     mocks.threads = [{ ...thread, id: "group-1", type: "group", name: "Practice group", participantIds: ["maya", "james", "mia"], memberCount: 3, lastMessageText: "Should stay hidden" }];
     mocks.blocksLoading = true;
@@ -248,6 +311,23 @@ describe("MessagesPage", () => {
 
     expect(await screen.findByText("Loading group messages...")).toBeInTheDocument();
     expect(screen.queryByText("Should stay hidden")).not.toBeInTheDocument();
+  });
+
+  it("keeps the action button beside the first short message, not beside its author label", async () => {
+    mocks.messages = [
+      { ...message, id: "own-first", authorId: "maya", authorName: "Maya", content: "hi" },
+      { ...message, id: "own-second", authorId: "maya", authorName: "Maya", content: "again" },
+    ];
+    renderMessages();
+
+    const firstAction = await screen.findByRole("button", { name: "Actions for message own-first" });
+    const firstMessage = firstAction.closest(".message-row");
+    const contentRow = firstAction.closest(".message-content-row");
+    const firstBubble = firstMessage?.querySelector<HTMLElement>(".message-bubble");
+    expect(firstMessage?.querySelector(".message-author-line")).toHaveTextContent("You");
+    expect(firstBubble).toHaveTextContent("hi");
+    expect(contentRow).toContainElement(firstBubble ?? null);
+    expect(contentRow).not.toContainElement(firstMessage?.querySelector(".message-author-line") ?? null);
   });
 
   it("lets the sender edit a plain text message", async () => {

@@ -3,7 +3,9 @@ import {
   collection,
   onSnapshot,
   query,
+  type DocumentData,
   type QueryConstraint,
+  type QuerySnapshot,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { mapFirestoreDocuments } from "@/features/firestore/mapDocuments";
@@ -62,18 +64,19 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
   constraints: QueryConstraint[] = EMPTY_QUERY_CONSTRAINTS,
   enabled = true,
   cacheKey?: string,
+  requireServerSnapshot = false,
 ) => {
   const seedRecordsRef = useRef(seedRecords);
   seedRecordsRef.current = seedRecords;
   const activeCacheKeyRef = useRef(cacheKey);
   const { userId: authUserId, ready: isAuthReady } = useAuthSnapshot();
   const [state, setState] = useState<SeededCollectionState<T>>(() => {
-    const cachedData = cacheKey
+    const cachedData = !requireServerSnapshot && cacheKey
       ? (collectionQueryCache.get(cacheKey) as T[] | undefined) ?? []
       : [];
     return {
       data: cachedData,
-      isLoading: Boolean(firestore) && cachedData.length === 0,
+      isLoading: Boolean(firestore) && (requireServerSnapshot || cachedData.length === 0),
       error: firestore ? null : "Firebase is not configured.",
     };
   });
@@ -83,12 +86,12 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
 
     if (activeCacheKeyRef.current !== cacheKey) {
       activeCacheKeyRef.current = cacheKey;
-      const cachedData = cacheKey
+      const cachedData = !requireServerSnapshot && cacheKey
         ? (collectionQueryCache.get(cacheKey) as T[] | undefined) ?? []
         : [];
       setState({
         data: cachedData,
-        isLoading: Boolean(firestore) && cachedData.length === 0,
+        isLoading: Boolean(firestore) && (requireServerSnapshot || cachedData.length === 0),
         error: firestore ? null : "Firebase is not configured.",
       });
     }
@@ -126,37 +129,45 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
       };
     }
 
-    const unsubscribe = onSnapshot(
-      query(collection(firestore, collectionName), ...constraints),
-      (snapshot) => {
-        if (!isMounted) {
-          return;
-        }
+    const handleSnapshot = (snapshot: QuerySnapshot<DocumentData>) => {
+      if (!isMounted) {
+        return;
+      }
 
-        const nextData = mapFirestoreDocuments<T>(snapshot.docs);
-        if (cacheKey) {
-          collectionQueryCache.set(cacheKey, nextData);
-        }
+      // Blocking is a visibility boundary. A previously cached snapshot can
+      // predate a new block, so callers may wait for server confirmation.
+      if (requireServerSnapshot && snapshot.metadata.fromCache) {
+        setState({ data: [], isLoading: true, error: null });
+        return;
+      }
 
-        setState({
-          data: nextData,
-          isLoading: false,
-          error: null,
-        });
-      },
-      (error) => {
-        if (!isMounted) {
-          return;
-        }
+      const nextData = mapFirestoreDocuments<T>(snapshot.docs);
+      if (cacheKey) {
+        collectionQueryCache.set(cacheKey, nextData);
+      }
 
-        console.error(`"${collectionName}" listener failed:`, error.message);
-        setState((current) => ({
-          ...current,
-          isLoading: false,
-          error: error.message,
-        }));
-      },
-    );
+      setState({
+        data: nextData,
+        isLoading: false,
+        error: null,
+      });
+    };
+    const handleError = (error: Error) => {
+      if (!isMounted) {
+        return;
+      }
+
+      console.error(`"${collectionName}" listener failed:`, error.message);
+      setState((current) => ({
+        ...current,
+        isLoading: false,
+        error: error.message,
+      }));
+    };
+    const collectionQuery = query(collection(firestore, collectionName), ...constraints);
+    const unsubscribe = requireServerSnapshot
+      ? onSnapshot(collectionQuery, { includeMetadataChanges: true }, handleSnapshot, handleError)
+      : onSnapshot(collectionQuery, handleSnapshot, handleError);
 
     return () => {
       isMounted = false;
@@ -164,7 +175,7 @@ export const useSeededFirestoreCollection = <T extends { id: string }>(
     };
     // `authUserId` is a dependency so that signing in or out re-attaches every
     // listener rather than leaving a rejected one in place.
-  }, [authUserId, cacheKey, collectionName, constraints, enabled, isAuthReady]);
+  }, [authUserId, cacheKey, collectionName, constraints, enabled, isAuthReady, requireServerSnapshot]);
 
   return state;
 };

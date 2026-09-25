@@ -37,6 +37,38 @@ import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollecti
 import type { ChatMessage, ChatThread, UserBlock, UserProfile } from "@/types/models";
 
 type ComposerMode = "direct" | "group";
+type CachedMessageDraft = { text: string; savedAt: number };
+
+const MESSAGE_DRAFT_TTL_MS = 15 * 60 * 1000;
+const messageDraftStorageKey = (userId: string, threadId: string) =>
+  `debate-studio:message-draft:${encodeURIComponent(userId)}:${encodeURIComponent(threadId)}`;
+
+const readMessageDraft = (key: string, checkExpiry = true): CachedMessageDraft | null => {
+  if (!key) return null;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as CachedMessageDraft;
+    if (typeof draft.text !== "string" || !Number.isFinite(draft.savedAt)
+      || (checkExpiry && Date.now() - draft.savedAt >= MESSAGE_DRAFT_TTL_MS)) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+    return draft;
+  } catch {
+    return null;
+  }
+};
+
+const saveMessageDraft = (key: string, draft: CachedMessageDraft | null) => {
+  if (!key) return;
+  try {
+    if (draft?.text) window.sessionStorage.setItem(key, JSON.stringify(draft));
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    // Keep the in-memory draft when browser storage is unavailable.
+  }
+};
 
 const formatMessageTime = (value?: string) => {
   if (!value) return "";
@@ -79,7 +111,7 @@ export const MessagesPage = () => {
   );
   const blocksState = useSeededFirestoreCollection<UserBlock>(
     "userBlocks", [], blockConstraints, Boolean(currentUser),
-    currentUser ? `user-blocks:${currentUser.id}` : undefined,
+    currentUser ? `user-blocks:${currentUser.id}` : undefined, true,
   );
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState("");
@@ -88,7 +120,9 @@ export const MessagesPage = () => {
   const [messagesError, setMessagesError] = useState("");
   const [isThreadsLoading, setIsThreadsLoading] = useState(true);
   const [pageError, setPageError] = useState("");
-  const [messageDraft, setMessageDraft] = useState("");
+  const [, refreshDraft] = useState(0);
+  const draftCacheRef = useRef(new Map<string, CachedMessageDraft>());
+  const activeDraftKeyRef = useRef("");
   const [openMessageActionsId, setOpenMessageActionsId] = useState("");
   const [messageMenuOpensUp, setMessageMenuOpensUp] = useState(false);
   const [messageMenuAlignLeft, setMessageMenuAlignLeft] = useState(false);
@@ -132,18 +166,41 @@ export const MessagesPage = () => {
     [people],
   );
   const activeThread = threads.find((thread) => thread.id === activeThreadId);
+  const draftKey = currentUser && activeThreadId
+    ? messageDraftStorageKey(currentUser.id, activeThreadId)
+    : "";
+  if (activeDraftKeyRef.current !== draftKey) {
+    activeDraftKeyRef.current = draftKey;
+    if (draftKey) {
+      const inMemory = draftCacheRef.current.get(draftKey);
+      const cached = inMemory && Date.now() - inMemory.savedAt < MESSAGE_DRAFT_TTL_MS
+        ? inMemory
+        : readMessageDraft(draftKey);
+      if (cached) draftCacheRef.current.set(draftKey, cached);
+      else draftCacheRef.current.delete(draftKey);
+    }
+  }
+  const messageDraft = draftKey ? draftCacheRef.current.get(draftKey)?.text ?? "" : "";
+  const setMessageDraft = (text: string) => {
+    if (!draftKey) return;
+    const draft = text ? { text, savedAt: Date.now() } : null;
+    if (draft) draftCacheRef.current.set(draftKey, draft);
+    else draftCacheRef.current.delete(draftKey);
+    saveMessageDraft(draftKey, draft);
+    refreshDraft((revision) => revision + 1);
+  };
   const blockedUserIds = useMemo(
     () => new Set(blocksState.data.filter((block) => block.blockerId === currentUser?.id).map((block) => block.blockedId)),
     [blocksState.data, currentUser?.id],
   );
-  const groupBlockListUnavailable = activeThread?.type === "group" && (blocksState.isLoading || Boolean(blocksState.error));
+  const blockListUnavailable = Boolean(activeThread) && (blocksState.isLoading || Boolean(blocksState.error));
   const visibleMessages = useMemo(
     () => messages.filter((message) => message.threadId === activeThreadId
-      && (activeThread?.type !== "group" || !blockedUserIds.has(message.authorId))),
-    [activeThread?.type, activeThreadId, blockedUserIds, messages],
+      && !blockedUserIds.has(message.authorId)),
+    [activeThreadId, blockedUserIds, messages],
   );
-  const hasHiddenGroupMessages = activeThread?.type === "group"
-    && messages.some((message) => message.threadId === activeThreadId && blockedUserIds.has(message.authorId));
+  const hasHiddenMessages = messages.some((message) =>
+    message.threadId === activeThreadId && blockedUserIds.has(message.authorId));
   const availableUsers = useMemo(() => {
     const normalizedSearch = peopleSearch.trim().toLowerCase();
     return people
@@ -156,6 +213,15 @@ export const MessagesPage = () => {
       })
       .sort((left, right) => left.displayName.localeCompare(right.displayName));
   }, [currentUser?.id, peopleSearch, people]);
+
+  useEffect(() => () => {
+    if (!draftKey) return;
+    const draft = draftCacheRef.current.get(draftKey) ?? readMessageDraft(draftKey, false);
+    if (!draft?.text) return;
+    const renewed = { text: draft.text, savedAt: Date.now() };
+    draftCacheRef.current.set(draftKey, renewed);
+    saveMessageDraft(draftKey, renewed);
+  }, [draftKey]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -244,7 +310,7 @@ export const MessagesPage = () => {
     const fallback = thread.type === "group"
       ? `${thread.memberCount ?? thread.participantIds?.length ?? 0} members`
       : "Start the conversation";
-    if (!thread.lastMessageText || thread.type !== "group") return thread.lastMessageText || fallback;
+    if (!thread.lastMessageText) return fallback;
     if (blocksState.isLoading || blocksState.error) return "Recent message";
     if (thread.lastMessageSenderId && blockedUserIds.has(thread.lastMessageSenderId)) {
       return "Message from a blocked member hidden";
@@ -588,10 +654,10 @@ export const MessagesPage = () => {
               </header>
 
               <div className="messages-scroll-region" aria-live="polite">
-                {groupBlockListUnavailable ? (
+                {blockListUnavailable ? (
                   <div className="messages-conversation-empty" role="status">
                     <span className="message-empty-icon"><MessageCircle size={28} /></span>
-                    <strong>{blocksState.error ? "Group messages are unavailable." : "Loading group messages..."}</strong>
+                    <strong>{blocksState.error ? "Messages are unavailable." : activeThread.type === "group" ? "Loading group messages..." : "Loading messages..."}</strong>
                     {blocksState.error ? <p>Blocked accounts could not be checked, so this conversation is hidden for now.</p> : null}
                   </div>
                 ) : messagesError ? (
@@ -608,49 +674,17 @@ export const MessagesPage = () => {
                 ) : visibleMessages.length === 0 ? (
                   <div className="messages-conversation-empty">
                     <span className="message-empty-icon"><MessageCircle size={28} /></span>
-                    <strong>{hasHiddenGroupMessages ? "No messages to show." : "This is the beginning of the conversation."}</strong>
-                    <p>{hasHiddenGroupMessages ? "Messages from blocked members are hidden." : "Messages here are only visible to people in this chat."}</p>
+                    <strong>{hasHiddenMessages ? "No messages to show." : "This is the beginning of the conversation."}</strong>
+                    <p>{hasHiddenMessages ? "Messages from blocked members are hidden." : "Messages here are only visible to people in this chat."}</p>
                   </div>
                 ) : null}
-                {!groupBlockListUnavailable && !messagesError && !isMessagesLoading ? visibleMessages.map((message, index) => {
+                {!blockListUnavailable && !messagesError && !isMessagesLoading ? visibleMessages.map((message, index) => {
                   const isOwn = message.authorId === currentUser.id;
                   const previous = visibleMessages[index - 1];
                   const showAuthor = !previous || previous.authorId !== message.authorId;
                   return (
                     <div key={message.id} className={isOwn ? "message-row is-own" : "message-row"}>
                       {!isOwn && showAuthor ? <ProfileAvatar user={userById.get(message.authorId)} small /> : <span className="message-avatar-spacer" />}
-                      {isOwn && !message.deletedAt && editingMessageId !== message.id ? <div className="forum-post-menu message-entry-actions">
-                        <button type="button" className="forum-icon-button" aria-label={`Actions for message ${message.id}`} aria-expanded={openMessageActionsId === message.id} onClick={(event) => {
-                          if (openMessageActionsId === message.id) {
-                            setOpenMessageActionsId("");
-                            return;
-                          }
-                          const buttonBounds = event.currentTarget.getBoundingClientRect();
-                          const scrollBounds = event.currentTarget.closest(".messages-scroll-region")?.getBoundingClientRect();
-                          if (scrollBounds) {
-                            const roomBelow = scrollBounds.bottom - buttonBounds.bottom;
-                            const roomAbove = buttonBounds.top - scrollBounds.top;
-                            setMessageMenuOpensUp(roomBelow < 140 && roomAbove > roomBelow);
-                            setMessageMenuAlignLeft(buttonBounds.left - scrollBounds.left < 184);
-                          }
-                          setOpenMessageActionsId(message.id);
-                        }}>
-                          <MoreHorizontal size={17} aria-hidden="true" />
-                        </button>
-                        {openMessageActionsId === message.id ? <div className={`forum-menu-dropdown${messageMenuOpensUp ? " opens-up" : ""}${messageMenuAlignLeft ? " align-left" : ""}`}>
-                          {!message.attachment && !message.sharedPreview ? <button type="button" className="forum-menu-item" onClick={() => {
-                            setEditingMessageId(message.id);
-                            setEditDraft(message.content);
-                            setMessageActionError("");
-                            setOpenMessageActionsId("");
-                          }}><Pencil size={16} aria-hidden="true" /> Edit message</button> : null}
-                          <button type="button" className="forum-menu-item" onClick={() => {
-                            setDeleteTarget(message);
-                            setMessageActionError("");
-                            setOpenMessageActionsId("");
-                          }}><Trash2 size={16} aria-hidden="true" /> Delete message</button>
-                        </div> : null}
-                      </div> : null}
                       <div className="message-bubble-wrap">
                         {showAuthor ? (
                           <span className="message-author-line">
@@ -658,6 +692,40 @@ export const MessagesPage = () => {
                             <small>{formatMessageTime(message.createdAt)}</small>
                           </span>
                         ) : null}
+                        <div className="message-content-row">
+                          {isOwn && !message.deletedAt && editingMessageId !== message.id ? <div className="forum-post-menu message-entry-actions">
+                            <button type="button" className="forum-icon-button" aria-label={`Actions for message ${message.id}`} aria-expanded={openMessageActionsId === message.id} onClick={(event) => {
+                              if (openMessageActionsId === message.id) {
+                                setOpenMessageActionsId("");
+                                return;
+                              }
+                              const buttonBounds = event.currentTarget.getBoundingClientRect();
+                              const scrollBounds = event.currentTarget.closest(".messages-scroll-region")?.getBoundingClientRect();
+                              if (scrollBounds) {
+                                const roomBelow = scrollBounds.bottom - buttonBounds.bottom;
+                                const roomAbove = buttonBounds.top - scrollBounds.top;
+                                setMessageMenuOpensUp(roomBelow < 140 && roomAbove > roomBelow);
+                                setMessageMenuAlignLeft(buttonBounds.left - scrollBounds.left < 184);
+                              }
+                              setOpenMessageActionsId(message.id);
+                            }}>
+                              <MoreHorizontal size={17} aria-hidden="true" />
+                            </button>
+                            {openMessageActionsId === message.id ? <div className={`forum-menu-dropdown${messageMenuOpensUp ? " opens-up" : ""}${messageMenuAlignLeft ? " align-left" : ""}`}>
+                              {!message.attachment && !message.sharedPreview ? <button type="button" className="forum-menu-item" onClick={() => {
+                                setEditingMessageId(message.id);
+                                setEditDraft(message.content);
+                                setMessageActionError("");
+                                setOpenMessageActionsId("");
+                              }}><Pencil size={16} aria-hidden="true" /> Edit message</button> : null}
+                              <button type="button" className="forum-menu-item" onClick={() => {
+                                setDeleteTarget(message);
+                                setMessageActionError("");
+                                setOpenMessageActionsId("");
+                              }}><Trash2 size={16} aria-hidden="true" /> Delete message</button>
+                            </div> : null}
+                          </div> : null}
+                          <div className="message-content-body">
                         {message.deletedAt ? <div className="message-bubble is-deleted">message deleted</div>
                           : editingMessageId === message.id ? <form className="message-edit-form" onSubmit={(event) => void saveMessageEdit(event)}>
                             <label className="sr-only" htmlFor={`edit-message-${message.id}`}>Edit message text</label>
@@ -674,6 +742,8 @@ export const MessagesPage = () => {
                             {message.attachment ? <ChatAttachmentView message={message} viewerId={currentUser.id} /> : null}
                             {message.editedAt ? <span className="message-edited-label">edited</span> : null}
                           </>}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   );

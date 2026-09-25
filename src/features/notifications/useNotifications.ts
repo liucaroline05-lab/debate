@@ -78,6 +78,7 @@ export const useNotifications = (userId: string | undefined, historyDays?: numbe
     blockConstraints,
     Boolean(userId),
     userId ? `user-blocks:${userId}` : undefined,
+    true,
   );
   const debateState = useSeededFirestoreCollection("debates", seededDebates);
 

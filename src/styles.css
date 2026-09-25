@@ -2970,6 +2970,26 @@ button {
   max-width: min(42rem, 76%);
 }
 
+.message-row.is-own .message-bubble-wrap {
+  max-width: min(45rem, 100%);
+}
+
+.message-content-row {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 0.65rem;
+}
+
+.message-row.is-own .message-content-row {
+  justify-content: flex-end;
+}
+
+.message-content-body {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .message-author-line {
   display: flex;
   gap: 0.55rem;
@@ -3014,7 +3034,8 @@ button {
 }
 
 .message-entry-actions {
-  margin-top: 1rem;
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
 }
 
 .message-entry-actions .forum-menu-dropdown {
