@@ -9,6 +9,15 @@ const mocks = vi.hoisted(() => ({
   createSpeechRecord: vi.fn(),
   own: [] as SpeechRecord[],
   public: [] as SpeechRecord[],
+  saves: [] as Array<{ id: string; speechId: string; userId: string; createdAt: string }>,
+  getDoc: vi.fn(),
+}));
+
+vi.mock("@/lib/firebase", () => ({ firestore: {} }));
+vi.mock("firebase/firestore", () => ({
+  where: () => ({}),
+  doc: (_db: unknown, _collection: string, id: string) => ({ id }),
+  getDoc: mocks.getDoc,
 }));
 
 vi.mock("@/features/auth/AuthContext", () => ({
@@ -23,7 +32,7 @@ vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
     _enabled: boolean,
     cacheKey: string,
   ) => ({
-    data: cacheKey === "speeches:public" ? mocks.public : mocks.own,
+    data: cacheKey === "speeches:public" ? mocks.public : cacheKey === "speech-saves:me" ? mocks.saves : mocks.own,
     isLoading: false,
     error: null,
   }),
@@ -77,6 +86,22 @@ describe("SpeechUploadPage", () => {
         topicCategory: "Environment",
       }),
     ];
+    mocks.saves = [];
+    mocks.getDoc.mockReset().mockImplementation(async (reference: { id: string }) => ({
+      id: reference.id,
+      exists: () => false,
+      data: () => ({}),
+    }));
+  });
+
+  it("includes a saved private shared speech in the saved-only list", async () => {
+    const shared = speech("shared-private", { creatorId: "other", visibility: "private", title: "Shared practice" });
+    mocks.saves = [{ id: "save-shared", speechId: shared.id, userId: "me", createdAt: "2026-09-01" }];
+    mocks.getDoc.mockResolvedValue({ id: shared.id, exists: () => true, data: () => ({ ...shared }) });
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Saved only" }));
+    expect(await screen.findByText("Shared practice")).toBeInTheDocument();
   });
 
   it("shows separate searchable speech sections and filters without opening upload", async () => {

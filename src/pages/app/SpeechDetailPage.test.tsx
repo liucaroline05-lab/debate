@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   speech: null as SpeechRecord | null,
   reportSpeechRecord: vi.fn(),
   retrySpeechSummary: vi.fn(),
+  toggleSpeechSave: vi.fn(),
   currentUserId: "owner" as string,
 }));
 
@@ -30,7 +31,7 @@ vi.mock("@/features/speeches/speechService", () => ({
   reportSpeechRecord: mocks.reportSpeechRecord,
   retrySpeechSummary: mocks.retrySpeechSummary,
   updateSpeechRecord: vi.fn(),
-  toggleSpeechSave: vi.fn(),
+  toggleSpeechSave: mocks.toggleSpeechSave,
 }));
 
 vi.mock("@/lib/firebase", () => ({ firestore: {} }));
@@ -90,6 +91,25 @@ describe("SpeechDetailPage", () => {
     mocks.currentUserId = "owner";
     mocks.reportSpeechRecord.mockReset().mockResolvedValue(true);
     mocks.retrySpeechSummary.mockReset().mockResolvedValue("completed");
+    mocks.toggleSpeechSave.mockReset().mockResolvedValue(true);
+  });
+
+  it("saves a speech and shows the result next to the save control", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(mocks.toggleSpeechSave).toHaveBeenCalledWith("speech-1", "owner", false);
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved to your speeches.");
+    expect(screen.getByRole("button", { name: "Saved" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows a speech save failure rather than hiding it", async () => {
+    mocks.toggleSpeechSave.mockRejectedValueOnce(new Error("Permission denied"));
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Permission denied");
+    expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("renders app-styled playback controls instead of browser-native controls", () => {

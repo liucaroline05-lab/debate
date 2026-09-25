@@ -114,6 +114,7 @@ export const SpeechDetailPage = () => {
   const [shareOpen, setShareOpen] = useState(false);
   const [isSaveBusy, setIsSaveBusy] = useState(false);
   const [optimisticSave, setOptimisticSave] = useState<boolean | null>(null);
+  const [saveNotice, setSaveNotice] = useState("");
   const saveConstraints = useMemo<QueryConstraint[]>(
     () => currentUser ? [where("userId", "==", currentUser.id)] : [],
     [currentUser?.id],
@@ -164,6 +165,11 @@ export const SpeechDetailPage = () => {
   const isOwner = Boolean(speech?.creatorId && speech.creatorId === currentUser?.id);
   const isSaved = optimisticSave ?? savesState.data.some((save) => save.speechId === speechId);
   const isEditing = isOwner && searchParams.get("mode") === "edit";
+
+  useEffect(() => {
+    setOptimisticSave(null);
+    setSaveNotice("");
+  }, [speechId]);
 
   useEffect(() => {
     if (!firestore || !speechId) {
@@ -396,12 +402,15 @@ export const SpeechDetailPage = () => {
             if (!speechId) return;
             const next = !isSaved;
             setOptimisticSave(next);
+            setSaveNotice("");
             setIsSaveBusy(true);
             try {
-              await toggleSpeechSave(speechId, currentUser.id, isSaved);
+              const saved = await toggleSpeechSave(speechId, currentUser.id, isSaved);
+              setOptimisticSave(saved);
+              setSaveNotice(saved ? "Saved to your speeches." : "Removed from saved speeches.");
             } catch (cause) {
               setOptimisticSave(null);
-              setError(cause instanceof Error ? cause.message : "Unable to update saved speeches.");
+              setSaveNotice(cause instanceof Error ? cause.message : "Unable to update saved speeches.");
             } finally {
               setIsSaveBusy(false);
             }
@@ -460,6 +469,9 @@ export const SpeechDetailPage = () => {
           </div>
         </div>
       </header>
+
+      {saveNotice ? <p className="speech-detail-notice" role="status">{saveNotice}</p> : null}
+      {savesState.error ? <p className="speech-field-error" role="alert">Saved speeches could not load: {savesState.error}</p> : null}
 
       {reportNotice ? <p className="speech-detail-notice" role="status">{reportNotice}</p> : null}
 

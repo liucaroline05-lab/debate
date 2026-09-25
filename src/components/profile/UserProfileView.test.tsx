@@ -13,6 +13,17 @@ const authState = vi.hoisted(() => ({
 const collectionState = vi.hoisted(() => ({
   dataByCollection: new Map<string, unknown[]>(),
 }));
+const profileActions = vi.hoisted(() => ({ setUserBlocked: vi.fn(), reportUserProfile: vi.fn() }));
+
+vi.mock("@/features/profile/profileService", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/features/profile/profileService")>(),
+  setUserBlocked: profileActions.setUserBlocked,
+  reportUserProfile: profileActions.reportUserProfile,
+}));
+
+vi.mock("@/features/messages/ShareToMessageDialog", () => ({
+  ShareToMessageDialog: ({ title, url }: { title: string; url: string }) => <div role="dialog" aria-label="Share">{title} {url}</div>,
+}));
 
 vi.mock("@/features/auth/AuthContext", () => ({
   useAuth: () => ({
@@ -77,6 +88,8 @@ describe("UserProfileView", () => {
     authState.updateProfile.mockResolvedValue(undefined);
     collectionState.dataByCollection.clear();
     collectionState.dataByCollection.set("users", [demoUser]);
+    profileActions.setUserBlocked.mockReset().mockResolvedValue(undefined);
+    profileActions.reportUserProfile.mockReset().mockResolvedValue(true);
   });
 
   it("renders a user profile when Firestore has partial stats data", () => {
@@ -157,5 +170,26 @@ describe("UserProfileView", () => {
     expect(screen.getByRole("heading", { name: "Synced events" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Tabroom sync" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Link Tabroom" })).not.toBeInTheDocument();
+  });
+
+  it("shares, reports, and blocks another profile from its actions menu", async () => {
+    collectionState.dataByCollection.set("users", [demoUser, { ...demoUser, id: "other", displayName: "Taylor Kim" }]);
+    const user = userEvent.setup();
+    render(<MemoryRouter><UserProfileView userId="other" isOwnProfile={false} /></MemoryRouter>);
+
+    await user.click(screen.getByRole("button", { name: "Actions for Taylor Kim" }));
+    await user.click(screen.getByRole("button", { name: "Share profile" }));
+    expect(screen.getByRole("dialog", { name: "Share" })).toHaveTextContent("/app/users/other");
+
+    await user.click(screen.getByRole("button", { name: "Actions for Taylor Kim" }));
+    await user.click(screen.getByRole("button", { name: "Report" }));
+    await user.click(screen.getByRole("button", { name: "Submit report" }));
+    expect(profileActions.reportUserProfile).toHaveBeenCalledWith("demo-user", "other", "Harassment", "");
+
+    await user.click(screen.getByRole("button", { name: "Actions for Taylor Kim" }));
+    await user.click(screen.getByRole("button", { name: "Block" }));
+    expect(screen.getByRole("dialog", { name: "Block Taylor Kim?" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Block account" }));
+    expect(profileActions.setUserBlocked).toHaveBeenCalledWith("demo-user", "other", true);
   });
 });

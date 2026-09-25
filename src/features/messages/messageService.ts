@@ -51,11 +51,29 @@ const describeFirestoreError = (error: FirestoreError) => {
 export const directThreadId = (senderId: string, recipientId: string) =>
   `dm-${[senderId, recipientId].sort().join("--")}`;
 
+const hasBlockBetween = async (firstId: string, secondId: string) => {
+  const database = requireFirestore();
+  try {
+    const [firstBlock, secondBlock] = await Promise.all([
+      getDoc(doc(database, "userBlocks", `${firstId}-${secondId}`)),
+      getDoc(doc(database, "userBlocks", `${secondId}-${firstId}`)),
+    ]);
+    return firstBlock.exists() || secondBlock.exists();
+  } catch (error) {
+    // The previous deployed rules have no userBlocks match. Until the new
+    // rules are deployed no client can create a block, so keep existing DMs
+    // working instead of treating an unavailable collection as a block.
+    if ((error as { code?: string } | null)?.code === "permission-denied") return false;
+    throw error;
+  }
+};
+
 export const canStartConversation = async (
   senderId: string,
   recipient: UserProfile,
 ) => {
   if (senderId === recipient.id) return false;
+  if (await hasBlockBetween(senderId, recipient.id)) return false;
 
   const permission = getMessagingPermission(recipient);
   if (permission === "everyone") return true;
@@ -180,6 +198,9 @@ export const startDirectThread = async (
   recipient: UserProfile,
 ) => {
   const database = requireFirestore();
+  if (await hasBlockBetween(sender.id, recipient.id)) {
+    throw new Error("Messages are unavailable between these accounts.");
+  }
   const existingThread = await findExistingDirectThread(sender.id, recipient.id);
   if (existingThread) return existingThread.id;
 
@@ -266,6 +287,12 @@ export const sendChatMessage = async (
   if (!normalizedContent) throw new Error("Write a message before sending.");
   if (normalizedContent.length > maxMessageLength) {
     throw new Error(`Messages must be ${maxMessageLength.toLocaleString()} characters or fewer.`);
+  }
+  if (thread.type === "direct") {
+    const otherId = thread.participantIds.find((id) => id !== author.id);
+    if (!otherId || await hasBlockBetween(author.id, otherId)) {
+      throw new Error("Messages are unavailable between these accounts.");
+    }
   }
 
   const createdAt = new Date().toISOString();

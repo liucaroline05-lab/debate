@@ -112,6 +112,44 @@ export const toggleFollowUser = async (
   return true;
 };
 
+export const setUserBlocked = async (blockerId: string, blockedId: string, blocked: boolean) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  if (!blockerId || !blockedId || blockerId === blockedId) throw new Error("Choose another account to block.");
+  const blockRef = doc(firestore, "userBlocks", `${blockerId}-${blockedId}`);
+  if (blocked) {
+    if (!(await getDoc(blockRef)).exists()) {
+      await setDoc(blockRef, { blockerId, blockedId, createdAt: new Date().toISOString() });
+    }
+    // A block also removes a follow made by the blocker so the account no
+    // longer appears in their Following feed.
+    await deleteDoc(doc(firestore, "follows", `${blockerId}-${blockedId}`)).catch(() => undefined);
+  } else {
+    if ((await getDoc(blockRef)).exists()) await deleteDoc(blockRef);
+  }
+};
+
+export const reportUserProfile = async (
+  reporterId: string,
+  reportedId: string,
+  reason: "Harassment" | "Inappropriate content" | "Spam" | "Impersonation" | "Other",
+  details: string,
+) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  if (!reporterId || !reportedId || reporterId === reportedId) throw new Error("Choose another account to report.");
+  if (details.length > 1_000) throw new Error("Keep report details under 1,000 characters.");
+  const reportRef = doc(firestore, "userReports", reporterId, "reports", reportedId);
+  if ((await getDoc(reportRef)).exists()) return false;
+  await setDoc(reportRef, {
+    reporterId,
+    reportedId,
+    reason,
+    details: details.trim(),
+    status: "open",
+    createdAt: new Date().toISOString(),
+  });
+  return true;
+};
+
 interface TabroomProfileSummary {
   officialUserId: number | null;
   handle: string;

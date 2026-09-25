@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChangeEvent } from "react";
+import { Link } from "react-router-dom";
+import { where, type QueryConstraint } from "firebase/firestore";
 import { PageMeta } from "@/components/common/PageMeta";
 import { useAuth } from "@/features/auth/AuthContext";
 import {
@@ -8,9 +10,11 @@ import {
   removeProfilePhoto,
   uploadProfilePhoto,
 } from "@/features/profile/avatarService";
-import { maxDisplayNameLength } from "@/features/profile/profileService";
+import { maxDisplayNameLength, setUserBlocked } from "@/features/profile/profileService";
+import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
+import { seededUsers } from "@/data/firestoreSeeds";
 import { defaultUserPreferences } from "@/features/users/defaultProfile";
-import type { MessagingPermission, UserRole } from "@/types/models";
+import type { MessagingPermission, UserBlock, UserProfile, UserRole } from "@/types/models";
 
 const accountTypes: Array<{ value: UserRole; label: string }> = [
   { value: "student", label: "Student" },
@@ -33,6 +37,18 @@ const safeInitial = (value?: string | null) =>
 export const SettingsPage = () => {
   const { currentUser, isDemoMode, updateProfile } = useAuth();
   const profile = currentUser;
+  const blockConstraints = useMemo<QueryConstraint[]>(
+    () => profile ? [where("blockerId", "==", profile.id)] : [],
+    [profile?.id],
+  );
+  const blockedAccounts = useSeededFirestoreCollection<UserBlock>(
+    "userBlocks", [], blockConstraints, Boolean(profile),
+    profile ? `user-blocks:${profile.id}` : undefined,
+  );
+  const usersState = useSeededFirestoreCollection<UserProfile>("users", seededUsers);
+  const [showBlockedAccounts, setShowBlockedAccounts] = useState(false);
+  const [unblockingId, setUnblockingId] = useState("");
+  const [blockMessage, setBlockMessage] = useState("");
   const resolvedPreferences = {
     notifications: {
       ...defaultUserPreferences.notifications,
@@ -325,6 +341,20 @@ export const SettingsPage = () => {
     }
   };
 
+  const unblockAccount = async (blockedId: string) => {
+    if (!profile || unblockingId) return;
+    setUnblockingId(blockedId);
+    setBlockMessage("");
+    try {
+      await setUserBlocked(profile.id, blockedId, false);
+      setBlockMessage("Account unblocked.");
+    } catch (error) {
+      setBlockMessage(error instanceof Error ? error.message : "Unable to unblock this account.");
+    } finally {
+      setUnblockingId("");
+    }
+  };
+
   return (
     <>
       <PageMeta
@@ -337,7 +367,7 @@ export const SettingsPage = () => {
       </header>
 
       <section className="settings-grid">
-        <article className="app-card">
+        <article className="app-card settings-account-card">
           <h2 className="card-title">Account</h2>
           <div className="list" style={{ marginTop: "1rem" }}>
             <div className="list-item settings-display-name-item">
@@ -600,6 +630,25 @@ export const SettingsPage = () => {
             })}
           </div>
           {messagingMessage ? <p className="meta-line" aria-live="polite">{messagingMessage}</p> : null}
+          <div className="settings-blocked-accounts">
+            <button type="button" className="btn btn-secondary" aria-expanded={showBlockedAccounts} onClick={() => setShowBlockedAccounts((value) => !value)}>
+              {showBlockedAccounts ? "Hide" : "View"} blocked accounts ({blockedAccounts.data.length})
+            </button>
+            {showBlockedAccounts ? <div className="list" style={{ marginTop: "0.8rem" }}>
+              {blockedAccounts.error ? <p className="speech-field-error" role="alert">{blockedAccounts.error}</p> : null}
+              {!blockedAccounts.isLoading && !blockedAccounts.error && blockedAccounts.data.length === 0 ? <p className="meta-line">You have not blocked any accounts.</p> : null}
+              {blockedAccounts.data.map((block) => {
+                const blockedUser = usersState.data.find((user) => user.id === block.blockedId);
+                return <div className="list-item settings-blocked-account" key={block.id}>
+                  <Link to={`/app/users/${block.blockedId}`}>{blockedUser?.displayName ?? "Member"}</Link>
+                  <button type="button" className="btn btn-ghost" disabled={Boolean(unblockingId)} onClick={() => void unblockAccount(block.blockedId)}>
+                    {unblockingId === block.blockedId ? "Unblocking..." : "Unblock"}
+                  </button>
+                </div>;
+              })}
+            </div> : null}
+            {blockMessage ? <p className="meta-line" role="status">{blockMessage}</p> : null}
+          </div>
         </article>
 
         <article className="app-card settings-debate-preferences-card">

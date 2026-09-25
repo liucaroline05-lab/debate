@@ -71,6 +71,8 @@ const recoverLegacyShare = (content: string): { note: string; preview: ChatShare
         ? "speech"
         : /^\/app\/resources\/[^/]+$/.test(parsed.pathname)
           ? "resource"
+        : /^\/app\/users\/[^/]+$/.test(parsed.pathname)
+          ? "profile"
         : null;
   if (!kind) return null;
 

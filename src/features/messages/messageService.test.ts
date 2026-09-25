@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { subscribeToMessages } from "@/features/messages/messageService";
+import { canStartConversation, sendChatMessage, subscribeToMessages } from "@/features/messages/messageService";
+import type { UserProfile } from "@/types/models";
 
 const mocks = vi.hoisted(() => ({
   docs: [] as Array<{ id: string; data: () => Record<string, unknown> }>,
   error: null as { code: string; message: string } | null,
+  blocks: new Set<string>(),
+  blockLookupDenied: false,
 }));
 
 vi.mock("@/lib/firebase", () => ({ firestore: {} }));
@@ -12,6 +15,11 @@ vi.mock("firebase/firestore", () => ({
   collection: () => ({}),
   query: () => ({}),
   where: () => ({}),
+  doc: (_db: unknown, _collection: string, id: string) => ({ id }),
+  getDoc: async (reference: { id: string }) => {
+    if (mocks.blockLookupDenied) throw { code: "permission-denied" };
+    return { exists: () => mocks.blocks.has(reference.id) };
+  },
   onSnapshot: (
     _query: unknown,
     onNext: (snapshot: { docs: typeof mocks.docs }) => void,
@@ -29,6 +37,27 @@ vi.mock("firebase/firestore", () => ({
 const doc = (id: string, data: Record<string, unknown>) => ({
   id,
   data: () => data,
+});
+
+describe("blocked direct messages", () => {
+  const recipient = { id: "recipient", displayName: "Recipient", preferences: { messaging: { whoCanMessage: "everyone" } } } as UserProfile;
+
+  it("does not start or send a direct message between blocked accounts", async () => {
+    mocks.blocks.add("recipient-sender");
+    expect(await canStartConversation("sender", recipient)).toBe(false);
+    await expect(sendChatMessage(
+      { id: "dm-1", type: "direct", participantIds: ["sender", "recipient"], memberCount: 2, createdBy: "sender", createdAt: "", updatedAt: "" },
+      { id: "sender", displayName: "Sender" } as UserProfile,
+      "Hello",
+    )).rejects.toThrow("Messages are unavailable");
+    mocks.blocks.clear();
+  });
+
+  it("keeps DMs working while older rules do not expose the new block collection", async () => {
+    mocks.blockLookupDenied = true;
+    expect(await canStartConversation("sender", recipient)).toBe(true);
+    mocks.blockLookupDenied = false;
+  });
 });
 
 describe("subscribeToMessages", () => {

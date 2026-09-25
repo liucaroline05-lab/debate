@@ -47,7 +47,7 @@ const threadForUser = async (threadId: unknown, uid: string) => {
   if (!snapshot.exists || !Array.isArray(ids) || !ids.includes(uid)) {
     throw new HttpsError("permission-denied", "You cannot access this conversation.");
   }
-  return { ref: snapshot.ref, participantIds: ids as string[] };
+  return { ref: snapshot.ref, participantIds: ids as string[], type: snapshot.data()?.type as string | undefined };
 };
 
 const moderateText = async (openai: OpenAI, value: string) => {
@@ -114,7 +114,18 @@ export const sendModeratedChatAttachment = onCall(
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to send an attachment.");
     const uid = request.auth.uid;
     const data = request.data as Record<string, unknown>;
-    const { ref: threadRef, participantIds } = await threadForUser(data.threadId, uid);
+    const { ref: threadRef, participantIds, type } = await threadForUser(data.threadId, uid);
+    if (type === "direct") {
+      const otherId = participantIds.find((id) => id !== uid);
+      if (!otherId) throw new HttpsError("failed-precondition", "This conversation has no recipient.");
+      const blocks = await getFirestore().getAll(
+        getFirestore().collection("userBlocks").doc(`${uid}-${otherId}`),
+        getFirestore().collection("userBlocks").doc(`${otherId}-${uid}`),
+      );
+      if (blocks.some((block) => block.exists)) {
+        throw new HttpsError("permission-denied", "You cannot send messages to this account.");
+      }
+    }
     const contentType = typeof data.contentType === "string" ? data.contentType : "";
     const name = cleanName(data.name);
     const note = typeof data.note === "string" ? data.note.trim().slice(0, 4_000) : "";

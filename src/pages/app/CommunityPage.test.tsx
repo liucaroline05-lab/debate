@@ -28,6 +28,7 @@ vi.mock("@/features/community/communityService", () => service);
 const mocks = vi.hoisted(() => ({
   comments: [] as PostComment[],
   commentReactions: [] as PostCommentReaction[],
+  blocks: [] as Array<{ id: string; blockerId: string; blockedId: string; createdAt: string }>,
 }));
 
 const author: UserProfile = {
@@ -81,6 +82,7 @@ vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
       posts: [post],
       postComments: mocks.comments,
       follows: [],
+      userBlocks: mocks.blocks,
       postReactions: [],
       postCommentReactions: mocks.commentReactions,
     };
@@ -107,6 +109,7 @@ describe("CommunityPage comments", () => {
   beforeEach(() => {
     mocks.comments = [comment()];
     mocks.commentReactions = [];
+    mocks.blocks = [];
     Object.values(service).forEach((fn) => fn.mockClear());
   });
 
@@ -123,6 +126,12 @@ describe("CommunityPage comments", () => {
       "maya",
       "like",
     );
+  });
+
+  it("hides posts from blocked accounts", () => {
+    mocks.blocks = [{ id: "maya-james", blockerId: "maya", blockedId: "james", createdAt: "2026-09-01" }];
+    render(<MemoryRouter><CommunityPage /></MemoryRouter>);
+    expect(screen.queryByText(post.title ?? "")).not.toBeInTheDocument();
   });
 
   it("posts a reply against its parent comment", async () => {

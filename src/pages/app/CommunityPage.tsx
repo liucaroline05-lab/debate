@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { where, type QueryConstraint } from "firebase/firestore";
 import {
   Bookmark,
   Check,
@@ -41,7 +42,7 @@ import {
 import { useAuth } from "@/features/auth/AuthContext";
 import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { CommunityPost, PostComment, PostCommentReaction, UserProfile } from "@/types/models";
+import type { CommunityPost, PostComment, PostCommentReaction, UserBlock, UserProfile } from "@/types/models";
 
 type ForumTab = "All Posts" | "Saved" | "Question" | "Speech Review" | "Tips & Strategies";
 type PostCategory = Exclude<ForumTab, "Saved">;
@@ -214,6 +215,8 @@ export const CommunityPage = () => {
   const postState = useSeededFirestoreCollection("posts", seededPosts);
   const commentState = useSeededFirestoreCollection("postComments", seededComments);
   const followsState = useSeededFirestoreCollection("follows", seededFollows);
+  const blockConstraints = useMemo<QueryConstraint[]>(() => [where("blockerId", "==", author.id)], [author.id]);
+  const blocksState = useSeededFirestoreCollection<UserBlock>("userBlocks", [], blockConstraints, true, `user-blocks:${author.id}`);
   const reactionState = useSeededFirestoreCollection<PostReaction>("postReactions", EMPTY_REACTIONS);
   const commentReactionState = useSeededFirestoreCollection<PostCommentReaction>(
     "postCommentReactions",
@@ -297,14 +300,17 @@ export const CommunityPage = () => {
     });
   }, [myCommentVotes]);
 
+  const blockedIds = useMemo(() => new Set(blocksState.data.map((block) => block.blockedId)), [blocksState.data]);
   const followingIds = followsState.data
     .filter((follow) => follow.followerId === author.id)
-    .map((follow) => follow.followingId);
+    .map((follow) => follow.followingId)
+    .filter((id) => !blockedIds.has(id));
 
   const filteredPosts = useMemo(() => {
     const loweredQuery = searchQuery.toLowerCase();
 
     return postState.data.filter((post) => {
+      if (blockedIds.has(post.authorId)) return false;
       const channel = channelState.data.find((item) => item.id === post.channelId);
       const authorProfile = usersState.data.find((item) => item.id === post.authorId);
 
@@ -331,6 +337,7 @@ export const CommunityPage = () => {
     });
   }, [
     activeTab,
+    blockedIds,
     channelState.data,
     feedScope,
     followingIds,

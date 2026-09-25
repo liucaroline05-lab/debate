@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { where, type QueryConstraint } from "firebase/firestore";
 import {
   BarElement,
   CategoryScale,
@@ -12,8 +13,9 @@ import {
   Tooltip,
 } from "chart.js";
 import { Bar, Radar } from "react-chartjs-2";
-import { CalendarClock, History, MapPin } from "lucide-react";
+import { Ban, CalendarClock, Flag, History, MapPin, MoreVertical, Share2 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
+import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import {
   seededChannelMemberships,
   seededChannels,
@@ -29,6 +31,8 @@ import { useAuth } from "@/features/auth/AuthContext";
 import {
   linkTabroomSession,
   maxDisplayNameLength,
+  reportUserProfile,
+  setUserBlocked,
   syncTabroomSession,
   toggleFollowUser,
   unlinkTabroomSession,
@@ -41,6 +45,7 @@ import type {
   TabroomEvent,
   TabroomImport,
   UserProfile,
+  UserBlock,
   UserStats,
 } from "@/types/models";
 
@@ -319,6 +324,14 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const usersState = useSeededFirestoreCollection("users", seededUsers);
   const postsState = useSeededFirestoreCollection("posts", seededPosts);
   const followsState = useSeededFirestoreCollection("follows", seededFollows);
+  const blockConstraints = useMemo<QueryConstraint[]>(
+    () => currentUser ? [where("blockerId", "==", currentUser.id)] : [],
+    [currentUser?.id],
+  );
+  const blocksState = useSeededFirestoreCollection<UserBlock>(
+    "userBlocks", [], blockConstraints, Boolean(currentUser),
+    currentUser ? `user-blocks:${currentUser.id}` : undefined,
+  );
   const channelsState = useSeededFirestoreCollection("channels", seededChannels);
   const membershipsState = useSeededFirestoreCollection(
     "channelMemberships",
@@ -354,6 +367,15 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const [tabroomPassword, setTabroomPassword] = useState("");
   const [isTabroomBusy, setIsTabroomBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
+  const [reportReason, setReportReason] = useState<"Harassment" | "Inappropriate content" | "Spam" | "Impersonation" | "Other">("Harassment");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportError, setReportError] = useState("");
+  const [isReporting, setIsReporting] = useState(false);
+  const [isBlocking, setIsBlocking] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [activeTab, setActiveTab] = useState<ProfileTab>("Overview");
   const [showTabroomHistory, setShowTabroomHistory] = useState(profile?.showTabroomHistory ?? false);
@@ -442,6 +464,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     (follow) =>
       follow.followerId === currentUser?.id && follow.followingId === userId,
   );
+  const isBlocked = blocksState.data.some((block) => block.blockedId === userId);
 
   const performanceData = useMemo(
     () => ({
@@ -548,7 +571,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   };
 
   const toggleFollow = async () => {
-    if (!currentUser || currentUser.id === userId) {
+    if (!currentUser || currentUser.id === userId || isBlocked) {
       return;
     }
 
@@ -559,6 +582,36 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
       setMessage(
         error instanceof Error ? error.message : "Unable to update follow status.",
       );
+    }
+  };
+
+  const toggleBlock = async () => {
+    if (!currentUser || isBlocking) return;
+    setIsBlocking(true);
+    try {
+      await setUserBlocked(currentUser.id, userId, !isBlocked);
+      setMessage(isBlocked ? "Account unblocked." : "Account blocked. Direct messages between you are disabled.");
+      setBlockConfirmOpen(false);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to change block status.");
+    } finally {
+      setIsBlocking(false);
+    }
+  };
+
+  const submitReport = async () => {
+    if (!currentUser || isReporting) return;
+    setIsReporting(true);
+    setReportError("");
+    try {
+      const created = await reportUserProfile(currentUser.id, userId, reportReason, reportDetails);
+      setMessage(created ? "Report submitted. Thank you." : "You have already reported this account.");
+      setReportOpen(false);
+      setReportDetails("");
+    } catch (error) {
+      setReportError(error instanceof Error ? error.message : "Unable to submit report.");
+    } finally {
+      setIsReporting(false);
     }
   };
 
@@ -735,14 +788,24 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
               )}
             </div>
 
-            {!isOwnProfile ? (
-              <button type="button" className="btn btn-primary" onClick={() => void toggleFollow()}>
-                {isFollowing ? "Following" : "Follow"}
+            {!isOwnProfile ? <div className="profile-hero-actions">
+              <div className="forum-post-menu">
+                <button type="button" className="forum-icon-button" aria-label={`Actions for ${profileName}`} aria-expanded={actionsOpen} onClick={() => setActionsOpen((value) => !value)}>
+                  <MoreVertical size={19} aria-hidden="true" />
+                </button>
+                {actionsOpen ? <div className="forum-menu-dropdown">
+                  <button type="button" className="forum-menu-item" onClick={() => { setActionsOpen(false); setShareOpen(true); }}><Share2 size={16} /> Share profile</button>
+                  <button type="button" className="forum-menu-item" onClick={() => { setActionsOpen(false); setReportOpen(true); }}><Flag size={16} /> Report</button>
+                  <button type="button" className="forum-menu-item" onClick={() => { setActionsOpen(false); if (isBlocked) void toggleBlock(); else setBlockConfirmOpen(true); }}><Ban size={16} /> {isBlocked ? "Unblock" : "Block"}</button>
+                </div> : null}
+              </div>
+              <button type="button" className="btn btn-primary" disabled={isBlocked} onClick={() => void toggleFollow()}>
+                {isBlocked ? "Blocked" : isFollowing ? "Following" : "Follow"}
               </button>
-            ) : null}
+            </div> : null}
           </div>
 
-          {message ? <p className="meta-line" style={{ marginTop: "1rem" }}>{message}</p> : null}
+          {message ? <p className="meta-line" role="status" style={{ marginTop: "1rem" }}>{message}</p> : null}
           <span className="sr-only">{stats.wins}</span>
         </article> : null}
 
@@ -1046,6 +1109,44 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
           </article>
         </section> : null}
       </section>
+      {shareOpen && !isOwnProfile ? <ShareToMessageDialog
+        title={profileName}
+        url={`${window.location.origin}/app/users/${userId}`}
+        previewKind="profile"
+        media={profile.avatarUrl ? [{ kind: "image", url: profile.avatarUrl, name: `${profileName} avatar` }] : undefined}
+        onClose={() => setShareOpen(false)}
+      /> : null}
+      {reportOpen && !isOwnProfile ? <div className="community-modal-overlay" role="presentation" onMouseDown={() => !isReporting && setReportOpen(false)}>
+        <div className="community-modal app-card" role="dialog" aria-modal="true" aria-labelledby="profileReportTitle" onMouseDown={(event) => event.stopPropagation()}>
+          <h2 id="profileReportTitle" className="card-title">Report {profileName}</h2>
+          <p className="card-copy">Tell us what needs review. Your report is not shown to this member.</p>
+          <div className="form-field">
+            <label htmlFor="profileReportReason">Reason</label>
+            <select id="profileReportReason" value={reportReason} onChange={(event) => setReportReason(event.target.value as typeof reportReason)}>
+              <option>Harassment</option><option>Inappropriate content</option><option>Spam</option><option>Impersonation</option><option>Other</option>
+            </select>
+          </div>
+          <div className="form-field" style={{ marginTop: "1rem" }}>
+            <label htmlFor="profileReportDetails">Details (optional)</label>
+            <textarea id="profileReportDetails" value={reportDetails} maxLength={1000} onChange={(event) => setReportDetails(event.target.value)} placeholder="Add context that will help a reviewer." />
+          </div>
+          {reportError ? <p className="speech-field-error" role="alert">{reportError}</p> : null}
+          <div className="button-row community-modal-actions">
+            <button type="button" className="btn btn-secondary" disabled={isReporting} onClick={() => setReportOpen(false)}>Cancel</button>
+            <button type="button" className="btn btn-primary" disabled={isReporting} onClick={() => void submitReport()}>{isReporting ? "Submitting..." : "Submit report"}</button>
+          </div>
+        </div>
+      </div> : null}
+      {blockConfirmOpen && !isOwnProfile ? <div className="community-modal-overlay" role="presentation" onMouseDown={() => !isBlocking && setBlockConfirmOpen(false)}>
+        <div className="community-modal app-card" role="dialog" aria-modal="true" aria-labelledby="profileBlockTitle" onMouseDown={(event) => event.stopPropagation()}>
+          <h2 id="profileBlockTitle" className="card-title">Block {profileName}?</h2>
+          <p className="card-copy">You will stop following this member, and direct messages between your accounts will be disabled. You can unblock them in Settings.</p>
+          <div className="button-row community-modal-actions">
+            <button type="button" className="btn btn-secondary" disabled={isBlocking} onClick={() => setBlockConfirmOpen(false)}>Cancel</button>
+            <button type="button" className="btn btn-primary" disabled={isBlocking} onClick={() => void toggleBlock()}>{isBlocking ? "Blocking..." : "Block account"}</button>
+          </div>
+        </div>
+      </div> : null}
     </>
   );
 };

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { NavLink, useSearchParams } from "react-router-dom";
-import { where, type QueryConstraint } from "firebase/firestore";
+import { doc, getDoc, where, type QueryConstraint } from "firebase/firestore";
 import { Bookmark, Search, SlidersHorizontal, Upload, X } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { createSpeechRecord } from "@/features/speeches/speechService";
@@ -10,6 +10,7 @@ import { defaultSpeechFormat, speechFormatGroups, speechFormats } from "@/lib/sp
 import { speechTopicCategories } from "@/lib/speechTopics";
 import type { SpeechRecord, SpeechSave } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
+import { firestore } from "@/lib/firebase";
 
 const initialForm = {
   title: "",
@@ -81,14 +82,41 @@ export const SpeechUploadPage = () => {
     Boolean(currentUserId),
     currentUserId ? `speech-saves:${currentUserId}` : undefined,
   );
+  const [savedSharedSpeeches, setSavedSharedSpeeches] = useState<SpeechRecord[]>([]);
+  const visibleSpeechIds = useMemo(
+    () => new Set([...ownSpeeches.data, ...publicSpeeches.data].map((speech) => speech.id)),
+    [ownSpeeches.data, publicSpeeches.data],
+  );
+  const savedIdsKey = savesState.data.map((save) => save.speechId).filter((id) => !visibleSpeechIds.has(id)).sort().join("|");
+  useEffect(() => {
+    const database = firestore;
+    if (!database || !currentUserId || !savedIdsKey) {
+      setSavedSharedSpeeches([]);
+      return;
+    }
+    let active = true;
+    const savedIds = savedIdsKey.split("|");
+    void Promise.all(savedIds.map(async (id) => {
+      try {
+        const snapshot = await getDoc(doc(database, "speeches", id));
+        return snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as SpeechRecord) : null;
+      } catch {
+        // A formerly shared private speech may no longer be accessible.
+        return null;
+      }
+    })).then((records) => { if (active) setSavedSharedSpeeches(records.filter((record): record is SpeechRecord => Boolean(record))); });
+    return () => { active = false; };
+  }, [currentUserId, savedIdsKey]);
   const speechHistory = useMemo(() => {
     const mine = [...ownSpeeches.data];
     const mineIds = new Set(mine.map((speech) => speech.id));
-    return [
+    const visible = [
       ...mine,
       ...publicSpeeches.data.filter((speech) => !mineIds.has(speech.id)),
     ];
-  }, [ownSpeeches.data, publicSpeeches.data]);
+    const visibleIds = new Set(visible.map((speech) => speech.id));
+    return [...visible, ...savedSharedSpeeches.filter((speech) => !visibleIds.has(speech.id))];
+  }, [ownSpeeches.data, publicSpeeches.data, savedSharedSpeeches]);
   const filteredSpeeches = useMemo(() => {
     const search = query.trim().toLowerCase();
     const savedIds = new Set(savesState.data.map((save) => save.speechId));

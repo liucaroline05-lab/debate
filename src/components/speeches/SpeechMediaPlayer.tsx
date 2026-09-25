@@ -18,6 +18,7 @@ export const SpeechMediaPlayer = ({
   contentType?: string;
 }) => {
   const mediaRef = useRef<HTMLMediaElement | null>(null);
+  const hasPlayedRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -26,6 +27,7 @@ export const SpeechMediaPlayer = ({
     || /\.(mp4|m4v|mov|ogv)$/i.test(fileName);
 
   useEffect(() => {
+    hasPlayedRef.current = false;
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
@@ -44,11 +46,21 @@ export const SpeechMediaPlayer = ({
       const length = mediaRef.current?.duration ?? 0;
       setDuration(Number.isFinite(length) ? length : 0);
     },
-    onTimeUpdate: () => setCurrentTime(mediaRef.current?.currentTime ?? 0),
-    onPlay: () => setIsPlaying(true),
+    onTimeUpdate: () => {
+      const time = mediaRef.current?.currentTime ?? 0;
+      if (time > 0) hasPlayedRef.current = true;
+      setCurrentTime(time);
+    },
+    onPlay: () => { hasPlayedRef.current = true; setError(""); setIsPlaying(true); },
     onPause: () => setIsPlaying(false),
-    onEnded: () => setIsPlaying(false),
-    onError: () => setError("This recording could not be played. Try downloading the file."),
+    onEnded: () => { setError(""); setIsPlaying(false); },
+    onError: () => {
+      // Safari can emit a late media error for a blob URL after the clip has
+      // already played. Only report a failure when playback never started.
+      if (!hasPlayedRef.current && mediaRef.current?.error) {
+        setError("This recording could not be played. Try downloading the file.");
+      }
+    },
   };
 
   const togglePlayback = async () => {
@@ -61,8 +73,10 @@ export const SpeechMediaPlayer = ({
     try {
       setError("");
       await media.play();
-    } catch {
-      setError("This recording could not be played. Try downloading the file.");
+    } catch (cause) {
+      if (!hasPlayedRef.current && (cause as { name?: string } | null)?.name !== "AbortError") {
+        setError("This recording could not be played. Try downloading the file.");
+      }
     }
   };
 

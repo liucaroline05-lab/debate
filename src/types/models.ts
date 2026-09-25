@@ -320,8 +320,15 @@ export interface ChatAttachment {
   transcript?: string;
 }
 
+export interface UserBlock {
+  id: string;
+  blockerId: string;
+  blockedId: string;
+  createdAt: string;
+}
+
 export interface ChatSharedPreview {
-  kind: "post" | "debate" | "speech" | "resource";
+  kind: "post" | "debate" | "speech" | "resource" | "profile";
   title: string;
   url: string;
   media?: Array<{ kind: "image" | "video"; url: string; name: string }>;

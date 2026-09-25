@@ -83,11 +83,17 @@ service cloud.firestore {
 
     function recipientAllowsMessage(recipientId, senderId) {
       let permission = messagingPermissionFor(recipientId);
-      return permission == "everyone"
+      return !isBlockedBetween(recipientId, senderId)
+        && (permission == "everyone"
         || (
           permission == "following"
           && exists(/databases/$(database)/documents/follows/$(recipientId + "-" + senderId))
-        );
+        ));
+    }
+
+    function isBlockedBetween(firstId, secondId) {
+      return exists(/databases/$(database)/documents/userBlocks/$(firstId + "-" + secondId))
+        || exists(/databases/$(database)/documents/userBlocks/$(secondId + "-" + firstId));
     }
 
     match /users/{userId} {
@@ -99,8 +105,34 @@ service cloud.firestore {
     match /follows/{followId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
-        && request.resource.data.followerId == request.auth.uid;
+        && request.resource.data.followerId == request.auth.uid
+        && !isBlockedBetween(request.resource.data.followerId, request.resource.data.followingId);
       allow delete: if ownsExistingResource("followerId");
+    }
+
+    match /userBlocks/{blockId} {
+      allow read: if isSignedIn()
+        && (resource == null
+          || resource.data.blockerId == request.auth.uid
+          || resource.data.blockedId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.blockerId == request.auth.uid
+        && request.resource.data.blockedId != request.auth.uid
+        && blockId == request.auth.uid + "-" + request.resource.data.blockedId;
+      allow delete: if ownsExistingResource("blockerId");
+    }
+
+    match /userReports/{reporterId}/reports/{reportedId} {
+      allow get: if isOwner(reporterId);
+      allow list: if false;
+      allow create: if isOwner(reporterId)
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.reportedId == reportedId
+        && reportedId != request.auth.uid
+        && request.resource.data.reason in ["Harassment", "Inappropriate content", "Spam", "Impersonation", "Other"]
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 1000
+        && request.resource.data.status == "open";
     }
 
     match /tabroomLinks/{linkId} {
@@ -393,6 +425,13 @@ service cloud.firestore {
         && request.auth.uid in chatData(threadId).participantIds;
     }
 
+    function canSendToThread(threadId) {
+      let thread = chatData(threadId);
+      let others = thread.participantIds.removeAll([request.auth.uid]);
+      return thread.type != "direct"
+        || (others.size() == 1 && !isBlockedBetween(request.auth.uid, others[0]));
+    }
+
     function isValidDirectThreadCreate() {
       let recipients = request.resource.data.participantIds.removeAll([request.auth.uid]);
       return request.resource.data.type == "direct"
@@ -475,7 +514,8 @@ service cloud.firestore {
         && request.resource.data.content.size() <= 4000
         && request.resource.data.participantIds
           == chatData(request.resource.data.threadId).participantIds
-        && isChatParticipant(request.resource.data.threadId);
+        && isChatParticipant(request.resource.data.threadId)
+        && canSendToThread(request.resource.data.threadId);
     }
 
     match /channelMemberships/{membershipId} {
