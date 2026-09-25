@@ -69,7 +69,7 @@ const checkAttachment = async (openai: OpenAI, bytes: Buffer, contentType: strin
     if (!result.results.length || result.results.some((entry) => entry.flagged)) {
       throw new HttpsError("failed-precondition", "This image did not pass the safety check.");
     }
-    return "image" as const;
+    return { kind: "image" as const };
   }
 
   if (audioTypes.has(contentType)) {
@@ -79,7 +79,7 @@ const checkAttachment = async (openai: OpenAI, bytes: Buffer, contentType: strin
     });
     if (!transcript.text.trim()) throw new HttpsError("failed-precondition", "This audio could not be checked. Try another recording.");
     await moderateText(openai, `${name}\n${note}\n${transcript.text}`);
-    return "audio" as const;
+    return { kind: "audio" as const, transcript: transcript.text.trim() };
   }
 
   if (documentTypes.has(contentType)) {
@@ -103,7 +103,7 @@ const checkAttachment = async (openai: OpenAI, bytes: Buffer, contentType: strin
     }
     if (!extracted.trim()) throw new HttpsError("failed-precondition", "This document could not be checked. Try a text-based file.");
     await moderateText(openai, `${name}\n${note}\n${extracted}`);
-    return "document" as const;
+    return { kind: "document" as const, previewText: extracted.trim().slice(0, 1_500) };
   }
   throw new HttpsError("invalid-argument", "Choose an image, audio recording, PDF, Word document, or text file. Video is not yet supported in messages.");
 };
@@ -126,9 +126,9 @@ export const sendModeratedChatAttachment = onCall(
     if (!bytes.length || bytes.length > MAX_BYTES) throw new HttpsError("invalid-argument", "Choose a file smaller than 4 MB.");
     if (!hasExpectedSignature(bytes, contentType)) throw new HttpsError("invalid-argument", "The file contents do not match a supported attachment type.");
     const openai = new OpenAI({ apiKey: openAiApiKey.value() });
-    let kind: "image" | "audio" | "document";
+    let checked: Awaited<ReturnType<typeof checkAttachment>>;
     try {
-      kind = await checkAttachment(openai, bytes, contentType, name, note);
+      checked = await checkAttachment(openai, bytes, contentType, name, note);
     } catch (error) {
       if (error instanceof HttpsError) throw error;
       console.error("Chat attachment moderation failed:", error);
@@ -140,17 +140,17 @@ export const sendModeratedChatAttachment = onCall(
     const createdAt = new Date().toISOString();
     const userSnapshot = await getFirestore().collection("users").doc(uid).get();
     const authorName = typeof userSnapshot.data()?.displayName === "string" ? userSnapshot.data()!.displayName : "Member";
-    const attachment = { kind, name, contentType, size: bytes.length, storagePath };
+    const attachment = { ...checked, name, contentType, size: bytes.length, storagePath };
     try {
       await storageFile.save(bytes, { resumable: false, metadata: { contentType } });
       const messageRef = getFirestore().collection("chatMessages").doc();
       const batch = getFirestore().batch();
       batch.set(messageRef, {
         threadId: threadRef.id, participantIds, authorId: uid, authorName,
-        content: note || `Shared ${kind}: ${name}`, attachment, createdAt,
+        content: note || `Shared ${checked.kind}: ${name}`, attachment, createdAt,
       });
       batch.update(threadRef, {
-        lastMessageText: `Shared ${kind}: ${name}`.slice(0, 160),
+        lastMessageText: `Shared ${checked.kind}: ${name}`.slice(0, 160),
         lastMessageAt: createdAt, lastMessageSenderId: uid, updatedAt: createdAt,
       });
       await batch.commit();
@@ -179,3 +179,47 @@ export const getChatAttachment = onCall({ cors: true, invoker: "public", memory:
   if (bytes.length > MAX_BYTES) throw new HttpsError("resource-exhausted", "Attachment is too large to open.");
   return { dataBase64: bytes.toString("base64"), contentType: attachment.contentType, name: attachment.name };
 });
+
+export const getChatAttachmentTranscript = onCall(
+  { cors: true, invoker: "public", secrets: [openAiApiKey], memory: "1GiB", timeoutSeconds: 120 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to view this transcript.");
+    const data = request.data as Record<string, unknown>;
+    const { ref: threadRef } = await threadForUser(data.threadId, request.auth.uid);
+    const messageId = typeof data.messageId === "string" ? data.messageId : "";
+    if (!messageId || messageId.length > 200) throw new HttpsError("invalid-argument", "Invalid audio message.");
+    const messageRef = getFirestore().collection("chatMessages").doc(messageId);
+    const message = await messageRef.get();
+    const attachment = message.data()?.attachment;
+    if (!message.exists || message.data()?.threadId !== threadRef.id || attachment?.kind !== "audio"
+      || typeof attachment.storagePath !== "string"
+      || !attachment.storagePath.startsWith(`chatAttachments/${threadRef.id}/`)) {
+      throw new HttpsError("not-found", "Audio message not found.");
+    }
+    if (typeof attachment.transcript === "string" && attachment.transcript.trim()) {
+      return { transcript: attachment.transcript };
+    }
+    try {
+      const [bytes] = await getStorage().bucket().file(attachment.storagePath).download();
+      if (!bytes.length || bytes.length > MAX_BYTES) throw new HttpsError("resource-exhausted", "This audio cannot be transcribed.");
+      const contentType = typeof attachment.contentType === "string" ? attachment.contentType : "";
+      const name = cleanName(attachment.name) || "recording.webm";
+      if (!audioTypes.has(contentType) || !hasExpectedSignature(bytes, contentType)) {
+        throw new HttpsError("failed-precondition", "This audio cannot be transcribed.");
+      }
+      const openai = new OpenAI({ apiKey: openAiApiKey.value() });
+      const transcription = await openai.audio.transcriptions.create({
+        file: await toFile(bytes, name, { type: contentType }),
+        model: "gpt-4o-mini-transcribe",
+      });
+      const transcript = transcription.text.trim();
+      if (!transcript) throw new HttpsError("failed-precondition", "This recording has no detectable speech.");
+      await messageRef.update({ "attachment.transcript": transcript });
+      return { transcript };
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      console.error("Chat audio transcription failed:", error);
+      throw new HttpsError("unavailable", "The transcript is temporarily unavailable.");
+    }
+  },
+);

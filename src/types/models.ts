@@ -316,6 +316,8 @@ export interface ChatAttachment {
   contentType: string;
   size: number;
   storagePath: string;
+  previewText?: string;
+  transcript?: string;
 }
 
 export interface ChatSharedPreview {

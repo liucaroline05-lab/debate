@@ -38,3 +38,11 @@ export const loadChatAttachment = async (threadId: string, messageId: string) =>
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return URL.createObjectURL(new Blob([bytes], { type: data.contentType }));
 };
+
+export const loadChatAttachmentTranscript = async (threadId: string, messageId: string) => {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  const load = httpsCallable<{ threadId: string; messageId: string }, { transcript: string }>(
+    functions, "getChatAttachmentTranscript", { timeout: 130_000 },
+  );
+  return (await load({ threadId, messageId })).data.transcript;
+};

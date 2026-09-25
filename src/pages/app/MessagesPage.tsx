@@ -538,7 +538,7 @@ export const MessagesPage = () => {
                         {(!message.attachment || message.content !== `Shared ${message.attachment.kind}: ${message.attachment.name}`)
                           ? <MessageContent content={message.content} sharedPreview={message.sharedPreview} />
                           : null}
-                        {message.attachment ? <ChatAttachmentView message={message} /> : null}
+                        {message.attachment ? <ChatAttachmentView message={message} viewerId={currentUser.id} /> : null}
                       </div>
                     </div>
                   );

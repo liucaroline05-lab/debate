@@ -4030,8 +4030,7 @@ button {
   gap: 0.35rem;
 }
 
-.message-attachment-draft button,
-.message-attachment a {
+.message-attachment-draft button {
   display: inline-grid;
   place-items: center;
   border: 0;
@@ -4040,26 +4039,167 @@ button {
   cursor: pointer;
 }
 
+.message-attachment-shell {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  max-width: 100%;
+  min-width: 0;
+  margin-top: 0.5rem;
+}
+
 .message-attachment {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   max-width: 22rem;
-  margin-top: 0.35rem;
-  padding: 0.65rem;
+  min-width: 0;
+  padding: 1rem;
   border-radius: 14px;
   background: rgba(245, 239, 230, 0.95);
   overflow-wrap: anywhere;
 }
 
+.message-attachment.is-image,
+.message-attachment.is-audio,
+.message-attachment.is-document {
+  width: 22rem;
+  flex: 0 1 22rem;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.message-attachment.is-audio {
+  gap: 0.65rem;
+  padding: 0;
+  background: transparent;
+}
+
+.message-attachment.is-audio .speech-media-player {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.message-audio-transcript {
+  padding: 0.8rem 0.95rem;
+  border: 1px solid rgba(53, 47, 42, 0.12);
+  border-radius: 14px;
+  background: rgba(245, 239, 230, 0.6);
+}
+
+.message-audio-transcript-label {
+  color: var(--color-moss);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.message-audio-transcript p {
+  margin: 0.35rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.message-audio-transcript button {
+  margin-top: 0.45rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-moss);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.message-document-preview {
+  display: block;
+  width: 100%;
+  height: 17rem;
+  margin: 0;
+  border: 1px solid rgba(53, 47, 42, 0.1);
+  border-radius: 10px;
+  background: var(--color-white);
+}
+
+.message-document-preview.is-pdf {
+  pointer-events: none;
+}
+
+.message-document-preview.is-text {
+  height: auto;
+  max-height: 13rem;
+  overflow: hidden;
+  padding: 0.85rem;
+  font: 0.82rem/1.5 "Avenir Next", "Segoe UI", sans-serif;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message-document-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 0.83rem;
+}
+
+.message-document-info svg {
+  flex: 0 0 auto;
+}
+
+.message-document-format {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.message-attachment-name {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.message-attachment-download {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 3rem;
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid rgba(53, 47, 42, 0.25);
+  border-radius: 50%;
+  background: var(--color-white);
+  color: var(--color-moss);
+  text-decoration: none;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.message-attachment-download:hover,
+.message-attachment-download:focus-visible {
+  border-color: var(--color-moss);
+  outline-offset: 2px;
+}
+
+.message-attachment-download.is-downloaded {
+  background: var(--color-terracotta);
+  border-color: var(--color-terracotta);
+  color: var(--color-white);
+}
+
 .message-attachment img {
-  width: min(18rem, 100%);
+  display: block;
+  width: 100%;
   max-height: 18rem;
   object-fit: contain;
   border-radius: 10px;
 }
-
-.message-attachment audio { max-width: 15rem; }
 
 .message-bubble.is-shared,
 .message-row.is-own .message-bubble.is-shared {
