@@ -308,6 +308,8 @@ export interface ChatMessage {
   sharedPreview?: ChatSharedPreview;
   attachment?: ChatAttachment;
   createdAt: string;
+  editedAt?: string;
+  deletedAt?: string;
 }
 
 export interface ChatAttachment {

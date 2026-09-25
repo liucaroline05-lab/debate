@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { canStartConversation, sendChatMessage, subscribeToMessages } from "@/features/messages/messageService";
-import type { UserProfile } from "@/types/models";
+import { canStartConversation, deleteChatMessage, editChatMessage, sendChatMessage, subscribeToMessages } from "@/features/messages/messageService";
+import type { ChatMessage, UserProfile } from "@/types/models";
 
 const mocks = vi.hoisted(() => ({
   docs: [] as Array<{ id: string; data: () => Record<string, unknown> }>,
   error: null as { code: string; message: string } | null,
   blocks: new Set<string>(),
   blockLookupDenied: false,
+  updates: [] as Array<{ collection: string; id: string; values: Record<string, unknown> }>,
+  threadPreview: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@/lib/firebase", () => ({ firestore: {} }));
@@ -15,10 +17,15 @@ vi.mock("firebase/firestore", () => ({
   collection: () => ({}),
   query: () => ({}),
   where: () => ({}),
-  doc: (_db: unknown, _collection: string, id: string) => ({ id }),
-  getDoc: async (reference: { id: string }) => {
+  doc: (_db: unknown, collectionName: string, id: string) => ({ collection: collectionName, id }),
+  getDoc: async (reference: { collection: string; id: string }) => {
+    if (reference.collection === "chatThreads") return { exists: () => Boolean(mocks.threadPreview), data: () => mocks.threadPreview };
     if (mocks.blockLookupDenied) throw { code: "permission-denied" };
     return { exists: () => mocks.blocks.has(reference.id) };
+  },
+  deleteField: () => "delete-field",
+  updateDoc: async (reference: { collection: string; id: string }, values: Record<string, unknown>) => {
+    mocks.updates.push({ ...reference, values });
   },
   onSnapshot: (
     _query: unknown,
@@ -37,6 +44,36 @@ vi.mock("firebase/firestore", () => ({
 const doc = (id: string, data: Record<string, unknown>) => ({
   id,
   data: () => data,
+});
+
+describe("message edits and deletions", () => {
+  const ownMessage: ChatMessage = {
+    id: "message-1", threadId: "thread-1", participantIds: ["sender", "recipient"],
+    authorId: "sender", authorName: "Sender", content: "Original",
+    createdAt: "2026-09-25T12:00:00.000Z",
+  };
+
+  it("updates an owned text message and its inbox preview", async () => {
+    mocks.updates = [];
+    mocks.threadPreview = { lastMessageAt: ownMessage.createdAt, lastMessageSenderId: "sender" };
+    await editChatMessage(ownMessage, "sender", "  Updated  ");
+    expect(mocks.updates[0]).toMatchObject({ collection: "chatMessages", id: "message-1", values: { content: "Updated", editedAt: expect.any(String) } });
+    expect(mocks.updates[1]).toMatchObject({ collection: "chatThreads", id: "thread-1", values: { lastMessageText: "Updated" } });
+  });
+
+  it("replaces an owned message with a tombstone and removes its rich content", async () => {
+    mocks.updates = [];
+    mocks.threadPreview = null;
+    await deleteChatMessage({ ...ownMessage, attachment: { kind: "image", name: "photo.png", contentType: "image/png", size: 10, storagePath: "chatAttachments/file" } }, "sender");
+    expect(mocks.updates[0]).toMatchObject({ collection: "chatMessages", id: "message-1", values: {
+      content: "message deleted", deletedAt: expect.any(String), attachment: "delete-field", sharedPreview: "delete-field",
+    } });
+  });
+
+  it("rejects edits to someone else's or non-text messages", async () => {
+    await expect(editChatMessage(ownMessage, "recipient", "Edited")).rejects.toThrow("cannot edit");
+    await expect(editChatMessage({ ...ownMessage, sharedPreview: { kind: "post", title: "Post", url: "https://example.com" } }, "sender", "Edited")).rejects.toThrow("plain text");
+  });
 });
 
 describe("blocked direct messages", () => {

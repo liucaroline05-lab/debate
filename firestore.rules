@@ -516,6 +516,26 @@ service cloud.firestore {
           == chatData(request.resource.data.threadId).participantIds
         && isChatParticipant(request.resource.data.threadId)
         && canSendToThread(request.resource.data.threadId);
+      allow update: if ownsExistingResource("authorId")
+        && !("deletedAt" in resource.data)
+        && (
+          (
+            !("attachment" in resource.data)
+            && !("sharedPreview" in resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["content", "editedAt"])
+            && request.resource.data.content is string
+            && request.resource.data.content.size() > 0
+            && request.resource.data.content.size() <= 4000
+            && request.resource.data.editedAt is string
+          )
+          || (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(["content", "deletedAt", "editedAt", "sharedPreview", "attachment"])
+            && request.resource.data.content == "message deleted"
+            && request.resource.data.deletedAt is string
+            && !("attachment" in request.resource.data)
+            && !("sharedPreview" in request.resource.data)
+          )
+        );
     }
 
     match /channelMemberships/{membershipId} {

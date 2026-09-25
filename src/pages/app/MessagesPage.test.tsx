@@ -9,10 +9,13 @@ import type { ChatMessage, ChatThread, UserProfile } from "@/types/models";
 const mocks = vi.hoisted(() => ({
   sendChatMessage: vi.fn(),
   sendChatAttachment: vi.fn(),
+  editChatMessage: vi.fn(),
+  deleteChatMessage: vi.fn(),
   startDirectThread: vi.fn(),
   startGroupThread: vi.fn(),
   extraUsers: [] as unknown[],
   threads: [] as ChatThread[],
+  messages: [] as ChatMessage[],
 }));
 
 const preferences = {
@@ -99,10 +102,12 @@ vi.mock("@/features/messages/messageService", () => ({
     return () => {};
   },
   subscribeToMessages: (_threadId: string, onMessages: (messages: ChatMessage[]) => void) => {
-    onMessages([message]);
+    onMessages(mocks.messages);
     return () => {};
   },
   sendChatMessage: mocks.sendChatMessage,
+  editChatMessage: mocks.editChatMessage,
+  deleteChatMessage: mocks.deleteChatMessage,
   startDirectThread: mocks.startDirectThread,
   startGroupThread: mocks.startGroupThread,
 }));
@@ -122,8 +127,11 @@ describe("MessagesPage", () => {
   beforeEach(() => {
     mocks.extraUsers = [];
     mocks.threads = [thread];
+    mocks.messages = [message];
     mocks.sendChatMessage.mockReset().mockResolvedValue(undefined);
     mocks.sendChatAttachment.mockReset().mockResolvedValue(undefined);
+    mocks.editChatMessage.mockReset().mockResolvedValue(undefined);
+    mocks.deleteChatMessage.mockReset().mockResolvedValue(undefined);
     mocks.startDirectThread.mockReset().mockResolvedValue(thread.id);
     mocks.startGroupThread.mockReset().mockResolvedValue("group-1");
   });
@@ -210,5 +218,41 @@ describe("MessagesPage", () => {
       "Nationals prep",
       [normalizeUserProfile(james), normalizeUserProfile(mia)],
     );
+  });
+
+  it("lets the sender edit a plain text message", async () => {
+    const ownMessage = { ...message, id: "own-1", authorId: "maya", authorName: "Maya", content: "Original text" };
+    mocks.messages = [ownMessage];
+    const user = userEvent.setup();
+    renderMessages();
+    await user.click(await screen.findByRole("button", { name: "Actions for message own-1" }));
+    await user.click(screen.getByRole("button", { name: "Edit message" }));
+    const field = screen.getByRole("textbox", { name: "Edit message text" });
+    await user.clear(field);
+    await user.type(field, "Updated text");
+    await user.click(screen.getByRole("button", { name: "Save edit" }));
+    expect(mocks.editChatMessage).toHaveBeenCalledWith(ownMessage, "maya", "Updated text");
+  });
+
+  it("confirms deletion and renders edited and deleted markers", async () => {
+    const ownMessage = { ...message, id: "own-2", authorId: "maya", authorName: "Maya", content: "Delete me" };
+    mocks.messages = [ownMessage];
+    const user = userEvent.setup();
+    const view = renderMessages();
+    await user.click(await screen.findByRole("button", { name: "Actions for message own-2" }));
+    await user.click(screen.getByRole("button", { name: "Delete message" }));
+    expect(screen.getByRole("dialog", { name: "Delete message?" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Delete message" }));
+    expect(mocks.deleteChatMessage).toHaveBeenCalledWith(ownMessage, "maya");
+
+    view.unmount();
+    mocks.messages = [
+      { ...ownMessage, id: "edited-1", content: "Revised", editedAt: "2026-09-25T12:00:00.000Z" },
+      { ...ownMessage, id: "deleted-1", content: "message deleted", deletedAt: "2026-09-25T12:00:00.000Z" },
+    ];
+    renderMessages();
+    expect(await screen.findByText("edited")).toBeInTheDocument();
+    expect(screen.getByText("message deleted")).toHaveClass("is-deleted");
+    expect(screen.queryByRole("button", { name: "Actions for message deleted-1" })).not.toBeInTheDocument();
   });
 });

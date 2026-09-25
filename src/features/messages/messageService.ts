@@ -2,6 +2,7 @@ import {
   addDoc,
   arrayUnion,
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -319,4 +320,52 @@ export const sendChatMessage = async (
     lastMessageSenderId: author.id,
     updatedAt: createdAt,
   });
+};
+
+const updateLastMessagePreview = async (message: ChatMessage, authorId: string, content: string) => {
+  const database = requireFirestore();
+  try {
+    const threadRef = doc(database, "chatThreads", message.threadId);
+    const thread = await getDoc(threadRef);
+    const threadData = thread.data();
+    if (thread.exists()
+      && threadData?.lastMessageAt === message.createdAt
+      && threadData.lastMessageSenderId === authorId) {
+      await updateDoc(threadRef, {
+        lastMessageText: content.slice(0, 160),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    // The message write succeeded; a stale inbox preview must not make the
+    // edit or deletion appear to have failed.
+    console.warn("Could not refresh the conversation preview:", error);
+  }
+};
+
+export const editChatMessage = async (message: ChatMessage, authorId: string, content: string) => {
+  const database = requireFirestore();
+  const normalized = content.trim();
+  if (message.authorId !== authorId || message.deletedAt) throw new Error("You cannot edit this message.");
+  if (message.attachment || message.sharedPreview) throw new Error("Only plain text messages can be edited.");
+  if (!normalized) throw new Error("Write a message before saving your edit.");
+  if (normalized.length > maxMessageLength) throw new Error(`Messages must be ${maxMessageLength.toLocaleString()} characters or fewer.`);
+  await updateDoc(doc(database, "chatMessages", message.id), {
+    content: normalized,
+    editedAt: new Date().toISOString(),
+  });
+  await updateLastMessagePreview(message, authorId, normalized);
+};
+
+export const deleteChatMessage = async (message: ChatMessage, authorId: string) => {
+  const database = requireFirestore();
+  if (message.authorId !== authorId || message.deletedAt) throw new Error("You cannot delete this message.");
+  await updateDoc(doc(database, "chatMessages", message.id), {
+    content: "message deleted",
+    deletedAt: new Date().toISOString(),
+    editedAt: deleteField(),
+    sharedPreview: deleteField(),
+    attachment: deleteField(),
+  });
+  await updateLastMessagePreview(message, authorId, "message deleted");
 };

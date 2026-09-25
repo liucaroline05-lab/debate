@@ -3,12 +3,15 @@ import { useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   MessageCircle,
+  MoreHorizontal,
   Paperclip,
   Mic,
+  Pencil,
   Square,
   Plus,
   Search,
   Send,
+  Trash2,
   UserRound,
   UsersRound,
   X,
@@ -20,6 +23,8 @@ import { MessageContent } from "@/features/messages/MessageContent";
 import { ChatAttachmentView } from "@/features/messages/ChatAttachmentView";
 import { sendChatAttachment, validateChatAttachment } from "@/features/messages/chatAttachmentService";
 import {
+  deleteChatMessage,
+  editChatMessage,
   sendChatMessage,
   startDirectThread,
   startGroupThread,
@@ -75,6 +80,12 @@ export const MessagesPage = () => {
   const [isThreadsLoading, setIsThreadsLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
+  const [openMessageActionsId, setOpenMessageActionsId] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState("");
+  const [editDraft, setEditDraft] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
+  const [messageActionError, setMessageActionError] = useState("");
+  const [busyMessageId, setBusyMessageId] = useState("");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [attachmentError, setAttachmentError] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -161,6 +172,9 @@ export const MessagesPage = () => {
   useEffect(() => {
     setMessages([]);
     setMessagesError("");
+    setOpenMessageActionsId("");
+    setEditingMessageId("");
+    setDeleteTarget(null);
     if (!activeThreadId) {
       setIsMessagesLoading(false);
       return;
@@ -272,6 +286,37 @@ export const MessagesPage = () => {
       setPageError(error instanceof Error ? error.message : "Unable to send your message.");
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const saveMessageEdit = async (event: FormEvent) => {
+    event.preventDefault();
+    const message = messages.find((item) => item.id === editingMessageId);
+    if (!currentUser || !message || busyMessageId) return;
+    setBusyMessageId(message.id);
+    setMessageActionError("");
+    try {
+      await editChatMessage(message, currentUser.id, editDraft);
+      setEditingMessageId("");
+      setEditDraft("");
+    } catch (error) {
+      setMessageActionError(error instanceof Error ? error.message : "Unable to edit this message.");
+    } finally {
+      setBusyMessageId("");
+    }
+  };
+
+  const confirmMessageDelete = async () => {
+    if (!currentUser || !deleteTarget || busyMessageId) return;
+    setBusyMessageId(deleteTarget.id);
+    setMessageActionError("");
+    try {
+      await deleteChatMessage(deleteTarget, currentUser.id);
+      setDeleteTarget(null);
+    } catch (error) {
+      setMessageActionError(error instanceof Error ? error.message : "Unable to delete this message.");
+    } finally {
+      setBusyMessageId("");
     }
   };
 
@@ -528,6 +573,24 @@ export const MessagesPage = () => {
                   return (
                     <div key={message.id} className={isOwn ? "message-row is-own" : "message-row"}>
                       {!isOwn && showAuthor ? <ProfileAvatar user={userById.get(message.authorId)} small /> : <span className="message-avatar-spacer" />}
+                      {isOwn && !message.deletedAt && editingMessageId !== message.id ? <div className="forum-post-menu message-entry-actions">
+                        <button type="button" className="forum-icon-button" aria-label={`Actions for message ${message.id}`} aria-expanded={openMessageActionsId === message.id} onClick={() => setOpenMessageActionsId((id) => id === message.id ? "" : message.id)}>
+                          <MoreHorizontal size={17} aria-hidden="true" />
+                        </button>
+                        {openMessageActionsId === message.id ? <div className="forum-menu-dropdown">
+                          {!message.attachment && !message.sharedPreview ? <button type="button" className="forum-menu-item" onClick={() => {
+                            setEditingMessageId(message.id);
+                            setEditDraft(message.content);
+                            setMessageActionError("");
+                            setOpenMessageActionsId("");
+                          }}><Pencil size={16} aria-hidden="true" /> Edit message</button> : null}
+                          <button type="button" className="forum-menu-item" onClick={() => {
+                            setDeleteTarget(message);
+                            setMessageActionError("");
+                            setOpenMessageActionsId("");
+                          }}><Trash2 size={16} aria-hidden="true" /> Delete message</button>
+                        </div> : null}
+                      </div> : null}
                       <div className="message-bubble-wrap">
                         {showAuthor ? (
                           <span className="message-author-line">
@@ -535,10 +598,22 @@ export const MessagesPage = () => {
                             <small>{formatMessageTime(message.createdAt)}</small>
                           </span>
                         ) : null}
-                        {(!message.attachment || message.content !== `Shared ${message.attachment.kind}: ${message.attachment.name}`)
-                          ? <MessageContent content={message.content} sharedPreview={message.sharedPreview} />
-                          : null}
-                        {message.attachment ? <ChatAttachmentView message={message} viewerId={currentUser.id} /> : null}
+                        {message.deletedAt ? <div className="message-bubble is-deleted">message deleted</div>
+                          : editingMessageId === message.id ? <form className="message-edit-form" onSubmit={(event) => void saveMessageEdit(event)}>
+                            <label className="sr-only" htmlFor={`edit-message-${message.id}`}>Edit message text</label>
+                            <textarea id={`edit-message-${message.id}`} value={editDraft} maxLength={4000} onChange={(event) => setEditDraft(event.target.value)} />
+                            {messageActionError ? <p className="speech-field-error" role="alert">{messageActionError}</p> : null}
+                            <div className="button-row">
+                              <button type="button" className="btn btn-secondary" disabled={Boolean(busyMessageId)} onClick={() => { setEditingMessageId(""); setMessageActionError(""); }}>Cancel</button>
+                              <button type="submit" className="btn btn-primary" disabled={Boolean(busyMessageId) || !editDraft.trim()}>{busyMessageId ? "Saving..." : "Save edit"}</button>
+                            </div>
+                          </form> : <>
+                            {(!message.attachment || message.content !== `Shared ${message.attachment.kind}: ${message.attachment.name}`)
+                              ? <MessageContent content={message.content} sharedPreview={message.sharedPreview} />
+                              : null}
+                            {message.attachment ? <ChatAttachmentView message={message} viewerId={currentUser.id} /> : null}
+                            {message.editedAt ? <span className="message-edited-label">edited</span> : null}
+                          </>}
                       </div>
                     </div>
                   );
@@ -595,6 +670,17 @@ export const MessagesPage = () => {
         </article>
       </section>
       {pageError ? <p className="messages-page-error" role="alert">{pageError}</p> : null}
+      {deleteTarget ? <div className="community-modal-overlay" role="presentation" onMouseDown={() => !busyMessageId && setDeleteTarget(null)}>
+        <div className="community-modal app-card" role="dialog" aria-modal="true" aria-labelledby="deleteMessageTitle" onMouseDown={(event) => event.stopPropagation()}>
+          <h2 id="deleteMessageTitle" className="card-title">Delete message?</h2>
+          <p className="card-copy">Everyone in this conversation will see “message deleted” in its place.</p>
+          {messageActionError ? <p className="speech-field-error" role="alert">{messageActionError}</p> : null}
+          <div className="button-row community-modal-actions">
+            <button type="button" className="btn btn-secondary" disabled={Boolean(busyMessageId)} onClick={() => { setDeleteTarget(null); setMessageActionError(""); }}>Cancel</button>
+            <button type="button" className="btn btn-primary" disabled={Boolean(busyMessageId)} onClick={() => void confirmMessageDelete()}>{busyMessageId ? "Deleting..." : "Delete message"}</button>
+          </div>
+        </div>
+      </div> : null}
     </>
   );
 };
