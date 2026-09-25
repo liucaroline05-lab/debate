@@ -75,6 +75,13 @@ describe("SettingsPage messaging privacy", () => {
 });
 
 describe("SettingsPage notification history", () => {
+  it("stacks Notifications directly below Account in the left column", () => {
+    render(<SettingsPage />);
+    const leftColumn = screen.getByRole("heading", { name: "Account" }).closest(".settings-left-stack");
+    expect(leftColumn).toContainElement(screen.getByRole("heading", { name: "Notifications" }));
+    expect(leftColumn).not.toContainElement(screen.getByRole("heading", { name: "Profile photo" }));
+  });
+
   it("saves the selected number of history days on the profile", async () => {
     mocks.updateProfile.mockReset().mockResolvedValue(undefined);
     const user = userEvent.setup();

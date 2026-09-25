@@ -81,6 +81,8 @@ export const MessagesPage = () => {
   const [pageError, setPageError] = useState("");
   const [messageDraft, setMessageDraft] = useState("");
   const [openMessageActionsId, setOpenMessageActionsId] = useState("");
+  const [messageMenuOpensUp, setMessageMenuOpensUp] = useState(false);
+  const [messageMenuAlignLeft, setMessageMenuAlignLeft] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState("");
   const [editDraft, setEditDraft] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
@@ -574,10 +576,24 @@ export const MessagesPage = () => {
                     <div key={message.id} className={isOwn ? "message-row is-own" : "message-row"}>
                       {!isOwn && showAuthor ? <ProfileAvatar user={userById.get(message.authorId)} small /> : <span className="message-avatar-spacer" />}
                       {isOwn && !message.deletedAt && editingMessageId !== message.id ? <div className="forum-post-menu message-entry-actions">
-                        <button type="button" className="forum-icon-button" aria-label={`Actions for message ${message.id}`} aria-expanded={openMessageActionsId === message.id} onClick={() => setOpenMessageActionsId((id) => id === message.id ? "" : message.id)}>
+                        <button type="button" className="forum-icon-button" aria-label={`Actions for message ${message.id}`} aria-expanded={openMessageActionsId === message.id} onClick={(event) => {
+                          if (openMessageActionsId === message.id) {
+                            setOpenMessageActionsId("");
+                            return;
+                          }
+                          const buttonBounds = event.currentTarget.getBoundingClientRect();
+                          const scrollBounds = event.currentTarget.closest(".messages-scroll-region")?.getBoundingClientRect();
+                          if (scrollBounds) {
+                            const roomBelow = scrollBounds.bottom - buttonBounds.bottom;
+                            const roomAbove = buttonBounds.top - scrollBounds.top;
+                            setMessageMenuOpensUp(roomBelow < 140 && roomAbove > roomBelow);
+                            setMessageMenuAlignLeft(buttonBounds.left - scrollBounds.left < 184);
+                          }
+                          setOpenMessageActionsId(message.id);
+                        }}>
                           <MoreHorizontal size={17} aria-hidden="true" />
                         </button>
-                        {openMessageActionsId === message.id ? <div className="forum-menu-dropdown">
+                        {openMessageActionsId === message.id ? <div className={`forum-menu-dropdown${messageMenuOpensUp ? " opens-up" : ""}${messageMenuAlignLeft ? " align-left" : ""}`}>
                           {!message.attachment && !message.sharedPreview ? <button type="button" className="forum-menu-item" onClick={() => {
                             setEditingMessageId(message.id);
                             setEditDraft(message.content);

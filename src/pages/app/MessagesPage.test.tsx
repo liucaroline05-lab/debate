@@ -234,6 +234,19 @@ describe("MessagesPage", () => {
     expect(mocks.editChatMessage).toHaveBeenCalledWith(ownMessage, "maya", "Updated text");
   });
 
+  it("opens message actions upward when the message is near the bottom of the chat", async () => {
+    mocks.messages = [{ ...message, id: "own-bottom", authorId: "maya", authorName: "Maya", content: "Hi" }];
+    renderMessages();
+    const button = await screen.findByRole("button", { name: "Actions for message own-bottom" });
+    const scrollRegion = button.closest(".messages-scroll-region");
+    expect(scrollRegion).not.toBeNull();
+    vi.spyOn(button, "getBoundingClientRect").mockReturnValue({ top: 500, bottom: 540, left: 800, right: 838 } as DOMRect);
+    vi.spyOn(scrollRegion!, "getBoundingClientRect").mockReturnValue({ top: 100, bottom: 600, left: 100, right: 950 } as DOMRect);
+
+    await userEvent.click(button);
+    expect(screen.getByRole("button", { name: "Delete message" }).parentElement).toHaveClass("opens-up");
+  });
+
   it("confirms deletion and renders edited and deleted markers", async () => {
     const ownMessage = { ...message, id: "own-2", authorId: "maya", authorName: "Maya", content: "Delete me" };
     mocks.messages = [ownMessage];

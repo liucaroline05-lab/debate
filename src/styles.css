@@ -2353,6 +2353,7 @@ button {
   font-weight: 700;
 }
 
+.settings-left-stack,
 .settings-right-stack {
   display: grid;
   gap: 1.5rem;
@@ -2403,6 +2404,16 @@ button {
 .user-profile-layout {
   display: grid;
   gap: 1.5rem;
+}
+
+.profile-overview-card {
+  position: relative;
+  z-index: 1;
+  overflow: visible;
+}
+
+.profile-overview-card.has-open-menu {
+  z-index: 20;
 }
 
 .profile-tabs {
@@ -2998,9 +3009,19 @@ button {
 }
 
 .message-entry-actions .forum-menu-dropdown {
+  right: 0;
+  left: auto;
+  min-width: 11rem;
+}
+
+.message-entry-actions .forum-menu-dropdown.align-left {
   right: auto;
   left: 0;
-  min-width: 11rem;
+}
+
+.message-entry-actions .forum-menu-dropdown.opens-up {
+  top: auto;
+  bottom: calc(100% + 0.4rem);
 }
 
 .message-row .message-bubble.is-deleted,

@@ -721,7 +721,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
       </div>
 
       <section className="user-profile-layout">
-        {activeTab === "Overview" ? <article className="app-card">
+        {activeTab === "Overview" ? <article className={actionsOpen ? "app-card profile-overview-card has-open-menu" : "app-card profile-overview-card"}>
           <div className="user-profile-hero">
             {profile.avatarUrl ? (
               <img

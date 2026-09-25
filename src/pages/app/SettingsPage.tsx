@@ -367,6 +367,7 @@ export const SettingsPage = () => {
       </header>
 
       <section className="settings-grid">
+        <div className="settings-left-stack">
         <article className="app-card settings-account-card">
           <h2 className="card-title">Account</h2>
           <div className="list" style={{ marginTop: "1rem" }}>
@@ -434,85 +435,6 @@ export const SettingsPage = () => {
             {roleMessage ? (
               <p className="meta-line" style={{ marginTop: "0.25rem" }}>
                 {roleMessage}
-              </p>
-            ) : null}
-          </div>
-        </article>
-
-        <article className="app-card">
-          <h2 className="card-title">Profile photo</h2>
-          <div className="settings-avatar-panel">
-            {pendingAvatarPreviewUrl ? (
-              <img
-                src={pendingAvatarPreviewUrl}
-                alt="Selected profile preview"
-                className="settings-avatar-image"
-              />
-            ) : profile.avatarUrl && !shouldRemoveAvatar ? (
-              <img
-                src={profile.avatarUrl}
-                alt={`${profile.displayName} avatar`}
-                className="settings-avatar-image"
-              />
-            ) : (
-              <div className="settings-avatar-image settings-avatar-fallback" aria-hidden="true">
-                {safeInitial(profile.displayName)}
-              </div>
-            )}
-            <div className="button-row settings-avatar-actions">
-              <div>
-                <input
-                  id="avatarFile"
-                  ref={avatarFileInputRef}
-                  type="file"
-                  accept={allowedAvatarImageTypes.join(",")}
-                  className="file-input-native"
-                  disabled={isSavingAvatar}
-                  onChange={handleAvatarSelect}
-                />
-                <label
-                  htmlFor="avatarFile"
-                  className={
-                    isSavingAvatar
-                      ? "btn settings-avatar-replace-button is-disabled"
-                      : "btn settings-avatar-replace-button"
-                  }
-                  aria-disabled={isSavingAvatar}
-                >
-                  Replace photo
-                </label>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-primary forum-primary-cta"
-                disabled={isSavingAvatar || (!profile.avatarUrl && !pendingAvatarFile)}
-                onClick={handleAvatarRemove}
-              >
-                Remove photo
-              </button>
-            </div>
-            <div className="form-field settings-bio-field">
-              <label htmlFor="profileBio">Bio</label>
-              <textarea
-                id="profileBio"
-                className="profile-bio-input"
-                value={bioDraft}
-                onChange={(event) => setBioDraft(event.target.value)}
-                placeholder="Tell other debaters about your events, goals, coaching style, or team."
-              />
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary forum-primary-cta settings-profile-save-button"
-              disabled={isSavingAvatar}
-              onClick={() => void saveProfileCard()}
-            >
-              {isSavingAvatar ? "Saving..." : "Save changes"}
-            </button>
-            {avatarMessage ? (
-              <p className="meta-line" aria-live="polite">
-                {avatarMessage}
               </p>
             ) : null}
           </div>
@@ -602,8 +524,87 @@ export const SettingsPage = () => {
             {notificationMessage ? <p className="meta-line" role="status">{notificationMessage}</p> : null}
           </div>
         </article>
+        </div>
 
         <div className="settings-right-stack">
+        <article className="app-card">
+          <h2 className="card-title">Profile photo</h2>
+          <div className="settings-avatar-panel">
+            {pendingAvatarPreviewUrl ? (
+              <img
+                src={pendingAvatarPreviewUrl}
+                alt="Selected profile preview"
+                className="settings-avatar-image"
+              />
+            ) : profile.avatarUrl && !shouldRemoveAvatar ? (
+              <img
+                src={profile.avatarUrl}
+                alt={`${profile.displayName} avatar`}
+                className="settings-avatar-image"
+              />
+            ) : (
+              <div className="settings-avatar-image settings-avatar-fallback" aria-hidden="true">
+                {safeInitial(profile.displayName)}
+              </div>
+            )}
+            <div className="button-row settings-avatar-actions">
+              <div>
+                <input
+                  id="avatarFile"
+                  ref={avatarFileInputRef}
+                  type="file"
+                  accept={allowedAvatarImageTypes.join(",")}
+                  className="file-input-native"
+                  disabled={isSavingAvatar}
+                  onChange={handleAvatarSelect}
+                />
+                <label
+                  htmlFor="avatarFile"
+                  className={
+                    isSavingAvatar
+                      ? "btn settings-avatar-replace-button is-disabled"
+                      : "btn settings-avatar-replace-button"
+                  }
+                  aria-disabled={isSavingAvatar}
+                >
+                  Replace photo
+                </label>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-primary forum-primary-cta"
+                disabled={isSavingAvatar || (!profile.avatarUrl && !pendingAvatarFile)}
+                onClick={handleAvatarRemove}
+              >
+                Remove photo
+              </button>
+            </div>
+            <div className="form-field settings-bio-field">
+              <label htmlFor="profileBio">Bio</label>
+              <textarea
+                id="profileBio"
+                className="profile-bio-input"
+                value={bioDraft}
+                onChange={(event) => setBioDraft(event.target.value)}
+                placeholder="Tell other debaters about your events, goals, coaching style, or team."
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary forum-primary-cta settings-profile-save-button"
+              disabled={isSavingAvatar}
+              onClick={() => void saveProfileCard()}
+            >
+              {isSavingAvatar ? "Saving..." : "Save changes"}
+            </button>
+            {avatarMessage ? (
+              <p className="meta-line" aria-live="polite">
+                {avatarMessage}
+              </p>
+            ) : null}
+          </div>
+        </article>
         <article className="app-card settings-messaging-card">
           <h2 className="card-title">Messaging privacy</h2>
           <p className="card-copy">Choose who can start a new DM or add you to a group chat.</p>

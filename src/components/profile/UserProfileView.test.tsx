@@ -178,6 +178,7 @@ describe("UserProfileView", () => {
     render(<MemoryRouter><UserProfileView userId="other" isOwnProfile={false} /></MemoryRouter>);
 
     await user.click(screen.getByRole("button", { name: "Actions for Taylor Kim" }));
+    expect(screen.getByRole("button", { name: "Actions for Taylor Kim" }).closest(".profile-overview-card")).toHaveClass("has-open-menu");
     await user.click(screen.getByRole("button", { name: "Share profile" }));
     expect(screen.getByRole("dialog", { name: "Share" })).toHaveTextContent("/app/users/other");
 
