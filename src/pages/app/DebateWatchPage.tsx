@@ -5,11 +5,12 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { DebateTurnSequence } from "@/components/debates/DebateTurnSequence";
 import { seededDebates } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
-import { voteForDebateWinner } from "@/features/debates/debateService";
+import { retryDebateSummary, voteForDebateWinner } from "@/features/debates/debateService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type {
   DebateSideSummary,
   DebateSummaryStatus,
+  DebateWinnerVoteFeedback,
   DebateWinnerVote,
 } from "@/types/models";
 
@@ -29,6 +30,14 @@ const safeInitial = (value?: string | null) =>
 
 const EmptySummaryList = () => (
   <p className="meta-line">Nothing in the transcript supported this category.</p>
+);
+
+const SummaryBullets = ({ items }: { items?: string[] }) => (
+  items?.length ? (
+    <ul className="debate-summary-bullets">
+      {items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
+    </ul>
+  ) : <EmptySummaryList />
 );
 
 const SideSummary = ({
@@ -76,6 +85,10 @@ const SideSummary = ({
           </ul>
         ) : <EmptySummaryList />}
       </div>
+      <div>
+        <strong>Structure</strong>
+        <SummaryBullets items={summary.structure} />
+      </div>
     </div>
   </article>
 );
@@ -86,7 +99,10 @@ export const DebateWatchPage = () => {
   const { currentUser } = useAuth();
   const [voteBusy, setVoteBusy] = useState(false);
   const [voteError, setVoteError] = useState("");
+  const [voteReasonDraft, setVoteReasonDraft] = useState("");
   const [selectedVoteSide, setSelectedVoteSide] = useState<"Aff" | "Neg" | null>(null);
+  const [isRetryingSummary, setIsRetryingSummary] = useState(false);
+  const [summaryRetryNotice, setSummaryRetryNotice] = useState("");
   const debatesState = useSeededFirestoreCollection("debates", seededDebates);
   const voteConstraints = useMemo<QueryConstraint[]>(
     () => currentUser ? [where("userId", "==", currentUser.id)] : [],
@@ -108,11 +124,28 @@ export const DebateWatchPage = () => {
     () => votesState.data.find((vote) => vote.debateId === debateId),
     [debateId, votesState.data],
   );
+  const feedbackConstraints = useMemo<QueryConstraint[]>(
+    () => debate ? [where("debateId", "==", debate.id)] : [],
+    [debate?.id],
+  );
+  const feedbackState = useSeededFirestoreCollection<DebateWinnerVoteFeedback>(
+    "debateWinnerVoteFeedback",
+    [],
+    feedbackConstraints,
+    Boolean(debate && debate.status === "Completed" && debate.visibility === "public"),
+    debate ? `debate-winner-feedback:${debate.id}` : undefined,
+  );
 
   useEffect(() => {
     setSelectedVoteSide(null);
     setVoteError("");
+    setVoteReasonDraft("");
+    setSummaryRetryNotice("");
   }, [debateId]);
+
+  useEffect(() => {
+    setVoteReasonDraft(persistedVote?.reason ?? "");
+  }, [persistedVote?.reason, persistedVote?.updatedAt]);
 
   if (!debate) {
     return (
@@ -138,17 +171,44 @@ export const DebateWatchPage = () => {
       || debate.negative.userId === currentUser.id
     ),
   );
+  const canRefreshSummary = isParticipant
+    && debate.status === "Completed"
+    && debate.summaryStatus !== "processing"
+    && (debate.summaryStatus === "failed"
+      || debate.summaryPromptVersion !== "debate-summary-v2");
   const canVote =
     Boolean(currentUser)
     && debate.status === "Completed"
     && debate.visibility === "public"
     && !isParticipant;
+  const showCommunityVotes = debate.status === "Completed" && debate.visibility === "public";
   const selectedVote = selectedVoteSide ?? persistedVote?.side;
-  const voteCounts = debate.communityVoteCounts ?? { aff: 0, neg: 0 };
+  const voteCounts = {
+    aff: debate.communityVoteCounts?.aff ?? 0,
+    neg: debate.communityVoteCounts?.neg ?? 0,
+  };
   const totalCommunityVotes = voteCounts.aff + voteCounts.neg;
 
+  const handleRetrySummary = async () => {
+    setIsRetryingSummary(true);
+    setSummaryRetryNotice("");
+    try {
+      const status = await retryDebateSummary(debate.id);
+      setSummaryRetryNotice(status === "completed"
+        ? "The AI summary and format feedback are up to date."
+        : "The AI summary is being refreshed. This page will update when it is ready.");
+    } catch (error) {
+      setSummaryRetryNotice(error instanceof Error ? error.message : "Unable to refresh the AI summary.");
+    } finally {
+      setIsRetryingSummary(false);
+    }
+  };
+
   const handleWinnerVote = async (side: "Aff" | "Neg") => {
-    if (!currentUser || !canVote || voteBusy || selectedVote === side) {
+    const reason = voteReasonDraft.trim();
+    const alreadySavedSameBallot = persistedVote?.side === side
+      && persistedVote.reason?.trim() === reason;
+    if (!currentUser || !canVote || voteBusy || alreadySavedSameBallot || reason.length < 8) {
       return;
     }
 
@@ -158,7 +218,7 @@ export const DebateWatchPage = () => {
     setVoteBusy(true);
 
     try {
-      await voteForDebateWinner(debate.id, currentUser.id, side);
+      await voteForDebateWinner(debate.id, currentUser.id, side, reason);
     } catch (error) {
       setSelectedVoteSide(previousSide);
       setVoteError(
@@ -186,15 +246,34 @@ export const DebateWatchPage = () => {
       {isSummaryView ? (
         <section className="stack">
           <article className="app-card">
-            <h2 className="card-title">Debate summary</h2>
+            <div className="row-between debate-summary-heading">
+              <h2 className="card-title">AI summary</h2>
+              {canRefreshSummary ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={isRetryingSummary}
+                  onClick={() => void handleRetrySummary()}
+                >
+                  {isRetryingSummary ? "Refreshing summary..." : "Refresh AI feedback"}
+                </button>
+              ) : null}
+            </div>
             <p className="card-copy">{summaryText}</p>
             {debate.summaryStatus && debate.summaryStatus !== "completed" ? (
               <span className="meta-line">Processing status: {debate.summaryStatus.replaceAll("_", " ")}</span>
             ) : null}
+            {debate.summaryError ? <p className="meta-line is-error">{debate.summaryError}</p> : null}
+            {summaryRetryNotice ? <p className="meta-line" role="status">{summaryRetryNotice}</p> : null}
           </article>
 
           {aiSummary ? (
             <>
+              <article className="app-card">
+                <h2 className="card-title">Key points</h2>
+                <SummaryBullets items={aiSummary.keyPoints} />
+              </article>
+
               <section className="settings-grid" aria-label="Arguments by side">
                 <SideSummary label="Affirmative case" summary={aiSummary.affirmative} />
                 <SideSummary label="Negative case" summary={aiSummary.negative} />
@@ -228,6 +307,22 @@ export const DebateWatchPage = () => {
                   </>
                 ) : null}
               </article>
+
+              <article className="app-card">
+                <h2 className="card-title">{debate.format} feedback</h2>
+                <SummaryBullets items={aiSummary.formatFeedback} />
+              </article>
+
+              <section className="settings-grid" aria-label="Suggestions for improvement">
+                <article className="app-card">
+                  <h2 className="card-title">Suggestions for Affirmative</h2>
+                  <SummaryBullets items={aiSummary.affirmative.suggestions} />
+                </article>
+                <article className="app-card">
+                  <h2 className="card-title">Suggestions for Negative</h2>
+                  <SummaryBullets items={aiSummary.negative.suggestions} />
+                </article>
+              </section>
             </>
           ) : null}
 
@@ -318,17 +413,22 @@ export const DebateWatchPage = () => {
                     type="button"
                     className={`debate-winner-vote is-aff${selectedVote === "Aff" ? " is-selected" : ""}`}
                     aria-pressed={selectedVote === "Aff"}
-                    disabled={voteBusy || selectedVote === "Aff"}
+                    disabled={voteBusy || (selectedVote === "Aff" && persistedVote?.reason?.trim() === voteReasonDraft.trim()) || voteReasonDraft.trim().length < 8}
                     onClick={() => void handleWinnerVote("Aff")}
                   >
-                    Vote {debate.affirmative.name}
+                    {selectedVote === "Aff" ? "Update vote" : `Vote ${debate.affirmative.name}`}
                     <span>{voteCounts.aff} {voteCounts.aff === 1 ? "vote" : "votes"}</span>
                   </button>
                 ) : null}
               </div>
 
-              <div className="score-pill debate-final-marker">
-                <strong className="score aff">{debate.score?.aff ?? "--"}</strong>
+              <div className="score-pill debate-final-marker" aria-label="Community vote results">
+                <strong
+                  className="score aff"
+                  aria-label={showCommunityVotes ? `${voteCounts.aff} votes for Affirmative` : "Affirmative score"}
+                >
+                  {showCommunityVotes ? voteCounts.aff : debate.score?.aff ?? "--"}
+                </strong>
                 <span className="score-winner">
                   {debate.winner === "Aff"
                     ? "AFF WINS"
@@ -336,10 +436,20 @@ export const DebateWatchPage = () => {
                       ? "NEG WINS"
                       : "FINAL"}
                 </span>
-                <strong className="score neg">{debate.score?.neg ?? "--"}</strong>
-                <span className="meta-line">
-                  {totalCommunityVotes} community {totalCommunityVotes === 1 ? "vote" : "votes"}
-                </span>
+                <strong
+                  className="score neg"
+                  aria-label={showCommunityVotes ? `${voteCounts.neg} votes for Negative` : "Negative score"}
+                >
+                  {showCommunityVotes ? voteCounts.neg : debate.score?.neg ?? "--"}
+                </strong>
+                {showCommunityVotes ? (
+                  <span className="meta-line">
+                    {totalCommunityVotes} community {totalCommunityVotes === 1 ? "vote" : "votes"}
+                  </span>
+                ) : null}
+                {showCommunityVotes && debate.score ? (
+                  <span className="meta-line">Official score {debate.score.aff}–{debate.score.neg}</span>
+                ) : null}
               </div>
 
               <div className="debate-vote-side is-neg">
@@ -355,10 +465,10 @@ export const DebateWatchPage = () => {
                     type="button"
                     className={`debate-winner-vote is-neg${selectedVote === "Neg" ? " is-selected" : ""}`}
                     aria-pressed={selectedVote === "Neg"}
-                    disabled={voteBusy || selectedVote === "Neg"}
+                    disabled={voteBusy || (selectedVote === "Neg" && persistedVote?.reason?.trim() === voteReasonDraft.trim()) || voteReasonDraft.trim().length < 8}
                     onClick={() => void handleWinnerVote("Neg")}
                   >
-                    Vote {debate.negative.name}
+                    {selectedVote === "Neg" ? "Update vote" : `Vote ${debate.negative.name}`}
                     <span>{voteCounts.neg} {voteCounts.neg === 1 ? "vote" : "votes"}</span>
                   </button>
                 ) : null}
@@ -367,6 +477,50 @@ export const DebateWatchPage = () => {
 
             {voteError ? (
               <p className="form-error debate-vote-error" role="alert">{voteError}</p>
+            ) : null}
+
+            {canVote ? (
+              <div className="debate-vote-reason form-field">
+                <label htmlFor="communityVoteReason">Why did that side win?</label>
+                <textarea
+                  id="communityVoteReason"
+                  value={voteReasonDraft}
+                  maxLength={1000}
+                  onChange={(event) => setVoteReasonDraft(event.target.value)}
+                  placeholder="Name the argument or comparison that decided your vote."
+                />
+                <span className="meta-line">
+                  {voteReasonDraft.trim().length < 8
+                    ? "Add at least 8 characters before voting."
+                    : `${voteReasonDraft.length}/1,000 characters`}
+                </span>
+              </div>
+            ) : null}
+
+            {showCommunityVotes ? (
+              <section className="debate-vote-feedback" aria-label="Community vote reasons">
+                <div className="row-between">
+                  <h3>Community vote reasons</h3>
+                  <span className="meta-line">Anonymous</span>
+                </div>
+                {feedbackState.data.length ? (
+                  <div className="debate-vote-feedback-list">
+                    {[...feedbackState.data]
+                      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+                      .map((feedback) => (
+                        <article
+                          className={`debate-vote-feedback-item${feedback.side === "Aff" ? " is-aff" : " is-neg"}`}
+                          key={feedback.id}
+                        >
+                          <strong>{feedback.side === "Aff" ? "Affirmative vote" : "Negative vote"}</strong>
+                          <p>{feedback.reason}</p>
+                        </article>
+                      ))}
+                  </div>
+                ) : (
+                  <p className="meta-line">No spectator votes yet.</p>
+                )}
+              </section>
             ) : null}
 
             <DebateTurnSequence debate={debate} />

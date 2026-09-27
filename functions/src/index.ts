@@ -22,9 +22,11 @@ const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maxImageSizeBytes = 5 * 1024 * 1024;
 
 export {
+  retryDebateSummary,
   summarizeCompletedDebate,
   transcribeDebateSpeech,
 } from "./debateAi";
+export { castDebateWinnerVote } from "./debateVoting";
 export { retrySpeechSummary, summarizeUploadedSpeech } from "./speechAi";
 export { sendModeratedChatAttachment, getChatAttachment, getChatAttachmentTranscript } from "./chatAttachments";
 

@@ -123,6 +123,9 @@ describe("DebateWatchPage debate view", () => {
     expect(affirmativeVote).toHaveAttribute("aria-pressed", "false");
     expect(negativeVote).toHaveAttribute("aria-pressed", "false");
 
+    fireEvent.change(screen.getByLabelText("Why did that side win?"), {
+      target: { value: "The affirmative showed a clearer access benefit." },
+    });
     fireEvent.click(affirmativeVote);
 
     await waitFor(() => {
@@ -130,6 +133,7 @@ describe("DebateWatchPage debate view", () => {
         "complete",
         "viewer",
         "Aff",
+        "The affirmative showed a clearer access benefit.",
       );
     });
     expect(affirmativeVote).toHaveAttribute("aria-pressed", "true");

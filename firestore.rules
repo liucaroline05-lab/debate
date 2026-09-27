@@ -279,7 +279,7 @@ service cloud.firestore {
         );
     }
 
-    function keepsServerManagedDebateSummary() {
+    function keepsServerManagedDebateFields() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         "aiSummary",
         "summary",
@@ -292,19 +292,27 @@ service cloud.firestore {
         "summaryPendingTurnIds",
         "summaryError",
         "summaryProcessingStartedAt",
-        "summaryProcessingEventId"
+        "summaryProcessingEventId",
+        "communityVoteCounts"
       ]);
     }
 
-    function canVoteForDebate(debateId) {
-      let debate = debateData(debateId);
-      return isSignedIn()
-        && debate.status == "Completed"
-        && debate.visibility == "public"
-        && (
-          !("participantIds" in debate)
-          || !(request.auth.uid in debate.participantIds)
-        );
+    function createsNoServerManagedDebateFields() {
+      return !request.resource.data.keys().hasAny([
+        "aiSummary",
+        "summary",
+        "summaryStatus",
+        "summaryModel",
+        "summaryPromptVersion",
+        "summaryTranscriptRefs",
+        "summaryResponseId",
+        "summaryGeneratedAt",
+        "summaryPendingTurnIds",
+        "summaryError",
+        "summaryProcessingStartedAt",
+        "summaryProcessingEventId",
+        "communityVoteCounts"
+      ]);
     }
 
     match /debates/{debateId} {
@@ -312,8 +320,8 @@ service cloud.firestore {
       // readable to their participants and creator. (Whole-collection listeners
       // still require a broad read, so listing stays gated to signed-in users.)
       allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && keepsServerManagedDebateSummary();
+      allow create: if isSignedIn() && createsNoServerManagedDebateFields();
+      allow update: if isSignedIn() && keepsServerManagedDebateFields();
     }
 
     // Raw debate transcripts are written by Cloud Functions and are not exposed
@@ -357,20 +365,16 @@ service cloud.firestore {
     match /debateWinnerVotes/{voteId} {
       allow read: if isSignedIn()
         && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.side in ["Aff", "Neg"]
-        && canVoteForDebate(request.resource.data.debateId);
-      allow update: if isSignedIn()
-        && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.debateId == resource.data.debateId
-        && request.resource.data.side in ["Aff", "Neg"]
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          "side",
-          "updatedAt"
-        ])
-        && canVoteForDebate(resource.data.debateId);
+      // The callable validates spectator status, then atomically updates the
+      // private vote, anonymous public feedback, and debate-wide tallies.
+      allow create, update, delete: if false;
+    }
+
+    match /debateWinnerVoteFeedback/{feedbackId} {
+      allow read: if isSignedIn()
+        && debateData(resource.data.debateId).status == "Completed"
+        && debateData(resource.data.debateId).visibility == "public";
+      allow create, update, delete: if false;
     }
 
     match /resources/{resourceId} {

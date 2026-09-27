@@ -177,10 +177,16 @@ export interface DebateSideSummary {
   claims: DebateSummaryPoint[];
   evidence: DebateSummaryEvidence[];
   rebuttals: DebateSummaryPoint[];
+  /** Speech order and organization described from the submitted transcripts. */
+  structure?: string[];
+  /** Transcript-grounded coaching tailored to the debate format. */
+  suggestions?: string[];
 }
 
 export interface DebateAiSummary {
   resolution: string;
+  keyPoints?: string[];
+  formatFeedback?: string[];
   affirmative: DebateSideSummary;
   negative: DebateSideSummary;
   clashes: Array<{
@@ -248,6 +254,7 @@ export interface DebateThread {
   participantIds?: string[];
   watchPath?: string;
   summary?: string;
+  summaryError?: string;
   aiSummary?: DebateAiSummary;
   summaryStatus?: DebateSummaryStatus;
   summaryModel?: string;
@@ -270,6 +277,18 @@ export interface DebateWinnerVote {
   debateId: string;
   userId: string;
   side: "Aff" | "Neg";
+  reason?: string;
+  feedbackId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Public, anonymous explanation attached to a spectator's winner vote. */
+export interface DebateWinnerVoteFeedback {
+  id: string;
+  debateId: string;
+  side: "Aff" | "Neg";
+  reason: string;
   createdAt: string;
   updatedAt: string;
 }

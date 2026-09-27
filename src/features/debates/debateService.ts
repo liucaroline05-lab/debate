@@ -1,4 +1,5 @@
 import { FirebaseError } from "firebase/app";
+import { httpsCallable } from "firebase/functions";
 import {
   addDoc,
   collection,
@@ -15,7 +16,7 @@ import {
   type UploadMetadata,
   type UploadTaskSnapshot,
 } from "firebase/storage";
-import { firestore, storage } from "@/lib/firebase";
+import { firestore, functions, storage } from "@/lib/firebase";
 import { getDebateTurnProgress } from "@/features/debates/debateProgress";
 import type {
   DebateMatchRequest,
@@ -628,64 +629,22 @@ export const voteForDebateWinner = async (
   debateId: string,
   userId: string,
   side: "Aff" | "Neg",
+  reason: string,
 ) => {
-  const db = requireFirestore();
-  const debateRef = doc(db, "debates", debateId);
-  const voteRef = doc(db, "debateWinnerVotes", `${debateId}-${userId}`);
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  const castVote = httpsCallable<
+    { debateId: string; userId: string; side: "Aff" | "Neg"; reason: string },
+    { saved: boolean }
+  >(functions, "castDebateWinnerVote");
+  await castVote({ debateId, userId, side, reason });
+};
 
-  await runTransaction(db, async (transaction) => {
-    const debateSnapshot = await transaction.get(debateRef);
-    const voteSnapshot = await transaction.get(voteRef);
-
-    if (!debateSnapshot.exists()) {
-      throw new Error("This debate is no longer available.");
-    }
-
-    const debate = debateSnapshot.data() as Partial<DebateThread>;
-    if (
-      debate.status !== "Completed"
-      || debate.visibility !== "public"
-      || (debate.participantIds ?? []).includes(userId)
-    ) {
-      throw new Error("Only spectators can vote on completed public debates.");
-    }
-
-    const previousSide = voteSnapshot.exists()
-      ? (voteSnapshot.data().side as "Aff" | "Neg" | undefined)
-      : undefined;
-    if (previousSide === side) {
-      return;
-    }
-
-    const currentCounts = debate.communityVoteCounts ?? { aff: 0, neg: 0 };
-    const nextCounts = {
-      aff: Math.max(
-        0,
-        currentCounts.aff + Number(side === "Aff") - Number(previousSide === "Aff"),
-      ),
-      neg: Math.max(
-        0,
-        currentCounts.neg + Number(side === "Neg") - Number(previousSide === "Neg"),
-      ),
-    };
-    const updatedAt = nowIso();
-
-    transaction.set(
-      voteRef,
-      {
-        debateId,
-        userId,
-        side,
-        createdAt: voteSnapshot.exists()
-          ? voteSnapshot.data().createdAt ?? updatedAt
-          : updatedAt,
-        updatedAt,
-      },
-      { merge: true },
-    );
-    transaction.update(debateRef, {
-      communityVoteCounts: nextCounts,
-      updatedAt,
-    });
-  });
+export const retryDebateSummary = async (debateId: string) => {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  const retry = httpsCallable<{ debateId: string }, { status: string }>(
+    functions,
+    "retryDebateSummary",
+    { timeout: 540_000 },
+  );
+  return (await retry({ debateId })).data.status;
 };

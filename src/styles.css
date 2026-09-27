@@ -1836,6 +1836,68 @@ button {
   line-height: 1.25;
 }
 
+.debate-final-marker {
+  min-width: 8rem;
+}
+
+.debate-vote-reason {
+  margin: 0 1.5rem 1.25rem;
+}
+
+.debate-vote-reason textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.debate-vote-feedback {
+  display: grid;
+  gap: 0.8rem;
+  margin: 0 1.5rem 1.25rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid rgba(53, 47, 42, 0.09);
+  border-radius: 20px;
+  background: rgba(255, 253, 248, 0.62);
+}
+
+.debate-vote-feedback h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.debate-vote-feedback-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.debate-vote-feedback-item {
+  padding: 0.8rem 0.9rem;
+  border-left: 3px solid rgba(91, 126, 102, 0.55);
+  border-radius: 0 12px 12px 0;
+  background: rgba(229, 237, 228, 0.5);
+}
+
+.debate-vote-feedback-item.is-neg {
+  border-left-color: rgba(178, 95, 76, 0.65);
+  background: rgba(245, 228, 222, 0.5);
+}
+
+.debate-vote-feedback-item p {
+  margin: 0.35rem 0 0;
+  color: var(--color-muted);
+}
+
+.debate-summary-heading {
+  align-items: center;
+  gap: 1rem;
+}
+
+.debate-summary-bullets {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0;
+  padding-left: 1.15rem;
+}
+
 .debate-vote-error {
   margin: 0 1.5rem 1rem;
 }
