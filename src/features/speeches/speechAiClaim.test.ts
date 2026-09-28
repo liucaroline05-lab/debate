@@ -19,7 +19,7 @@ describe("speech summary claim", () => {
     expect(canClaimSpeechSummary(speech, "manual-retry", true, now)).toBe(false);
   });
 
-  it("allows a manual retry to take over a stale job but never a completed one", () => {
+  it("allows a manual retry to take over a stale job and refreshes completed summaries only on request", () => {
     const stale = {
       summaryStatus: "processing",
       summaryProcessingEventId: "lost-event",
@@ -27,6 +27,7 @@ describe("speech summary claim", () => {
     };
     expect(canClaimSpeechSummary(stale, "manual-retry", true, now)).toBe(true);
     expect(canClaimSpeechSummary(stale, "new-storage-event", false, now)).toBe(false);
-    expect(canClaimSpeechSummary({ summaryStatus: "completed" }, "manual-retry", true, now)).toBe(false);
+    expect(canClaimSpeechSummary({ summaryStatus: "completed" }, "storage-event", false, now)).toBe(false);
+    expect(canClaimSpeechSummary({ summaryStatus: "completed" }, "manual-retry", true, now)).toBe(true);
   });
 });

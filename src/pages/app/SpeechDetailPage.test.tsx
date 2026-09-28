@@ -171,7 +171,7 @@ describe("SpeechDetailPage", () => {
         ],
         structure: [{ section: "Overview", description: "Frames the round." }],
         deliveryNotes: ["Signposts each response clearly."],
-        suggestions: ["Weigh the turn against the case impact."],
+        formatFeedback: ["For Public Forum, weigh the turn against the case impact in the summary."],
       },
     });
 
@@ -185,7 +185,8 @@ describe("SpeechDetailPage", () => {
       screen.getByText(/A 2024 transit ridership figure/),
     ).toBeInTheDocument();
     expect(screen.getByText(/no source named in the recording/)).toBeInTheDocument();
-    expect(screen.getByText("Weigh the turn against the case impact.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Public Forum feedback" })).toBeInTheDocument();
+    expect(screen.getByText(/weigh the turn against the case impact/)).toBeInTheDocument();
   });
 
   it("explains that a summary is still being prepared", () => {

@@ -22,7 +22,10 @@ export const canClaimSpeechSummary = (
   allowStaleTakeover = false,
   now = Date.now(),
 ) => {
-  if (speech.summaryStatus === "completed") return false;
+  // Only an explicit manual retry may refresh a completed summary, such as
+  // when its prompt/schema version is outdated. Storage-trigger retries must
+  // never regenerate completed summaries.
+  if (speech.summaryStatus === "completed") return allowStaleTakeover;
   if (speech.summaryStatus !== "processing") return true;
 
   const activeEventId = typeof speech.summaryProcessingEventId === "string"

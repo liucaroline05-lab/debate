@@ -378,8 +378,11 @@ export const SpeechDetailPage = () => {
 
   const fileName = getSpeechFileName(speech);
   const aiSummary = speech.aiSummary;
+  const needsFormatFeedbackRefresh = speech.summaryStatus === "completed"
+    && speech.summaryPromptVersion !== "speech-summary-v2";
   const canRetrySummary = isOwner && Boolean(speech.mediaStoragePath || speech.mediaPath)
     && (speech.summaryStatus === "failed"
+      || needsFormatFeedbackRefresh
       || (speech.summaryStatus === "processing"
         && Date.now() - new Date(speech.uploadedAt).getTime() >= 10 * 60 * 1000));
 
@@ -542,7 +545,9 @@ export const SpeechDetailPage = () => {
                 disabled={isRetryingSummary}
                 onClick={() => void handleRetrySummary()}
               >
-                {isRetryingSummary ? "Retrying summary..." : "Retry AI summary"}
+                {isRetryingSummary
+                  ? (needsFormatFeedbackRefresh ? "Refreshing feedback..." : "Retrying summary...")
+                  : (needsFormatFeedbackRefresh ? "Refresh format feedback" : "Retry AI summary")}
               </button>
             </div>
           ) : null}
@@ -586,7 +591,25 @@ export const SpeechDetailPage = () => {
               </section>
 
               <SummaryList title="Delivery notes" items={aiSummary.deliveryNotes} />
-              <SummaryList title="Suggestions" items={aiSummary.suggestions} />
+              <section className="speech-summary-section">
+                <h3>{speech.format} feedback</h3>
+                {aiSummary.formatFeedback ? (
+                  aiSummary.formatFeedback.length > 0 ? (
+                    <ul>
+                      {aiSummary.formatFeedback.map((item, index) => (
+                        <li key={`${item}-${index}`}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <EmptySummaryList />
+                  )
+                ) : (
+                  <p className="meta-line">
+                    Format-specific feedback is not available in this older summary.
+                    {isOwner ? " Refresh the feedback to generate it." : ""}
+                  </p>
+                )}
+              </section>
             </>
           ) : null}
         </article>

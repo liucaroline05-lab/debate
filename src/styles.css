@@ -1849,6 +1849,11 @@ button {
   resize: vertical;
 }
 
+.debate-vote-submit-row {
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
 .debate-vote-feedback {
   display: grid;
   gap: 0.8rem;

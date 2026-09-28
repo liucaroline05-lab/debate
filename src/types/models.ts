@@ -57,7 +57,8 @@ export interface SpeechAiSummary {
     description: string;
   }>;
   deliveryNotes: string[];
-  suggestions: string[];
+  /** Optional only because older saved summaries predate format-specific feedback. */
+  formatFeedback?: string[];
 }
 
 export type SpeechSummaryStatus = "processing" | "completed" | "failed";

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { where, type QueryConstraint } from "firebase/firestore";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { PageMeta } from "@/components/common/PageMeta";
@@ -100,6 +100,7 @@ export const DebateWatchPage = () => {
   const [voteBusy, setVoteBusy] = useState(false);
   const [voteError, setVoteError] = useState("");
   const [voteReasonDraft, setVoteReasonDraft] = useState("");
+  const voteReasonRef = useRef<HTMLTextAreaElement | null>(null);
   const [selectedVoteSide, setSelectedVoteSide] = useState<"Aff" | "Neg" | null>(null);
   const [isRetryingSummary, setIsRetryingSummary] = useState(false);
   const [summaryRetryNotice, setSummaryRetryNotice] = useState("");
@@ -204,13 +205,29 @@ export const DebateWatchPage = () => {
     }
   };
 
-  const handleWinnerVote = async (side: "Aff" | "Neg") => {
+  const handleSelectWinner = (side: "Aff" | "Neg") => {
+    if (voteBusy) return;
+    setSelectedVoteSide(side);
+    setVoteError("");
+    voteReasonRef.current?.focus();
+  };
+
+  const handleWinnerVote = async () => {
     const reason = voteReasonDraft.trim();
-    const alreadySavedSameBallot = persistedVote?.side === side
-      && persistedVote.reason?.trim() === reason;
-    if (!currentUser || !canVote || voteBusy || alreadySavedSameBallot || reason.length < 8) {
+    if (!currentUser || !canVote || voteBusy) return;
+    if (!selectedVote) {
+      setVoteError("Choose which side you think won before submitting your vote.");
       return;
     }
+    if (reason.length < 8) {
+      setVoteError("Add at least 8 characters explaining your choice before submitting your vote.");
+      voteReasonRef.current?.focus();
+      return;
+    }
+    const side = selectedVote;
+    const alreadySavedSameBallot = persistedVote?.side === side
+      && persistedVote.reason?.trim() === reason;
+    if (alreadySavedSameBallot) return;
 
     const previousSide = selectedVote ?? null;
     setSelectedVoteSide(side);
@@ -413,10 +430,10 @@ export const DebateWatchPage = () => {
                     type="button"
                     className={`debate-winner-vote is-aff${selectedVote === "Aff" ? " is-selected" : ""}`}
                     aria-pressed={selectedVote === "Aff"}
-                    disabled={voteBusy || (selectedVote === "Aff" && persistedVote?.reason?.trim() === voteReasonDraft.trim()) || voteReasonDraft.trim().length < 8}
-                    onClick={() => void handleWinnerVote("Aff")}
+                    disabled={voteBusy || (selectedVote === "Aff" && persistedVote?.reason?.trim() === voteReasonDraft.trim())}
+                    onClick={() => handleSelectWinner("Aff")}
                   >
-                    {selectedVote === "Aff" ? "Update vote" : `Vote ${debate.affirmative.name}`}
+                    {selectedVote === "Aff" ? "Selected" : `Vote for ${debate.affirmative.name}`}
                     <span>{voteCounts.aff} {voteCounts.aff === 1 ? "vote" : "votes"}</span>
                   </button>
                 ) : null}
@@ -465,10 +482,10 @@ export const DebateWatchPage = () => {
                     type="button"
                     className={`debate-winner-vote is-neg${selectedVote === "Neg" ? " is-selected" : ""}`}
                     aria-pressed={selectedVote === "Neg"}
-                    disabled={voteBusy || (selectedVote === "Neg" && persistedVote?.reason?.trim() === voteReasonDraft.trim()) || voteReasonDraft.trim().length < 8}
-                    onClick={() => void handleWinnerVote("Neg")}
+                    disabled={voteBusy || (selectedVote === "Neg" && persistedVote?.reason?.trim() === voteReasonDraft.trim())}
+                    onClick={() => handleSelectWinner("Neg")}
                   >
-                    {selectedVote === "Neg" ? "Update vote" : `Vote ${debate.negative.name}`}
+                    {selectedVote === "Neg" ? "Selected" : `Vote for ${debate.negative.name}`}
                     <span>{voteCounts.neg} {voteCounts.neg === 1 ? "vote" : "votes"}</span>
                   </button>
                 ) : null}
@@ -484,16 +501,36 @@ export const DebateWatchPage = () => {
                 <label htmlFor="communityVoteReason">Why did that side win?</label>
                 <textarea
                   id="communityVoteReason"
+                  ref={voteReasonRef}
                   value={voteReasonDraft}
                   maxLength={1000}
-                  onChange={(event) => setVoteReasonDraft(event.target.value)}
+                  onChange={(event) => {
+                    setVoteReasonDraft(event.target.value);
+                    setVoteError("");
+                  }}
                   placeholder="Name the argument or comparison that decided your vote."
                 />
                 <span className="meta-line">
                   {voteReasonDraft.trim().length < 8
-                    ? "Add at least 8 characters before voting."
+                    ? "Choose a side, explain your decision in at least 8 characters, then submit your vote."
                     : `${voteReasonDraft.length}/1,000 characters`}
                 </span>
+                <div className="button-row debate-vote-submit-row">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={
+                      voteBusy
+                      || !selectedVote
+                      || voteReasonDraft.trim().length < 8
+                      || (persistedVote?.side === selectedVote
+                        && persistedVote.reason?.trim() === voteReasonDraft.trim())
+                    }
+                    onClick={() => void handleWinnerVote()}
+                  >
+                    {voteBusy ? "Submitting vote..." : persistedVote ? "Update vote" : "Submit vote"}
+                  </button>
+                </div>
               </div>
             ) : null}
 

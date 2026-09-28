@@ -11,7 +11,7 @@ import { canClaimSpeechSummary, processingAgeMs, STALE_PROCESSING_MS } from "./s
 const TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
 const SUMMARY_MODEL = "gpt-5.6-luna";
 const TRANSCRIPTION_PROMPT_VERSION = "speech-transcription-v1";
-const SUMMARY_PROMPT_VERSION = "speech-summary-v1";
+const SUMMARY_PROMPT_VERSION = "speech-summary-v2";
 const MAX_TRANSCRIPTION_BYTES = 25 * 1024 * 1024;
 // How long the trigger keeps retrying while waiting for the client to finish
 // writing the speech document.
@@ -33,6 +33,7 @@ interface SpeechData {
   speakerName?: unknown;
   creatorId?: unknown;
   summaryStatus?: unknown;
+  summaryPromptVersion?: unknown;
   summaryProcessingEventId?: unknown;
   summaryProcessingStartedAt?: unknown;
   uploadedAt?: unknown;
@@ -62,7 +63,7 @@ interface SpeechAiSummary {
     description: string;
   }>;
   deliveryNotes: string[];
-  suggestions: string[];
+  formatFeedback: string[];
 }
 
 const speechSummarySchema = {
@@ -102,7 +103,7 @@ const speechSummarySchema = {
       type: "array",
       items: { type: "string" },
     },
-    suggestions: {
+    formatFeedback: {
       type: "array",
       items: { type: "string" },
     },
@@ -113,7 +114,7 @@ const speechSummarySchema = {
     "evidenceMentioned",
     "structure",
     "deliveryNotes",
-    "suggestions",
+    "formatFeedback",
   ],
 } as const;
 
@@ -153,7 +154,7 @@ const parseSummary = (outputText: string): SpeechAiSummary => {
     || !Array.isArray(parsed.evidenceMentioned)
     || !Array.isArray(parsed.structure)
     || !Array.isArray(parsed.deliveryNotes)
-    || !Array.isArray(parsed.suggestions)
+    || !Array.isArray(parsed.formatFeedback)
   ) {
     throw new Error("The summary response did not contain the expected fields.");
   }
@@ -249,7 +250,12 @@ const summarizeSpeechTranscript = async (
         "Never invent, repair, verify, or strengthen citations, statistics, quotations, sources, or arguments.",
         "If an evidence source is not named, set sourceAsStated to an empty string.",
         "Delivery notes must describe observable features of the transcript such as signposting, repetition, or pacing cues; do not guess at tone you cannot hear.",
-        "Suggestions must be constructive, specific, and grounded in the transcript.",
+        "Format feedback must be constructive, specific, and grounded in the transcript, and it must assess the speech against the supplied debate or speech format rather than offer generic suggestions.",
+        "For Public Forum, consider claim-warrant-impact development, evidence use, rebuttal, summary/final focus responsibilities, and weighing only when supported by the speech and event context.",
+        "For Lincoln-Douglas, consider the value/criterion framework, contentions, clash, and weighing; for Policy, consider advocacy/plan framing, evidence comparison, line-by-line refutation, and impact calculus when present.",
+        "For Congress, consider the speech's legislative focus, argumentation, refutation, and crystallization; for Parliamentary or World Schools, consider the supplied format's role and burden only when the transcript/context supports it, without assuming a specific rule set.",
+        "For Extemp and other prepared or limited-preparation speeches, consider thesis clarity, organization, support, and responsiveness to the prompt; for interpretation, consider text selection, transitions, and narrative clarity, but do not infer vocal or physical delivery from a transcript.",
+        "If the format or speaker role is too unclear for a format-specific judgment, state that limitation and give cautious feedback tied to observable speech content.",
         "Use empty arrays when the transcript does not support a requested category.",
       ].join(" "),
       input: JSON.stringify(summaryInput),
@@ -502,7 +508,10 @@ export const retrySpeechSummary = onCall(
     if (speech.creatorId !== userId) {
       throw new HttpsError("permission-denied", "Only the uploader can retry this summary.");
     }
-    if (speech.summaryStatus === "completed") return { status: "completed" };
+    if (speech.summaryStatus === "completed"
+      && speech.summaryPromptVersion === SUMMARY_PROMPT_VERSION) {
+      return { status: "completed" };
+    }
     if (speech.summaryStatus === "processing"
       && asString(speech.summaryProcessingEventId)
       && processingAgeMs(speech) < STALE_PROCESSING_MS) {
