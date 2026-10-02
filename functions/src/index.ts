@@ -27,6 +27,7 @@ export {
   transcribeDebateSpeech,
 } from "./debateAi";
 export { castDebateWinnerVote } from "./debateVoting";
+export { recordDebateView } from "./debateViews";
 export { retrySpeechSummary, summarizeUploadedSpeech } from "./speechAi";
 export { sendModeratedChatAttachment, getChatAttachment, getChatAttachmentTranscript } from "./chatAttachments";
 

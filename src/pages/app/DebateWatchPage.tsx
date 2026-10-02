@@ -5,7 +5,11 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { DebateTurnSequence } from "@/components/debates/DebateTurnSequence";
 import { seededDebates } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
-import { retryDebateSummary, voteForDebateWinner } from "@/features/debates/debateService";
+import {
+  recordDebateView,
+  retryDebateSummary,
+  voteForDebateWinner,
+} from "@/features/debates/debateService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type {
   DebateSideSummary,
@@ -101,6 +105,8 @@ export const DebateWatchPage = () => {
   const [voteError, setVoteError] = useState("");
   const [voteReasonDraft, setVoteReasonDraft] = useState("");
   const voteReasonRef = useRef<HTMLTextAreaElement | null>(null);
+  const activeViewRouteKeyRef = useRef<string | null>(null);
+  const recordedViewKeyRef = useRef<string | null>(null);
   const [selectedVoteSide, setSelectedVoteSide] = useState<"Aff" | "Neg" | null>(null);
   const [isRetryingSummary, setIsRetryingSummary] = useState(false);
   const [summaryRetryNotice, setSummaryRetryNotice] = useState("");
@@ -121,6 +127,37 @@ export const DebateWatchPage = () => {
     () => debatesState.data.find((entry) => entry.id === debateId),
     [debateId, debatesState.data],
   );
+
+  useEffect(() => {
+    if (!debate || !currentUser) return;
+
+    const viewRouteKey = `${debate.id}:${currentUser.id}`;
+    if (activeViewRouteKeyRef.current !== viewRouteKey) {
+      activeViewRouteKeyRef.current = viewRouteKey;
+      recordedViewKeyRef.current = null;
+    }
+
+    const isParticipant = (debate.participantIds ?? []).includes(currentUser.id)
+      || debate.affirmative.userId === currentUser.id
+      || debate.negative.userId === currentUser.id;
+    const canSpectate = debate.status === "Active" || debate.status === "Completed";
+    if (!canSpectate || debate.visibility !== "public" || isParticipant) return;
+    if (recordedViewKeyRef.current === viewRouteKey) return;
+    recordedViewKeyRef.current = viewRouteKey;
+
+    void recordDebateView(debate.id, globalThis.crypto.randomUUID()).catch((error) => {
+      console.error("Unable to record async debate view", error);
+    });
+  }, [
+    currentUser?.id,
+    debate?.id,
+    debate?.status,
+    debate?.visibility,
+    debate?.participantIds,
+    debate?.affirmative.userId,
+    debate?.negative.userId,
+  ]);
+
   const persistedVote = useMemo(
     () => votesState.data.find((vote) => vote.debateId === debateId),
     [debateId, votesState.data],
@@ -387,7 +424,7 @@ export const DebateWatchPage = () => {
                   <span className="meta-line">{debate.status}</span>
                 </div>
                 <div className="list-item">
-                  <strong>Spectators</strong>
+                  <strong>Views</strong>
                   <span className="meta-line">{debate.spectators}</span>
                 </div>
                 <div className="list-item">
@@ -564,7 +601,7 @@ export const DebateWatchPage = () => {
 
             <div className="debate-entry-footer">
               <span className="meta-line">
-                {submittedTurns.length} submitted • {debate.spectators} spectators
+                {submittedTurns.length} submitted • {debate.spectators} views
               </span>
               <Link
                 className="btn btn-secondary"

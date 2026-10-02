@@ -293,7 +293,8 @@ service cloud.firestore {
         "summaryError",
         "summaryProcessingStartedAt",
         "summaryProcessingEventId",
-        "communityVoteCounts"
+        "communityVoteCounts",
+        "spectators"
       ]);
     }
 
@@ -375,6 +376,10 @@ service cloud.firestore {
         && debateData(resource.data.debateId).status == "Completed"
         && debateData(resource.data.debateId).visibility == "public";
       allow create, update, delete: if false;
+    }
+
+    match /debateViewEvents/{viewEventId} {
+      allow read, write: if false;
     }
 
     match /resources/{resourceId} {

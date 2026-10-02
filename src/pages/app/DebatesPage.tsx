@@ -810,7 +810,7 @@ export const DebatesPage = () => {
                 <div className="debate-entry-footer">
                   <div className="debate-entry-meta">
                     <span><Clock3 size={15} /> Deadline {formatDateTime(debate.nextDeadline)}</span>
-                    <span><Eye size={15} /> {debate.spectators} spectators</span>
+                    <span><Eye size={15} /> {debate.spectators} views</span>
                   </div>
                   <div className="button-row">
                     {(debate.participantIds?.length ?? 0) > 1 ? (
@@ -930,7 +930,7 @@ export const DebatesPage = () => {
                     <h2 className="debate-topic">{debate.topic}</h2>
                     <span className="pill debate-format-pill">{debate.format}</span>
                   </div>
-                  <span className="debate-status-badge">{debate.spectators} watching</span>
+                  <span className="debate-status-badge">{debate.spectators} views</span>
                 </div>
 
                 {renderMatchup(debate, true)}
@@ -1014,7 +1014,7 @@ export const DebatesPage = () => {
 
                     <div className="debate-panel-footer">
                       <span className="meta-line">
-                        {debate.totalRounds} rounds • {formatDate(debate.nextDeadline)} • {debate.spectators} spectators
+                        {debate.totalRounds} rounds • {formatDate(debate.nextDeadline)} • {debate.spectators} views
                       </span>
                       <div className="button-row">
                         <Link className="btn btn-secondary" to={`/app/debates/${debate.id}`}>
@@ -1077,7 +1077,7 @@ export const DebatesPage = () => {
 
                     <div className="public-completed-footer">
                       <span className="meta-line">
-                        {debate.totalRounds} rounds • {debate.spectators} spectators
+                        {debate.totalRounds} rounds • {debate.spectators} views
                       </span>
                       <Link className="btn btn-secondary" to={`/app/debates/${debate.id}`}>
                         View Debate

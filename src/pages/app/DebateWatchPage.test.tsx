@@ -27,6 +27,7 @@ vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
 }));
 
 const service = vi.hoisted(() => ({
+  recordDebateView: vi.fn(async () => ({ counted: true, spectators: 4 })),
   voteForDebateWinner: vi.fn(async () => {}),
 }));
 
@@ -81,10 +82,22 @@ beforeEach(() => {
   mocks.debates = [];
   mocks.winnerVotes = [];
   mocks.currentUser = { id: "viewer", displayName: "Viewer", role: "student" };
+  service.recordDebateView.mockClear();
   service.voteForDebateWinner.mockClear();
 });
 
 describe("DebateWatchPage debate view", () => {
+  it("records one view when a spectator opens an active public debate", async () => {
+    mocks.debates = [completedDebate({ id: "live", status: "Active" })];
+
+    renderPage("/app/debates/live");
+
+    await waitFor(() => {
+      expect(service.recordDebateView).toHaveBeenCalledTimes(1);
+    });
+    expect(service.recordDebateView).toHaveBeenCalledWith("live", expect.any(String));
+  });
+
   it("keeps the overview cards and renders the completed debate widget below them", () => {
     mocks.debates = [completedDebate()];
 

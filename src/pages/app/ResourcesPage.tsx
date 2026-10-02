@@ -21,12 +21,10 @@ import type { ResourceItem, ResourceSave } from "@/types/models";
 
 const EMPTY_RESOURCE_SAVES: ResourceSave[] = [];
 
-const categories: Array<"All" | ResourceItem["category"]> = [
+const uploaderRoles: Array<"All" | NonNullable<ResourceItem["creatorRole"]>> = [
   "All",
-  "Case Building",
-  "Rebuttal",
-  "Research",
-  "Delivery",
+  "coach",
+  "student",
 ];
 const levels: Array<"All" | ResourceItem["level"]> = ["All", "Starter", "Growth", "Advanced"];
 const formats: Array<"All" | NonNullable<ResourceItem["format"]>> = [
@@ -87,7 +85,7 @@ export const ResourcesPage = () => {
   const uploadRef = useRef<HTMLDivElement | null>(null);
   const uploadTitleRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<(typeof categories)[number]>("All");
+  const [uploaderRole, setUploaderRole] = useState<(typeof uploaderRoles)[number]>("All");
   const [level, setLevel] = useState<(typeof levels)[number]>("All");
   const [format, setFormat] = useState<(typeof formats)[number]>("All");
   const [mediaType, setMediaType] = useState<(typeof mediaTypes)[number]>("All");
@@ -124,7 +122,7 @@ export const ResourcesPage = () => {
         .toLowerCase();
 
       const matchesQuery = loweredQuery ? searchableText.includes(loweredQuery) : true;
-      const matchesCategory = category === "All" || resource.category === category;
+      const matchesUploader = uploaderRole === "All" || resource.creatorRole === uploaderRole;
       const matchesLevel = level === "All" || resource.level === level;
       const matchesFormat = format === "All" || resource.format === format;
       const matchesMedia = mediaType === "All" || resource.mediaType === mediaType;
@@ -132,52 +130,48 @@ export const ResourcesPage = () => {
 
       return (
         matchesQuery &&
-        matchesCategory &&
+        matchesUploader &&
         matchesLevel &&
         matchesFormat &&
         matchesMedia &&
         matchesSaved
       );
     });
-  }, [category, format, level, mediaType, query, resourceSaveState.data, resourceState.data, savedOnly]);
+  }, [format, level, mediaType, query, resourceSaveState.data, resourceState.data, savedOnly, uploaderRole]);
 
-  // The recommended strip is a Quick Read shelf, so saving an Article should
-  // not put it here: the entry has to have been published as a Quick Read.
-  const featuredResources = useMemo(
-    () => {
-      const savedIds = new Set(resourceSaveState.data.map((save) => save.resourceId));
-      return resourceState.data
-        .filter((resource) => resource.resourceType === "Quick Read")
-        .filter((resource) => savedIds.has(resource.id))
-        .slice(0, 12);
-    },
-    [resourceSaveState.data, resourceState.data],
+  const quickReads = useMemo(
+    () => filtered.filter((resource) => resource.resourceType === "Quick Read"),
+    [filtered],
+  );
+  const articles = useMemo(
+    () => filtered.filter((resource) => resource.resourceType !== "Quick Read"),
+    [filtered],
   );
 
-  const featuredTrackRef = useRef<HTMLDivElement | null>(null);
+  const quickReadsTrackRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
-  const updateFeaturedScroll = useCallback(() => {
-    const track = featuredTrackRef.current;
+  const updateQuickReadsScroll = useCallback(() => {
+    const track = quickReadsTrackRef.current;
     if (!track) return;
     const { scrollLeft, scrollWidth, clientWidth } = track;
     setCanScrollLeft(scrollLeft > 1);
     setCanScrollRight(Math.ceil(scrollLeft + clientWidth) < scrollWidth - 1);
   }, []);
 
-  const scrollFeatured = (direction: "left" | "right") => {
-    const track = featuredTrackRef.current;
+  const scrollQuickReads = (direction: "left" | "right") => {
+    const track = quickReadsTrackRef.current;
     if (!track) return;
     const amount = track.clientWidth * 0.8;
     track.scrollBy({ left: direction === "left" ? -amount : amount, behavior: "smooth" });
   };
 
   useEffect(() => {
-    updateFeaturedScroll();
-    window.addEventListener("resize", updateFeaturedScroll);
-    return () => window.removeEventListener("resize", updateFeaturedScroll);
-  }, [updateFeaturedScroll, featuredResources.length]);
+    updateQuickReadsScroll();
+    window.addEventListener("resize", updateQuickReadsScroll);
+    return () => window.removeEventListener("resize", updateQuickReadsScroll);
+  }, [quickReads, updateQuickReadsScroll]);
 
   const submitResource = async () => {
     if (!currentUser) {
@@ -309,21 +303,12 @@ export const ResourcesPage = () => {
             {uploadFieldError === "title" ? <span className="speech-field-error" role="alert">Add a title before uploading.</span> : null}
           </div>
           <div className="form-field">
-            <label htmlFor="resourceCategory">Category</label>
-            <select
-              id="resourceCategory"
-              value={composer.category}
-              onChange={(event) =>
-                setComposer((current) => ({
-                  ...current,
-                  category: event.target.value as ResourceItem["category"],
-                }))
-              }
-            >
-              {categories.filter((item) => item !== "All").map((item) => (
-                <option key={item}>{item}</option>
-              ))}
+            <label htmlFor="resourceUploaderRole">Uploader type</label>
+            <select id="resourceUploaderRole" value={currentUser?.role ?? "student"} disabled>
+              <option value="coach">Coach</option>
+              <option value="student">Student</option>
             </select>
+            <span className="meta-line">Set by the role on your account.</span>
           </div>
           <div className="form-field full">
             <label htmlFor="resourceDescription">Short description</label>
@@ -513,10 +498,10 @@ export const ResourcesPage = () => {
           <summary><SlidersHorizontal size={16} aria-hidden="true" /> Filters</summary>
         <div className="resource-filter-grid">
           <div className="form-field">
-            <label htmlFor="category">Category</label>
-            <select id="category" value={category} onChange={(event) => setCategory(event.target.value as typeof category)}>
-              {categories.map((item) => (
-                <option key={item}>{item}</option>
+            <label htmlFor="uploaderRole">Uploaded by</label>
+            <select id="uploaderRole" value={uploaderRole} onChange={(event) => setUploaderRole(event.target.value as typeof uploaderRole)}>
+              {uploaderRoles.map((item) => (
+                <option key={item} value={item}>{item === "All" ? "All uploaders" : roleLabel(item)}</option>
               ))}
             </select>
           </div>
@@ -570,26 +555,30 @@ export const ResourcesPage = () => {
         ) : null}
       </section>
 
-      {featuredResources.length > 0 ? (
-        <section className="resource-featured" aria-label="Recommended resources">
-          <h2 className="card-title">Recommended for you</h2>
-          <div className="resource-featured-viewport">
+      {quickReads.length > 0 ? (
+        <section className="resource-section resource-quick-reads" aria-labelledby="quick-reads-heading">
+          <div className="resource-section-heading">
+            <h2 id="quick-reads-heading" className="card-title">Quick reads</h2>
+            <span className="meta-line">{quickReads.length} quick read{quickReads.length === 1 ? "" : "s"}</span>
+          </div>
+          <div className="resource-quick-reads-viewport">
             <button
               type="button"
               className="carousel-button carousel-button-left"
-              aria-label="Scroll featured resources left"
-              onClick={() => scrollFeatured("left")}
+              aria-label="Scroll quick reads left"
+              onClick={() => scrollQuickReads("left")}
               disabled={!canScrollLeft}
             >
               <ChevronLeft size={18} />
             </button>
-            <div className="resource-featured-row" ref={featuredTrackRef} onScroll={updateFeaturedScroll}>
-              {featuredResources.map((resource, index) => (
-                <Link key={resource.id} to={getResourcePath(resource)} className={index === 1 ? "resource-featured-card is-center" : "resource-featured-card"}>
+            <div className="resource-quick-reads-row" ref={quickReadsTrackRef} onScroll={updateQuickReadsScroll}>
+              {quickReads.map((resource) => (
+                <Link key={resource.id} to={getResourcePath(resource)} className="resource-quick-read-card">
                   <span className="pill">{resource.category}</span>
                   <strong>{resource.title}</strong>
+                  <p className="card-copy">{getShortDescription(resource)}</p>
                   <span className="meta-line">
-                    {resource.level} • {resource.mediaType ?? "Article"} • {resource.estimatedTime ?? "Quick read"}
+                    {resource.level} • {resource.format ?? "All Formats"} • {resource.estimatedTime ?? "Quick read"}
                   </span>
                 </Link>
               ))}
@@ -597,8 +586,8 @@ export const ResourcesPage = () => {
             <button
               type="button"
               className="carousel-button carousel-button-right"
-              aria-label="Scroll featured resources right"
-              onClick={() => scrollFeatured("right")}
+              aria-label="Scroll quick reads right"
+              onClick={() => scrollQuickReads("right")}
               disabled={!canScrollRight}
             >
               <ChevronRight size={18} />
@@ -607,43 +596,51 @@ export const ResourcesPage = () => {
         </section>
       ) : null}
 
-      <section className="resources-grid">
-        {filtered.map((resource) => (
-          <Link key={resource.id} to={getResourcePath(resource)} className="resource-card resource-card-link">
-          {resource.resourceType === "Quick Read" ? null : resource.thumbnailUrl ? (
-              <img src={resource.thumbnailUrl} alt="" className="resource-card-media" />
-            ) : (
-              <div className="resource-card-media resource-card-media-fallback">{resource.mediaType ?? "Article"}</div>
-            )}
-            <div className="resource-card-body">
-              <div className="resource-card-kicker">
-                <span className="pill">{resource.category}</span>
-                <span className="forum-mini-pill subtle">{resource.resourceType ?? resource.mediaType ?? "Article"}</span>
-              </div>
-              <h3 className="card-title">{resource.title}</h3>
-              <p className="card-copy">{getShortDescription(resource)}</p>
-              <p className="meta-line">
-                {resource.level} • {resource.format ?? "All Formats"} • Curated by {resource.curatedBy}
-              </p>
-              <div className="pill-row" style={{ marginTop: "1rem" }}>
-                {resource.creatorRole ? (
-                  <span className="forum-mini-pill">{roleLabel(resource.creatorRole)}</span>
-                ) : null}
-                {resource.resourceType !== "Quick Read" && resource.externalUrl ? (
-                  <span className="forum-mini-pill subtle">
-                    <ExternalLink size={13} /> Link
-                  </span>
-                ) : null}
-                {resource.tags.slice(0, 3).map((tag) => (
-                  <span key={tag} className="pill">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </Link>
-        ))}
-      </section>
+      {articles.length > 0 ? (
+        <section className="resource-section resource-articles" aria-labelledby="articles-heading">
+          <div className="resource-section-heading">
+            <h2 id="articles-heading" className="card-title">Articles</h2>
+            <span className="meta-line">{articles.length} article{articles.length === 1 ? "" : "s"}</span>
+          </div>
+          <div className="resources-grid">
+            {articles.map((resource) => (
+              <Link key={resource.id} to={getResourcePath(resource)} className="resource-card resource-card-link">
+                {resource.thumbnailUrl ? (
+                  <img src={resource.thumbnailUrl} alt="" className="resource-card-media" />
+                ) : (
+                  <div className="resource-card-media resource-card-media-fallback">{resource.mediaType ?? "Article"}</div>
+                )}
+                <div className="resource-card-body">
+                  <div className="resource-card-kicker">
+                    <span className="pill">{resource.category}</span>
+                    <span className="forum-mini-pill subtle">{resource.resourceType ?? resource.mediaType ?? "Article"}</span>
+                  </div>
+                  <h3 className="card-title">{resource.title}</h3>
+                  <p className="card-copy">{getShortDescription(resource)}</p>
+                  <p className="meta-line">
+                    {resource.level} • {resource.format ?? "All Formats"} • Curated by {resource.curatedBy}
+                  </p>
+                  <div className="pill-row" style={{ marginTop: "1rem" }}>
+                    {resource.creatorRole ? (
+                      <span className="forum-mini-pill">{roleLabel(resource.creatorRole)}</span>
+                    ) : null}
+                    {resource.resourceType !== "Quick Read" && resource.externalUrl ? (
+                      <span className="forum-mini-pill subtle">
+                        <ExternalLink size={13} /> Link
+                      </span>
+                    ) : null}
+                    {resource.tags.slice(0, 3).map((tag) => (
+                      <span key={tag} className="pill">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {filtered.length === 0 ? (
         <section className="app-card">

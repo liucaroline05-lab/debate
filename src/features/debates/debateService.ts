@@ -639,6 +639,15 @@ export const voteForDebateWinner = async (
   await castVote({ debateId, userId, side, reason });
 };
 
+export const recordDebateView = async (debateId: string, viewId: string) => {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  const recordView = httpsCallable<
+    { debateId: string; viewId: string },
+    { counted: boolean; spectators: number }
+  >(functions, "recordDebateView");
+  return (await recordView({ debateId, viewId })).data;
+};
+
 export const retryDebateSummary = async (debateId: string) => {
   if (!functions) throw new Error("Firebase Functions is not configured.");
   const retry = httpsCallable<{ debateId: string }, { status: string }>(
