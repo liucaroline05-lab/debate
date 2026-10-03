@@ -55,6 +55,10 @@ const EMPTY_COMMENTS: DebateComment[] = [];
 const EMPTY_REACTIONS: DebateReaction[] = [];
 const EMPTY_CHAT_READS: DebateChatRead[] = [];
 
+const debateLiveViewerCount = (debate: DebateThread) => debate.liveSpectators ?? 0;
+const debateTotalViewCount = (debate: DebateThread) =>
+  debate.viewCount ?? debate.spectators ?? 0;
+
 interface DebateFormatPreset {
   speechTimeLimit: string;
   rounds: number;
@@ -810,7 +814,9 @@ export const DebatesPage = () => {
                 <div className="debate-entry-footer">
                   <div className="debate-entry-meta">
                     <span><Clock3 size={15} /> Deadline {formatDateTime(debate.nextDeadline)}</span>
-                    <span><Eye size={15} /> {debate.spectators} views</span>
+                    <span><Eye size={15} /> {debate.status === "Active"
+                      ? `${debateLiveViewerCount(debate)} watching now`
+                      : `${debateTotalViewCount(debate)} views`}</span>
                   </div>
                   <div className="button-row">
                     {(debate.participantIds?.length ?? 0) > 1 ? (
@@ -930,7 +936,9 @@ export const DebatesPage = () => {
                     <h2 className="debate-topic">{debate.topic}</h2>
                     <span className="pill debate-format-pill">{debate.format}</span>
                   </div>
-                  <span className="debate-status-badge">{debate.spectators} views</span>
+                  <span className="debate-status-badge">
+                    {debateLiveViewerCount(debate)} watching now
+                  </span>
                 </div>
 
                 {renderMatchup(debate, true)}
@@ -1014,7 +1022,7 @@ export const DebatesPage = () => {
 
                     <div className="debate-panel-footer">
                       <span className="meta-line">
-                        {debate.totalRounds} rounds • {formatDate(debate.nextDeadline)} • {debate.spectators} views
+                        {debate.totalRounds} rounds • {formatDate(debate.nextDeadline)} • {debateTotalViewCount(debate)} views
                       </span>
                       <div className="button-row">
                         <Link className="btn btn-secondary" to={`/app/debates/${debate.id}`}>
@@ -1077,7 +1085,7 @@ export const DebatesPage = () => {
 
                     <div className="public-completed-footer">
                       <span className="meta-line">
-                        {debate.totalRounds} rounds • {debate.spectators} views
+                        {debate.totalRounds} rounds • {debateTotalViewCount(debate)} views
                       </span>
                       <Link className="btn btn-secondary" to={`/app/debates/${debate.id}`}>
                         View Debate

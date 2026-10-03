@@ -294,7 +294,9 @@ service cloud.firestore {
         "summaryProcessingStartedAt",
         "summaryProcessingEventId",
         "communityVoteCounts",
-        "spectators"
+        "spectators",
+        "liveSpectators",
+        "viewCount"
       ]);
     }
 
@@ -312,7 +314,10 @@ service cloud.firestore {
         "summaryError",
         "summaryProcessingStartedAt",
         "summaryProcessingEventId",
-        "communityVoteCounts"
+        "communityVoteCounts",
+        "spectators",
+        "liveSpectators",
+        "viewCount"
       ]);
     }
 
@@ -378,7 +383,7 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    match /debateViewEvents/{viewEventId} {
+    match /debateViewSessions/{viewSessionId} {
       allow read, write: if false;
     }
 

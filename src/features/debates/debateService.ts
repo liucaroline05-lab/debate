@@ -287,7 +287,6 @@ export const createPrivateDebate = async (input: NewDebateInput) => {
     negative,
     currentRound: 1,
     totalRounds: input.rounds,
-    spectators: 0,
     participantIds: [input.creatorId],
     turns: [],
   };
@@ -335,7 +334,6 @@ export const acceptOpenChallenge = async (
     negative,
     currentRound: 1,
     totalRounds: match.rounds ?? 4,
-    spectators: 0,
     participantIds: [creatorId, accepter.id],
     turns: [],
   };
@@ -639,13 +637,18 @@ export const voteForDebateWinner = async (
   await castVote({ debateId, userId, side, reason });
 };
 
-export const recordDebateView = async (debateId: string, viewId: string) => {
+export const recordDebateView = async (
+  debateId: string,
+  viewId: string,
+  action: "enter" | "leave",
+  sequence: number,
+) => {
   if (!functions) throw new Error("Firebase Functions is not configured.");
   const recordView = httpsCallable<
-    { debateId: string; viewId: string },
-    { counted: boolean; spectators: number }
+    { debateId: string; viewId: string; action: "enter" | "leave"; sequence: number },
+    { counted: boolean; liveSpectators: number; viewCount: number }
   >(functions, "recordDebateView");
-  return (await recordView({ debateId, viewId })).data;
+  return (await recordView({ debateId, viewId, action, sequence })).data;
 };
 
 export const retryDebateSummary = async (debateId: string) => {

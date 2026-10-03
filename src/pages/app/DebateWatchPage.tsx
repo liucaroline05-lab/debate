@@ -105,8 +105,12 @@ export const DebateWatchPage = () => {
   const [voteError, setVoteError] = useState("");
   const [voteReasonDraft, setVoteReasonDraft] = useState("");
   const voteReasonRef = useRef<HTMLTextAreaElement | null>(null);
-  const activeViewRouteKeyRef = useRef<string | null>(null);
-  const recordedViewKeyRef = useRef<string | null>(null);
+  const debateViewSessionRef = useRef<{
+    key: string;
+    viewId: string;
+    sequence: number;
+    live: boolean;
+  } | null>(null);
   const [selectedVoteSide, setSelectedVoteSide] = useState<"Aff" | "Neg" | null>(null);
   const [isRetryingSummary, setIsRetryingSummary] = useState(false);
   const [summaryRetryNotice, setSummaryRetryNotice] = useState("");
@@ -128,34 +132,65 @@ export const DebateWatchPage = () => {
     [debateId, debatesState.data],
   );
 
+  const isParticipant = Boolean(
+    debate
+    && currentUser
+    && (
+      (debate.participantIds ?? []).includes(currentUser.id)
+      || debate.affirmative.userId === currentUser.id
+      || debate.negative.userId === currentUser.id
+    ),
+  );
+
   useEffect(() => {
     if (!debate || !currentUser) return;
 
-    const viewRouteKey = `${debate.id}:${currentUser.id}`;
-    if (activeViewRouteKeyRef.current !== viewRouteKey) {
-      activeViewRouteKeyRef.current = viewRouteKey;
-      recordedViewKeyRef.current = null;
+    const sessionKey = `${debate.id}:${currentUser.id}`;
+    if (debateViewSessionRef.current?.key !== sessionKey) {
+      debateViewSessionRef.current = {
+        key: sessionKey,
+        viewId: globalThis.crypto.randomUUID(),
+        sequence: 0,
+        live: false,
+      };
     }
+    const session = debateViewSessionRef.current;
+    if (!session) return;
 
-    const isParticipant = (debate.participantIds ?? []).includes(currentUser.id)
-      || debate.affirmative.userId === currentUser.id
-      || debate.negative.userId === currentUser.id;
-    const canSpectate = debate.status === "Active" || debate.status === "Completed";
-    if (!canSpectate || debate.visibility !== "public" || isParticipant) return;
-    if (recordedViewKeyRef.current === viewRouteKey) return;
-    recordedViewKeyRef.current = viewRouteKey;
+    const canCountView = debate.visibility === "public"
+      && (debate.status === "Active" || debate.status === "Completed");
+    if (!canCountView) return;
 
-    void recordDebateView(debate.id, globalThis.crypto.randomUUID()).catch((error) => {
-      console.error("Unable to record async debate view", error);
-    });
+    const sendPresence = (action: "enter" | "leave") => {
+      session.sequence += 1;
+      session.live = action === "enter";
+      void recordDebateView(debate.id, session.viewId, action, session.sequence).catch((error) => {
+        console.error("Unable to update async debate viewers", error);
+      });
+    };
+    const shouldBeLive = debate.status === "Active" && !isParticipant;
+    sendPresence(shouldBeLive ? "enter" : "leave");
+
+    const onPageHide = () => {
+      if (session.live) sendPresence("leave");
+    };
+    const onPageShow = () => {
+      if (shouldBeLive && !session.live) sendPresence("enter");
+    };
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+      if (session.live) sendPresence("leave");
+    };
   }, [
     currentUser?.id,
     debate?.id,
     debate?.status,
     debate?.visibility,
-    debate?.participantIds,
-    debate?.affirmative.userId,
-    debate?.negative.userId,
+    isParticipant,
   ]);
 
   const persistedVote = useMemo(
@@ -201,14 +236,8 @@ export const DebateWatchPage = () => {
     ?? (debate.summaryStatus ? summaryStatusCopy[debate.summaryStatus] : undefined)
     ?? debate.summary
     ?? "An AI summary will appear here after the debate has been processed.";
-  const isParticipant = Boolean(
-    currentUser
-    && (
-      (debate.participantIds ?? []).includes(currentUser.id)
-      || debate.affirmative.userId === currentUser.id
-      || debate.negative.userId === currentUser.id
-    ),
-  );
+  const liveViewerCount = debate.liveSpectators ?? 0;
+  const totalViewCount = debate.viewCount ?? debate.spectators ?? 0;
   const canRefreshSummary = isParticipant
     && debate.status === "Completed"
     && debate.summaryStatus !== "processing"
@@ -424,8 +453,10 @@ export const DebateWatchPage = () => {
                   <span className="meta-line">{debate.status}</span>
                 </div>
                 <div className="list-item">
-                  <strong>Views</strong>
-                  <span className="meta-line">{debate.spectators}</span>
+                  <strong>{debate.status === "Active" ? "Watching now" : "Views"}</strong>
+                  <span className="meta-line">
+                    {debate.status === "Active" ? liveViewerCount : totalViewCount}
+                  </span>
                 </div>
                 <div className="list-item">
                   <strong>AI judged</strong>
@@ -601,7 +632,9 @@ export const DebateWatchPage = () => {
 
             <div className="debate-entry-footer">
               <span className="meta-line">
-                {submittedTurns.length} submitted • {debate.spectators} views
+                {submittedTurns.length} submitted • {debate.status === "Active"
+                  ? `${liveViewerCount} watching now`
+                  : `${totalViewCount} views`}
               </span>
               <Link
                 className="btn btn-secondary"

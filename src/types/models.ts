@@ -249,7 +249,12 @@ export interface DebateThread {
   negative: DebateParticipant;
   currentRound: number;
   totalRounds: number;
-  spectators: number;
+  /** Legacy cumulative view count retained for older clients. */
+  spectators?: number;
+  /** Current non-participant viewers of an active public debate. */
+  liveSpectators?: number;
+  /** Cumulative public debate page views. */
+  viewCount?: number;
   aiJudged?: boolean;
   winner?: "Aff" | "Neg";
   participantIds?: string[];

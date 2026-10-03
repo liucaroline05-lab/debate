@@ -27,7 +27,12 @@ vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
 }));
 
 const service = vi.hoisted(() => ({
-  recordDebateView: vi.fn(async () => ({ counted: true, spectators: 4 })),
+  recordDebateView: vi.fn(async (
+    _debateId: string,
+    _viewId: string,
+    _action: "enter" | "leave",
+    _sequence: number,
+  ) => ({ counted: true, liveSpectators: 1, viewCount: 4 })),
   voteForDebateWinner: vi.fn(async () => {}),
 }));
 
@@ -90,12 +95,27 @@ describe("DebateWatchPage debate view", () => {
   it("records one view when a spectator opens an active public debate", async () => {
     mocks.debates = [completedDebate({ id: "live", status: "Active" })];
 
-    renderPage("/app/debates/live");
+    const { unmount } = renderPage("/app/debates/live");
 
     await waitFor(() => {
       expect(service.recordDebateView).toHaveBeenCalledTimes(1);
     });
-    expect(service.recordDebateView).toHaveBeenCalledWith("live", expect.any(String));
+    const [debateId, viewId, action, sequence] = service.recordDebateView.mock.calls[0];
+    expect(debateId).toBe("live");
+    expect(viewId).toEqual(expect.any(String));
+    expect(action).toBe("enter");
+    expect(sequence).toBe(1);
+
+    unmount();
+    await waitFor(() => {
+      expect(service.recordDebateView).toHaveBeenCalledTimes(2);
+    });
+    expect(service.recordDebateView.mock.calls[1]).toEqual([
+      "live",
+      viewId,
+      "leave",
+      2,
+    ]);
   });
 
   it("keeps the overview cards and renders the completed debate widget below them", () => {
