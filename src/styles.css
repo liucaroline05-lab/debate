@@ -1572,6 +1572,10 @@ button {
   margin-bottom: 1.5rem;
 }
 
+.resource-detail-layout.is-sidebar-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .resource-detail-content,
 .resource-detail-sidebar {
   align-self: start;
@@ -1625,6 +1629,10 @@ button {
 .resource-detail-section p {
   color: var(--color-muted);
   line-height: 1.7;
+}
+
+.resource-detail-long-description {
+  white-space: pre-wrap;
 }
 
 .form-field textarea {

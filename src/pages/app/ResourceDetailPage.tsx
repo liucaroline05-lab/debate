@@ -176,11 +176,12 @@ export const ResourceDetailPage = () => {
     )
     .slice(0, 4);
   const isQuickRead = resource.resourceType === "Quick Read";
+  const articleSections = (resource.contentSections ?? []).filter(
+    (section) => section.title.trim().toLowerCase() !== "overview",
+  );
   const detailSections = isQuickRead
     ? [{ title: "Overview", body: getOverviewDescription(resource) }]
-    : resource.contentSections?.length
-      ? resource.contentSections
-      : [{ title: "Overview", body: getOverviewDescription(resource) }];
+    : articleSections;
   const isOwner = currentUser?.id === resource.creatorId;
   const beginEditing = () => {
     setDraft({
@@ -334,15 +335,17 @@ export const ResourceDetailPage = () => {
       ) : null}
       {editMessage ? <p className="meta-line">{editMessage}</p> : null}
 
-      <section className="resource-detail-layout">
-        <article className="app-card resource-detail-content">
-          {detailSections.map((section) => (
-            <section key={section.title} className="resource-detail-section">
-              <h2>{section.title}</h2>
-              <p>{section.body}</p>
-            </section>
-          ))}
-        </article>
+      <section className={detailSections.length ? "resource-detail-layout" : "resource-detail-layout is-sidebar-only"}>
+        {detailSections.length ? (
+          <article className="app-card resource-detail-content">
+            {detailSections.map((section) => (
+              <section key={section.title} className="resource-detail-section">
+                <h2>{section.title}</h2>
+                <p>{section.body}</p>
+              </section>
+            ))}
+          </article>
+        ) : null}
 
         <aside className="app-card resource-detail-sidebar">
           <h2 className="card-title">At a glance</h2>
@@ -372,6 +375,14 @@ export const ResourceDetailPage = () => {
               </span>
             ))}
           </div>
+          {!isQuickRead ? (
+            <section className="resource-detail-section">
+              <h2>Long description</h2>
+              <p className="resource-detail-long-description">
+                {getOverviewDescription(resource)}
+              </p>
+            </section>
+          ) : null}
           <h2 className="card-title" style={{ marginTop: "1.5rem" }}>My Notes</h2>
           <div className="form-field resource-notes-field">
             <textarea

@@ -40,6 +40,7 @@ const resource: ResourceItem = {
   title: "Evidence triage drill",
   category: "Research",
   description: "Sort cards fast under time pressure.",
+  longDescription: "A full walkthrough for sorting evidence before a round.",
   curatedBy: "Coach Lee",
   creatorId: "coach",
   saved: false,
@@ -102,6 +103,17 @@ describe("ResourceDetailPage", () => {
     renderPage();
     await userEvent.click(screen.getByRole("button", { name: "Share" }));
     expect(screen.getByRole("dialog", { name: "Share resource" })).toHaveTextContent(`resource: Evidence triage drill — ${window.location.origin}/app/resources/evidence-triage`);
+  });
+
+  it("shows the article's long description above the reader's private notes", () => {
+    renderPage();
+
+    expect(screen.getByRole("heading", { name: "Long description" })).toBeInTheDocument();
+    expect(screen.getByText("A full walkthrough for sorting evidence before a round.")).toBeInTheDocument();
+
+    const sidebar = screen.getByRole("heading", { name: "At a glance" }).parentElement;
+    const sidebarText = sidebar?.textContent ?? "";
+    expect(sidebarText.indexOf("Long description")).toBeLessThan(sidebarText.indexOf("My Notes"));
   });
 
   it("shows the note already stored for this reader", () => {
