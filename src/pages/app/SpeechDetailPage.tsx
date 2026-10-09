@@ -18,6 +18,7 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { SpeechMediaPlayer } from "@/components/speeches/SpeechMediaPlayer";
 import { useAuth } from "@/features/auth/AuthContext";
 import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
+import { FolderPickerButton } from "@/features/folders/FolderPickerButton";
 import {
   deleteSpeechRecord,
   grantPrivateSpeechAccess,
@@ -401,6 +402,16 @@ export const SpeechDetailPage = () => {
           </p>
         </div>
         <div className="button-row">
+          {currentUser ? (
+            <FolderPickerButton
+              itemType="speech"
+              itemId={speech.id}
+              itemTitle={speech.title}
+              itemSubtitle={`${speech.format} · ${speech.eventName}`}
+              itemSummary={speech.summary || speech.aiSummary?.overview || speech.coachNotes || "Speech recording and feedback."}
+              itemVisibility={speech.visibility === "public" ? "public" : "private"}
+            />
+          ) : null}
           {currentUser ? <button type="button" className="btn btn-toggle" aria-pressed={isSaved} disabled={isSaveBusy} onClick={async () => {
             if (!speechId) return;
             const next = !isSaved;

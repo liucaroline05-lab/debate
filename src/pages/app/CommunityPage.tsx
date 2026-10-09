@@ -61,6 +61,8 @@ interface PostReaction {
 const EMPTY_REACTIONS: PostReaction[] = [];
 const EMPTY_COMMENT_REACTIONS: PostCommentReaction[] = [];
 const MAX_COMMENT_DEPTH = 4;
+const GENERAL_COMMUNITY_CHANNEL_ID = "community-general";
+const GENERAL_COMMUNITY_CHANNEL_NAME = "General Community";
 
 const forumTabs: Array<{ id: ForumTab; label: string }> = [
   { id: "All Posts", label: "All Posts" },
@@ -201,7 +203,7 @@ export const CommunityPage = () => {
     category: "All Posts" as ForumTab,
     debateType: "",
     topicTags: "",
-    channelId: "channel-community",
+    channelId: GENERAL_COMMUNITY_CHANNEL_ID,
   });
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -313,6 +315,9 @@ export const CommunityPage = () => {
       if (blockedIds.has(post.authorId)) return false;
       const channel = channelState.data.find((item) => item.id === post.channelId);
       const authorProfile = usersState.data.find((item) => item.id === post.authorId);
+      const channelName = post.channelId === GENERAL_COMMUNITY_CHANNEL_ID
+        ? GENERAL_COMMUNITY_CHANNEL_NAME
+        : channel?.name;
 
       const matchesFeed =
         feedScope === "all" ? true : followingIds.includes(post.authorId);
@@ -327,7 +332,7 @@ export const CommunityPage = () => {
               post.content,
               post.author,
               post.debateType,
-              channel?.name,
+              channelName,
               authorProfile?.displayName,
             ]
               .filter(Boolean)
@@ -624,6 +629,10 @@ export const CommunityPage = () => {
             type="button"
             className="btn btn-primary forum-primary-cta"
             onClick={() => {
+              setComposer((current) => ({
+                ...current,
+                channelId: selectedChannelId ?? GENERAL_COMMUNITY_CHANNEL_ID,
+              }));
               setIsComposerOpen(true);
               window.setTimeout(() => composerRef.current?.focus(), 180);
             }}
@@ -706,6 +715,7 @@ export const CommunityPage = () => {
                     setComposer((current) => ({ ...current, channelId: event.target.value }))
                   }
                 >
+                  <option value={GENERAL_COMMUNITY_CHANNEL_ID}>{GENERAL_COMMUNITY_CHANNEL_NAME}</option>
                   {channelState.data.map((channel) => (
                     <option key={channel.id} value={channel.id}>
                       {channel.name}
@@ -794,7 +804,9 @@ export const CommunityPage = () => {
           </div>
           {selectedChannelId ? (
             <div className="debate-banner">
-              Showing {channelState.data.find((channel) => channel.id === selectedChannelId)?.name ?? "selected channel"}
+              Showing {selectedChannelId === GENERAL_COMMUNITY_CHANNEL_ID
+                ? GENERAL_COMMUNITY_CHANNEL_NAME
+                : channelState.data.find((channel) => channel.id === selectedChannelId)?.name ?? "selected channel"}
               <button type="button" className="forum-icon-button" aria-label="Clear channel filter" onClick={() => setSearchParams({})}>×</button>
             </div>
           ) : null}
@@ -818,6 +830,9 @@ export const CommunityPage = () => {
           <div className="stack">
             {filteredPosts.map((post) => {
               const channel = channelState.data.find((item) => item.id === post.channelId);
+              const channelName = post.channelId === GENERAL_COMMUNITY_CHANNEL_ID
+                ? GENERAL_COMMUNITY_CHANNEL_NAME
+                : channel?.name;
               const authorProfile = usersState.data.find((item) => item.id === post.authorId);
               const postAuthorName = safeName(authorProfile?.displayName ?? post.author);
               const comments = commentState.data.filter((entry) => entry.postId === post.id);
@@ -977,7 +992,7 @@ export const CommunityPage = () => {
                             month: "short",
                             day: "numeric",
                           })}
-                          {channel ? ` • ${channel.name}` : ""}
+                          {channelName ? ` • ${channelName}` : ""}
                         </span>
                       </div>
                     </div>
@@ -1164,6 +1179,19 @@ export const CommunityPage = () => {
         </section>
 
         <aside className="forum-sidebar">
+          <article className="forum-sidebar-card">
+            <h2>General Community</h2>
+            <div className="stack">
+              <Link to={`/app/community?channel=${GENERAL_COMMUNITY_CHANNEL_ID}`} className="forum-channel-row dashboard-list-link">
+                <div className="forum-channel-badge is-sage">GC</div>
+                <div>
+                  <strong>Open community feed</strong>
+                  <span className="meta-line">Open discussion for the whole community</span>
+                </div>
+              </Link>
+            </div>
+          </article>
+
           <article className="forum-sidebar-card">
             <h2>Practice Groups</h2>
             <div className="stack">

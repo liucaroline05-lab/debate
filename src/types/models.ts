@@ -355,7 +355,7 @@ export interface UserBlock {
 }
 
 export interface ChatSharedPreview {
-  kind: "post" | "debate" | "speech" | "resource" | "profile";
+  kind: "post" | "debate" | "speech" | "resource" | "folder" | "profile";
   title: string;
   url: string;
   media?: Array<{ kind: "image" | "video"; url: string; name: string }>;
@@ -424,6 +424,93 @@ export interface ResourceSave {
   resourceId: string;
   userId: string;
   createdAt: string;
+}
+
+export type FolderItemType = "speech" | "debate" | "resource";
+export type ContentFolderBoardSize = "small" | "medium" | "large";
+
+export interface ContentFolder {
+  id: string;
+  userId: string;
+  ownerName?: string;
+  name: string;
+  description?: string;
+  visibility: "public" | "private";
+  tournamentId?: string;
+  tournamentName?: string;
+  likeCount?: number;
+  dislikeCount?: number;
+  saveCount?: number;
+  shareCount?: number;
+  commentCount?: number;
+  itemCount?: number;
+  fileCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A user's saved pointer to a speech, async debate, or resource. */
+export interface ContentFolderItem {
+  id: string;
+  userId: string;
+  folderId: string;
+  itemType: FolderItemType;
+  itemId: string;
+  sourceVisibility?: "public" | "private";
+  itemTitle: string;
+  itemSubtitle: string;
+  itemSummary: string;
+  itemSlug?: string;
+  visibility: "public" | "private";
+  addedAt: string;
+  boardOrder?: number;
+  boardSize?: ContentFolderBoardSize;
+  boardWidth?: number;
+  boardHeight?: number;
+}
+
+export interface ContentFolderReaction {
+  id: string;
+  folderId: string;
+  userId: string;
+  like: boolean;
+  dislike: boolean;
+  createdAt: string;
+}
+
+export interface ContentFolderSave {
+  id: string;
+  folderId: string;
+  userId: string;
+  createdAt: string;
+}
+
+export interface ContentFolderComment {
+  id: string;
+  folderId: string;
+  userId: string;
+  authorName: string;
+  content: string;
+  visibility: "public";
+  createdAt: string;
+}
+
+export interface ContentFolderFile {
+  id: string;
+  folderId: string;
+  userId: string;
+  name: string;
+  url: string;
+  storagePath: string;
+  contentType: string;
+  size: number;
+  kind: CommunityAttachment["kind"];
+  visibility: "public" | "private";
+  uploadedAt: string;
+  boardOrder?: number;
+  boardSize?: ContentFolderBoardSize;
+  boardWidth?: number;
+  boardHeight?: number;
 }
 
 export interface CommunityChannel {

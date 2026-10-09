@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
   BookOpen,
+  FolderOpen,
   LayoutDashboard,
   MessageSquare,
   Mic,
@@ -21,6 +22,7 @@ const appLinks = [
   { to: "/app/speeches/new", label: "Record / Upload", Icon: Mic },
   { to: "/app/debates", label: "Async Debate", Icon: Swords },
   { to: "/app/resources", label: "Resources", Icon: BookOpen },
+  { to: "/app/folders", label: "Folders", Icon: FolderOpen },
   { to: "/app/community", label: "Community", Icon: Users },
   { to: "/app/messages", label: "Messages", Icon: MessageSquare },
   { to: "/app/settings", label: "Settings", Icon: Settings },

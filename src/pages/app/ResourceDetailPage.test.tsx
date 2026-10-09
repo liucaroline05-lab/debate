@@ -41,6 +41,7 @@ const resource: ResourceItem = {
   category: "Research",
   description: "Sort cards fast under time pressure.",
   longDescription: "A full walkthrough for sorting evidence before a round.",
+  contentSections: [{ title: "Resource notes", body: "Detailed article notes for the drill." }],
   curatedBy: "Coach Lee",
   creatorId: "coach",
   saved: false,
@@ -105,15 +106,21 @@ describe("ResourceDetailPage", () => {
     expect(screen.getByRole("dialog", { name: "Share resource" })).toHaveTextContent(`resource: Evidence triage drill — ${window.location.origin}/app/resources/evidence-triage`);
   });
 
-  it("shows the article's long description above the reader's private notes", () => {
+  it("swaps resource notes and the long description between the article and sidebar", () => {
     renderPage();
 
-    expect(screen.getByRole("heading", { name: "Long description" })).toBeInTheDocument();
-    expect(screen.getByText("A full walkthrough for sorting evidence before a round.")).toBeInTheDocument();
+    const longDescriptionHeading = screen.getByRole("heading", { name: "Long description" });
+    const article = longDescriptionHeading.closest(".resource-detail-content");
+    const articleText = article?.textContent ?? "";
+    expect(articleText).toContain("A full walkthrough for sorting evidence before a round.");
+    expect(articleText).not.toContain("Detailed article notes for the drill.");
 
     const sidebar = screen.getByRole("heading", { name: "At a glance" }).parentElement;
     const sidebarText = sidebar?.textContent ?? "";
-    expect(sidebarText.indexOf("Long description")).toBeLessThan(sidebarText.indexOf("My Notes"));
+    expect(sidebarText).toContain("Resource notes");
+    expect(sidebarText).toContain("Detailed article notes for the drill.");
+    expect(sidebarText).not.toContain("Long description");
+    expect(sidebarText.indexOf("Resource notes")).toBeLessThan(sidebarText.indexOf("My Notes"));
   });
 
   it("shows the note already stored for this reader", () => {

@@ -21,6 +21,7 @@ interface ShareToMessageDialogProps {
   onClose: () => void;
   allowCopyLink?: boolean;
   onBeforeSend?: (recipientIds: string[]) => Promise<void>;
+  onAfterShare?: () => Promise<void> | void;
 }
 
 type Target =
@@ -33,7 +34,7 @@ const safeInitial = (value?: string) => value?.trim().charAt(0).toUpperCase() ||
  * Sends a link to an existing conversation or straight to a person, creating
  * the direct thread first when there is not one yet.
  */
-export const ShareToMessageDialog = ({ title, url, previewKind, media, mediaCount, onClose, allowCopyLink = true, onBeforeSend }: ShareToMessageDialogProps) => {
+export const ShareToMessageDialog = ({ title, url, previewKind, media, mediaCount, onClose, allowCopyLink = true, onBeforeSend, onAfterShare }: ShareToMessageDialogProps) => {
   const { currentUser } = useAuth();
   const usersState = useSeededFirestoreCollection("users", seededUsers);
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -140,6 +141,7 @@ export const ShareToMessageDialog = ({ title, url, previewKind, media, mediaCoun
         ...(media?.length ? { media } : {}),
         ...(mediaCount ? { mediaCount } : {}),
       });
+      await onAfterShare?.();
       setSentTargetId(target.id);
       window.setTimeout(() => setSentTargetId(""), 2_000);
     } catch (sendError) {
@@ -152,6 +154,7 @@ export const ShareToMessageDialog = ({ title, url, previewKind, media, mediaCoun
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(url);
+      await onAfterShare?.();
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2_000);
     } catch {

@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
 import {
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
@@ -24,11 +25,14 @@ import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollecti
 import { formatDate, formatDateTime } from "@/lib/date";
 import type {
   ChannelMembership,
+  DebateThread,
   ResourceSave,
   SpeechRecord,
   TabroomImport,
 } from "@/types/models";
 
+const INITIAL_DASHBOARD_DEBATE_COUNT = 5;
+const DASHBOARD_DEBATE_LOAD_MORE_COUNT = 5;
 const EMPTY_SPEECH_SEEDS: SpeechRecord[] = [];
 const EMPTY_TABROOM_IMPORTS: TabroomImport[] = [];
 const EMPTY_RESOURCE_SAVES: ResourceSave[] = [];
@@ -88,8 +92,24 @@ const addMonths = (date: Date, amount: number) =>
 const monthLabel = (date: Date) =>
   new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(date);
 
+const calendarMonthOptions = Array.from({ length: 12 }, (_, month) => ({
+  index: month,
+  label: new Intl.DateTimeFormat("en-US", { month: "long" }).format(new Date(2020, month, 1)),
+}));
+
 const uniqueEvents = (events: TabroomImport["events"]) =>
   Array.from(new Map(events.map((event) => [event.id, event])).values());
+
+const debateRecency = (debate: DebateThread) => {
+  const timestamp = Date.parse(debate.createdAt ?? debate.updatedAt ?? debate.nextDeadline);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const visibleTournamentRoles = (role?: string) =>
+  (role ?? "")
+    .split(/\s*(?:•|,|\/)\s*/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry && entry.toLowerCase() !== "student");
 
 interface DashboardCalendarProps {
   events: TabroomImport["events"];
@@ -106,6 +126,7 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
   );
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(new Date()));
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
 
   const eventsByDate = useMemo(() => {
     const grouped = new Map<string, TabroomImport["events"]>();
@@ -129,6 +150,16 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
     return toDateKey(date);
   });
   const selectedEvents = selectedDate ? eventsByDate.get(selectedDate) ?? [] : [];
+  const currentYear = new Date().getFullYear();
+  const visibleYear = visibleMonth.getFullYear();
+  const maxPickerYear = currentYear + 3;
+  const maxPickerMonth = new Date(maxPickerYear, 11, 1, 12);
+  const firstPickerYear = Math.min(currentYear - 10, visibleYear);
+  const pickerYears = Array.from(
+    { length: Math.max(0, maxPickerYear - firstPickerYear + 1) },
+    (_, index) => firstPickerYear + index,
+  );
+  const isAtFutureLimit = visibleMonth >= maxPickerMonth;
 
   const selectDate = (dateKey: string) => {
     setSelectedDate(dateKey);
@@ -138,10 +169,14 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
     const dateKey = eventDateKey(event.date);
     setSelectedDate(dateKey);
     setVisibleMonth(startOfMonth(dateFromKey(dateKey)));
+    setIsMonthPickerOpen(false);
   };
 
   const moveMonth = (amount: number) => {
-    setVisibleMonth((current) => addMonths(current, amount));
+    setVisibleMonth((current) => {
+      const next = addMonths(current, amount);
+      return next > maxPickerMonth ? current : next;
+    });
     setSelectedDate(null);
   };
 
@@ -166,64 +201,113 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
             >
               <ChevronLeft size={18} aria-hidden="true" />
             </button>
-            <strong>{monthLabel(visibleMonth)}</strong>
+            <button
+              type="button"
+              className={`dashboard-calendar-month-trigger${isMonthPickerOpen ? " is-open" : ""}`}
+              aria-label={`Choose month and year, currently ${monthLabel(visibleMonth)}`}
+              aria-expanded={isMonthPickerOpen}
+              aria-controls={isMonthPickerOpen ? "dashboard-calendar-month-picker" : undefined}
+              onClick={() => setIsMonthPickerOpen((isOpen) => !isOpen)}
+            >
+              {monthLabel(visibleMonth)}
+              <ChevronDown size={15} aria-hidden="true" />
+            </button>
             <button
               type="button"
               className="dashboard-calendar-nav"
               aria-label="Next month"
+              disabled={isAtFutureLimit}
               onClick={() => moveMonth(1)}
             >
               <ChevronRight size={18} aria-hidden="true" />
             </button>
           </div>
 
-          <div className="dashboard-calendar-weekdays" aria-hidden="true">
-            {[
-              "Sun",
-              "Mon",
-              "Tue",
-              "Wed",
-              "Thu",
-              "Fri",
-              "Sat",
-            ].map((weekday) => <span key={weekday}>{weekday}</span>)}
-          </div>
-
-          <div className="dashboard-calendar-grid" role="grid" aria-label={monthLabel(visibleMonth)}>
-            {Array.from({ length: leadingEmptyDays }, (_, index) => (
-              <span key={`empty-${index}`} aria-hidden="true" />
-            ))}
-            {calendarDays.map((dateKey) => {
-              const dayEvents = eventsByDate.get(dateKey) ?? [];
-              const isSelected = selectedDate === dateKey;
-              const isPast = dateKey < todayKey;
-              const dayClass = [
-                "dashboard-calendar-day",
-                dayEvents.length > 0 ? "has-event" : "",
-                dayEvents.length > 0 ? (isPast ? "is-past" : "is-upcoming") : "",
-                isSelected ? "is-selected" : "",
-              ].filter(Boolean).join(" ");
-
-              return (
-                <button
-                  key={dateKey}
-                  type="button"
-                  className={dayClass}
-                  aria-label={`${formatCalendarDate(dateKey)}${dayEvents.length ? `, ${dayEvents.length} tournament${dayEvents.length === 1 ? "" : "s"}` : ""}`}
-                  aria-pressed={isSelected}
-                  onClick={() => selectDate(dateKey)}
+          {isMonthPickerOpen ? (
+            <div className="dashboard-calendar-month-picker" id="dashboard-calendar-month-picker">
+              <label className="dashboard-calendar-year-field">
+                <span>Choose a year</span>
+                <select
+                  aria-label="Choose a year"
+                  value={visibleYear}
+                  onChange={(event) => {
+                    const nextYear = Number(event.target.value);
+                    setVisibleMonth((current) => new Date(nextYear, current.getMonth(), 1, 12));
+                    setSelectedDate(null);
+                  }}
                 >
-                  {dateFromKey(dateKey).getDate()}
-                  {dayEvents.length > 1 ? <span className="dashboard-calendar-count">{dayEvents.length}</span> : null}
-                </button>
-              );
-            })}
-          </div>
+                  {pickerYears.map((year) => <option key={year} value={year}>{year}</option>)}
+                  {visibleYear > maxPickerYear ? (
+                    <option value={visibleYear} disabled>{visibleYear}</option>
+                  ) : null}
+                </select>
+              </label>
+              <div className="dashboard-calendar-month-grid" role="group" aria-label="Choose a month">
+                {calendarMonthOptions.map(({ index, label }) => {
+                  const isCurrentMonth = index === visibleMonth.getMonth();
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      className={isCurrentMonth ? "is-selected" : ""}
+                      aria-pressed={isCurrentMonth}
+                      onClick={() => {
+                        setVisibleMonth((current) => new Date(current.getFullYear(), index, 1, 12));
+                        setSelectedDate(null);
+                        setIsMonthPickerOpen(false);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="dashboard-calendar-weekdays" aria-hidden="true">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((weekday) => (
+                  <span key={weekday}>{weekday}</span>
+                ))}
+              </div>
 
-          <div className="dashboard-calendar-legend" aria-label="Calendar legend">
-            <span><i className="dashboard-calendar-legend-swatch is-upcoming" /> Upcoming</span>
-            <span><i className="dashboard-calendar-legend-swatch is-past" /> Past</span>
-          </div>
+              <div className="dashboard-calendar-grid" role="grid" aria-label={monthLabel(visibleMonth)}>
+                {Array.from({ length: leadingEmptyDays }, (_, index) => (
+                  <span key={`empty-${index}`} aria-hidden="true" />
+                ))}
+                {calendarDays.map((dateKey) => {
+                  const dayEvents = eventsByDate.get(dateKey) ?? [];
+                  const isSelected = selectedDate === dateKey;
+                  const isPast = dateKey < todayKey;
+                  const dayClass = [
+                    "dashboard-calendar-day",
+                    dayEvents.length > 0 ? "has-event" : "",
+                    dayEvents.length > 0 ? (isPast ? "is-past" : "is-upcoming") : "",
+                    isSelected ? "is-selected" : "",
+                  ].filter(Boolean).join(" ");
+
+                  return (
+                    <button
+                      key={dateKey}
+                      type="button"
+                      className={dayClass}
+                      aria-label={`${formatCalendarDate(dateKey)}${dayEvents.length ? `, ${dayEvents.length} tournament${dayEvents.length === 1 ? "" : "s"}` : ""}`}
+                      aria-pressed={isSelected}
+                      onClick={() => selectDate(dateKey)}
+                    >
+                      {dateFromKey(dateKey).getDate()}
+                      {dayEvents.length > 1 ? <span className="dashboard-calendar-count">{dayEvents.length}</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="dashboard-calendar-legend" aria-label="Calendar legend">
+                <span><i className="dashboard-calendar-legend-swatch is-upcoming" /> Upcoming</span>
+                <span><i className="dashboard-calendar-legend-swatch is-past" /> Past</span>
+              </div>
+            </>
+          )}
         </section>
 
         <section className="dashboard-calendar-events" aria-live="polite">
@@ -249,10 +333,14 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
                       <h3>{event.name}</h3>
                       <p className="meta-line">{formatEventRange(event)}</p>
                       {event.location ? <p className="meta-line dashboard-event-location"><MapPin size={14} aria-hidden="true" /> {event.location}</p> : null}
-                      {event.result ? <p className="dashboard-event-result"><strong>Result</strong> {event.result}</p> : null}
-                      {event.role || event.judgeCategory || event.schoolName ? (
+                      {event.result && !/^(?:student|coach|judge)(?:\s*(?:•|,|\/)\s*(?:student|coach|judge))*$/i.test(event.result.trim()) ? (
+                        <p className="dashboard-event-result"><strong>Result</strong> {event.result}</p>
+                      ) : null}
+                      {visibleTournamentRoles(event.role).length || event.judgeCategory || event.schoolName ? (
                         <div className="pill-row">
-                          {event.role ? <span className="forum-mini-pill">{event.role}</span> : null}
+                          {visibleTournamentRoles(event.role).map((role) => (
+                            <span className="forum-mini-pill" key={role}>{role}</span>
+                          ))}
                           {event.judgeCategory ? <span className="forum-mini-pill subtle">{event.judgeCategory}</span> : null}
                           {event.schoolName ? <span className="forum-mini-pill subtle">{event.schoolName}</span> : null}
                         </div>
@@ -313,6 +401,7 @@ export const DashboardPage = () => {
   const currentUserId = currentUser?.id;
   const [menuSpeechId, setMenuSpeechId] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState("");
+  const [visibleDebateCount, setVisibleDebateCount] = useState(INITIAL_DASHBOARD_DEBATE_COUNT);
   const speechConstraints = useMemo<QueryConstraint[]>(
     () => (currentUserId ? [where("creatorId", "==", currentUserId)] : []),
     [currentUserId],
@@ -358,9 +447,10 @@ export const DashboardPage = () => {
     currentUserId ? `channel-memberships:${currentUserId}` : undefined,
   );
   const dashboardDebates = useMemo(
-    () => debateState.data.filter((debate) =>
-      (debate.participantIds ?? []).includes(currentUser?.id ?? ""),
-    ),
+    () =>
+      debateState.data
+        .filter((debate) => (debate.participantIds ?? []).includes(currentUser?.id ?? ""))
+        .sort((left, right) => debateRecency(right) - debateRecency(left)),
     [currentUser?.id, debateState.data],
   );
   const savedResources = useMemo(
@@ -489,7 +579,7 @@ export const DashboardPage = () => {
             Debate threads
           </h2>
           <div className="list" style={{ marginTop: "1rem" }}>
-            {dashboardDebates.map((debate) => (
+            {dashboardDebates.slice(0, visibleDebateCount).map((debate) => (
               <NavLink key={debate.id} to={`/app/debates/${debate.id}`} className="list-item dashboard-list-link">
                 <strong>{debate.topic}</strong>
                 <span className="meta-line">
@@ -498,6 +588,18 @@ export const DashboardPage = () => {
               </NavLink>
             ))}
           </div>
+          {visibleDebateCount < dashboardDebates.length ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ marginTop: "1rem" }}
+              onClick={() =>
+                setVisibleDebateCount((count) => count + DASHBOARD_DEBATE_LOAD_MORE_COUNT)
+              }
+            >
+              View more
+            </button>
+          ) : null}
           {dashboardDebates.length === 0 ? <p className="card-copy">No debate threads yet. Create or join one from Async Debate.</p> : null}
         </article>
 

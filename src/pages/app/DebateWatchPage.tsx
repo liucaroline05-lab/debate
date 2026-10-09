@@ -5,6 +5,7 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { DebateTurnSequence } from "@/components/debates/DebateTurnSequence";
 import { seededDebates } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
+import { FolderPickerButton } from "@/features/folders/FolderPickerButton";
 import {
   recordDebateView,
   retryDebateSummary,
@@ -319,11 +320,25 @@ export const DebateWatchPage = () => {
         description={`Watch and review ${debate.topic}.`}
       />
       <header className="route-header">
-        <p className="eyebrow">{isSummaryView ? "Debate Summary" : "Debate Watch"}</p>
-        <h1>{debate.topic}</h1>
-        <p>
-          {debate.format} • {debate.status} • {isSummaryView ? summaryText : "Review this async round."}
-        </p>
+        <div className="row-between debate-watch-header-content">
+          <div>
+            <p className="eyebrow">{isSummaryView ? "Debate Summary" : "Debate Watch"}</p>
+            <h1>{debate.topic}</h1>
+            <p>
+              {debate.format} • {debate.status} • {isSummaryView ? summaryText : "Review this async round."}
+            </p>
+          </div>
+          {currentUser ? (
+            <FolderPickerButton
+              itemType="debate"
+              itemId={debate.id}
+              itemTitle={debate.topic}
+              itemSubtitle={`${debate.format} · ${debate.status}`}
+              itemSummary={debate.summary || debate.aiSummary?.neutralOutcome.summary || `Async debate about ${debate.topic}.`}
+              itemVisibility={debate.visibility === "public" ? "public" : "private"}
+            />
+          ) : null}
+        </div>
       </header>
 
       {isSummaryView ? (

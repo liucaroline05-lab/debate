@@ -417,6 +417,154 @@ service cloud.firestore {
       allow delete: if ownsExistingResource("userId");
     }
 
+    // Personal folders store links and short display summaries for items in a
+    // user's speech, async debate, and resource libraries. Public folders are
+    // readable to signed-in members and their private engagement records stay
+    // scoped to each member.
+    function folderDocument(folderId) {
+      return get(/databases/$(database)/documents/folders/$(folderId));
+    }
+
+    function ownsFolder(folderId) {
+      return isSignedIn()
+        && folderDocument(folderId).data.userId == request.auth.uid;
+    }
+
+    function isPublicFolder(folderId) {
+      return isSignedIn()
+        && folderDocument(folderId).data.visibility == "public";
+    }
+
+    function countChangesAreValid() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let oldLikes = ("likeCount" in resource.data) ? resource.data.likeCount : 0;
+      let oldDislikes = ("dislikeCount" in resource.data) ? resource.data.dislikeCount : 0;
+      let oldSaves = ("saveCount" in resource.data) ? resource.data.saveCount : 0;
+      let oldShares = ("shareCount" in resource.data) ? resource.data.shareCount : 0;
+      let oldComments = ("commentCount" in resource.data) ? resource.data.commentCount : 0;
+      return changed.hasOnly(["likeCount", "dislikeCount", "saveCount", "shareCount", "commentCount", "updatedAt"])
+        && (!("likeCount" in changed) || (request.resource.data.likeCount is int && request.resource.data.likeCount >= 0 && (request.resource.data.likeCount == oldLikes + 1 || request.resource.data.likeCount == oldLikes - 1)))
+        && (!("dislikeCount" in changed) || (request.resource.data.dislikeCount is int && request.resource.data.dislikeCount >= 0 && (request.resource.data.dislikeCount == oldDislikes + 1 || request.resource.data.dislikeCount == oldDislikes - 1)))
+        && (!("saveCount" in changed) || (request.resource.data.saveCount is int && request.resource.data.saveCount >= 0 && (request.resource.data.saveCount == oldSaves + 1 || request.resource.data.saveCount == oldSaves - 1)))
+        && (!("shareCount" in changed) || (request.resource.data.shareCount is int && request.resource.data.shareCount == oldShares + 1))
+        && (!("commentCount" in changed) || (request.resource.data.commentCount is int && request.resource.data.commentCount >= 0 && (request.resource.data.commentCount == oldComments + 1 || request.resource.data.commentCount == oldComments - 1)))
+        && request.resource.data.updatedAt is string;
+    }
+
+    match /folders/{folderId} {
+      allow read: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || resource.data.visibility == "public");
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 60
+        && request.resource.data.visibility in ["public", "private"]
+        && request.resource.data.likeCount == 0
+        && request.resource.data.dislikeCount == 0
+        && request.resource.data.saveCount == 0
+        && request.resource.data.shareCount == 0
+        && request.resource.data.commentCount == 0
+        && request.resource.data.itemCount == 0
+        && request.resource.data.fileCount == 0;
+      allow update: if ownsExistingResource("userId")
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 60
+        && request.resource.data.visibility in ["public", "private"]
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name", "description", "visibility", "tournamentId", "tournamentName", "updatedAt", "itemCount", "fileCount"])
+        || (isPublicFolder(folderId) && countChangesAreValid());
+      allow delete: if ownsExistingResource("userId");
+    }
+
+    match /folderItems/{folderItemId} {
+      // Transactions check deterministic child IDs before creating them. Let
+      // signed-in users read a missing document (it contains no private data),
+      // while keeping existing items owner/public-folder scoped.
+      allow get: if isSignedIn() && (resource == null
+        || resource.data.userId == request.auth.uid
+        || (resource.data.visibility == "public" && isPublicFolder(resource.data.folderId)));
+      allow list: if isSignedIn()
+        && (resource.data.userId == request.auth.uid
+          || (resource.data.visibility == "public" && isPublicFolder(resource.data.folderId)));
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.folderId is string
+        && request.resource.data.itemType in ["speech", "debate", "resource"]
+        && request.resource.data.itemId is string
+        && request.resource.data.itemTitle is string
+        && request.resource.data.sourceVisibility in ["public", "private"]
+        && ownsFolder(request.resource.data.folderId)
+        && request.resource.data.visibility == folderDocument(request.resource.data.folderId).data.visibility
+        && (request.resource.data.visibility == "private" || request.resource.data.sourceVisibility == "public");
+      allow update: if ownsExistingResource("userId")
+        && request.resource.data.userId == request.auth.uid
+        && ownsFolder(request.resource.data.folderId)
+        && request.resource.data.sourceVisibility in ["public", "private"]
+        && request.resource.data.visibility == folderDocument(request.resource.data.folderId).data.visibility
+        && (request.resource.data.visibility == "private" || request.resource.data.sourceVisibility == "public");
+      allow delete: if ownsExistingResource("userId") || ownsFolder(resource.data.folderId);
+    }
+
+    match /folderReactions/{reactionId} {
+      allow get: if isSignedIn() && (resource == null
+        || resource.data.userId == request.auth.uid
+        || ownsFolder(resource.data.folderId)
+        || isPublicFolder(resource.data.folderId));
+      allow list: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || ownsFolder(resource.data.folderId) || isPublicFolder(resource.data.folderId));
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && isPublicFolder(request.resource.data.folderId)
+        && request.resource.data.like is bool
+        && request.resource.data.dislike is bool;
+      allow delete: if ownsExistingResource("userId") || ownsFolder(resource.data.folderId);
+    }
+
+    match /folderSaves/{saveId} {
+      allow get: if isSignedIn() && (resource == null
+        || resource.data.userId == request.auth.uid
+        || ownsFolder(resource.data.folderId)
+        || isPublicFolder(resource.data.folderId));
+      allow list: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || ownsFolder(resource.data.folderId) || isPublicFolder(resource.data.folderId));
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && isPublicFolder(request.resource.data.folderId);
+      allow delete: if ownsExistingResource("userId") || ownsFolder(resource.data.folderId);
+    }
+
+    match /folderComments/{commentId} {
+      allow read: if isSignedIn()
+        && (ownsFolder(resource.data.folderId)
+          || (resource.data.visibility == "public" && isPublicFolder(resource.data.folderId)));
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.visibility == "public"
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 2000
+        && isPublicFolder(request.resource.data.folderId);
+      allow delete: if ownsExistingResource("userId") || ownsFolder(resource.data.folderId);
+    }
+
+    match /folderFiles/{fileId} {
+      allow read: if isSignedIn()
+        && (resource.data.userId == request.auth.uid
+          || (resource.data.visibility == "public" && isPublicFolder(resource.data.folderId)));
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && ownsFolder(request.resource.data.folderId)
+        && request.resource.data.visibility == folderDocument(request.resource.data.folderId).data.visibility
+        && request.resource.data.storagePath is string;
+      allow update: if ownsExistingResource("userId")
+        && request.resource.data.userId == request.auth.uid
+        && ownsFolder(request.resource.data.folderId)
+        && request.resource.data.visibility == folderDocument(request.resource.data.folderId).data.visibility;
+      allow delete: if ownsExistingResource("userId") || ownsFolder(resource.data.folderId);
+    }
+
     match /channels/{channelId} {
       allow read: if true;
       allow create: if isSignedIn()

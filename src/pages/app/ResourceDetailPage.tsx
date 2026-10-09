@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
 import { ArrowLeft, Bookmark, ExternalLink, Share2 } from "lucide-react";
@@ -6,6 +6,7 @@ import { PageMeta } from "@/components/common/PageMeta";
 import { seededResources } from "@/data/firestoreSeeds";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { useAuth } from "@/features/auth/AuthContext";
+import { FolderPickerButton } from "@/features/folders/FolderPickerButton";
 import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import {
   saveResourceNote,
@@ -38,6 +39,95 @@ const getOverviewDescription = (resource: ResourceItem) => {
   );
   return resource.longDescription?.trim() || overviewSection?.body.trim() || resource.description;
 };
+
+type LongDescriptionBlock =
+  | { kind: "paragraph"; lines: string[] }
+  | { kind: "list"; items: string[] }
+  | { kind: "spacing"; count: number };
+
+const getLongDescriptionBlocks = (value: string): LongDescriptionBlock[] => {
+  const blocks: LongDescriptionBlock[] = [];
+  let paragraphLines: string[] = [];
+  let listItems: string[] = [];
+  let blankLines = 0;
+
+  const commitSpacing = () => {
+    if (blankLines === 0) return;
+    blocks.push({ kind: "spacing", count: blankLines });
+    blankLines = 0;
+  };
+  const commitParagraph = () => {
+    if (paragraphLines.length === 0) return;
+    commitSpacing();
+    blocks.push({ kind: "paragraph", lines: paragraphLines });
+    paragraphLines = [];
+  };
+  const commitList = () => {
+    if (listItems.length === 0) return;
+    commitSpacing();
+    blocks.push({ kind: "list", items: listItems });
+    listItems = [];
+  };
+
+  value.split(/\r\n|\n|\r/).forEach((line) => {
+    if (line.trim() === "") {
+      commitParagraph();
+      commitList();
+      blankLines += 1;
+      return;
+    }
+
+    const bullet = line.match(/^\s*(?:[-*•·]|[–—])\s+(.+?)\s*$/);
+    if (bullet) {
+      commitParagraph();
+      if (listItems.length === 0) commitSpacing();
+      listItems.push(bullet[1]);
+      return;
+    }
+
+    commitList();
+    if (paragraphLines.length === 0) commitSpacing();
+    paragraphLines.push(line);
+  });
+
+  commitParagraph();
+  commitList();
+  commitSpacing();
+  return blocks;
+};
+
+const LongDescriptionContent = ({ text }: { text: string }) => (
+  <div className="resource-detail-long-description">
+    {getLongDescriptionBlocks(text).map((block, blockIndex) => {
+      if (block.kind === "paragraph") {
+        return (
+          <p key={`paragraph-${blockIndex}`}>
+            {block.lines.map((line, lineIndex) => (
+              <Fragment key={lineIndex}>
+                {lineIndex > 0 ? <br /> : null}
+                {line}
+              </Fragment>
+            ))}
+          </p>
+        );
+      }
+
+      if (block.kind === "list") {
+        return (
+          <ul key={`list-${blockIndex}`}>
+            {block.items.map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}
+          </ul>
+        );
+      }
+
+      return (
+        <div className="resource-detail-description-spacing" key={`spacing-${blockIndex}`} aria-hidden="true">
+          {Array.from({ length: block.count }, (_, index) => <br key={index} />)}
+        </div>
+      );
+    })}
+  </div>
+);
 
 const renderMedia = (resource: ResourceItem) => {
   if (resource.mediaType === "Video" && resource.mediaPath) {
@@ -179,9 +269,22 @@ export const ResourceDetailPage = () => {
   const articleSections = (resource.contentSections ?? []).filter(
     (section) => section.title.trim().toLowerCase() !== "overview",
   );
+  const resourceNotesSections = articleSections.filter(
+    (section) => section.title.trim().toLowerCase() === "resource notes",
+  );
+  const firstResourceNotesIndex = articleSections.findIndex(
+    (section) => section.title.trim().toLowerCase() === "resource notes",
+  );
   const detailSections = isQuickRead
     ? [{ title: "Overview", body: getOverviewDescription(resource) }]
-    : articleSections;
+    : firstResourceNotesIndex >= 0
+      ? articleSections.flatMap((section, index) => {
+          if (section.title.trim().toLowerCase() !== "resource notes") return [section];
+          return index === firstResourceNotesIndex
+            ? [{ title: "Long description", body: getOverviewDescription(resource) }]
+            : [];
+        })
+      : articleSections;
   const isOwner = currentUser?.id === resource.creatorId;
   const beginEditing = () => {
     setDraft({
@@ -285,6 +388,17 @@ export const ResourceDetailPage = () => {
             <span>Curated by {resource.curatedBy}</span>
           </div>
           <div className="button-row" style={{ marginTop: "1rem" }}>
+            {currentUser ? (
+              <FolderPickerButton
+                itemType="resource"
+                itemId={resource.id}
+                itemSlug={resource.slug}
+                itemTitle={resource.title}
+                itemSubtitle={`${resource.category} · ${resource.level}`}
+                itemSummary={getOverviewDescription(resource)}
+                itemVisibility="public"
+              />
+            ) : null}
             <button
               type="button"
               className="btn btn-toggle"
@@ -341,7 +455,9 @@ export const ResourceDetailPage = () => {
             {detailSections.map((section) => (
               <section key={section.title} className="resource-detail-section">
                 <h2>{section.title}</h2>
-                <p>{section.body}</p>
+                <p className={section.title === "Long description" ? "resource-detail-long-description" : undefined}>
+                  {section.body}
+                </p>
               </section>
             ))}
           </article>
@@ -375,7 +491,14 @@ export const ResourceDetailPage = () => {
               </span>
             ))}
           </div>
-          {!isQuickRead ? (
+          {!isQuickRead && resourceNotesSections.length ? (
+            resourceNotesSections.map((section, index) => (
+              <section key={`${section.title}-${index}`} className="resource-detail-section">
+                <h2>{section.title}</h2>
+                <p className="resource-detail-long-description">{section.body}</p>
+              </section>
+            ))
+          ) : !isQuickRead ? (
             <section className="resource-detail-section">
               <h2>Long description</h2>
               <p className="resource-detail-long-description">

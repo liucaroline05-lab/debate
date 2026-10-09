@@ -10,6 +10,7 @@ import { DebatesPage } from "@/pages/app/DebatesPage";
 import { DebateWatchPage } from "@/pages/app/DebateWatchPage";
 import { ResourcesPage } from "@/pages/app/ResourcesPage";
 import { ResourceDetailPage } from "@/pages/app/ResourceDetailPage";
+import { FoldersPage } from "@/pages/app/FoldersPage";
 import { CommunityPage } from "@/pages/app/CommunityPage";
 import { MessagesPage } from "@/pages/app/MessagesPage";
 import { ProfilePage } from "@/pages/app/ProfilePage";
@@ -63,6 +64,8 @@ export const router = createBrowserRouter([
           { path: "debates/:debateId", element: <DebateWatchPage /> },
           { path: "resources", element: <ResourcesPage /> },
           { path: "resources/:resourceId", element: <ResourceDetailPage /> },
+          { path: "folders", element: <FoldersPage /> },
+          { path: "folders/:folderId", element: <FoldersPage /> },
           { path: "community", element: <CommunityPage /> },
           { path: "messages", element: <MessagesPage /> },
           { path: "profile", element: <ProfilePage /> },

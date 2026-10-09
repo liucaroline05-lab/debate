@@ -818,7 +818,8 @@ const importTabroomTournaments = async (token: string): Promise<TabroomEventReco
       name: tourn.name,
       date: tourn.start || tourn.end || new Date().toISOString(),
       endDate: tourn.end || tourn.start || "",
-      result: summary.roles.join(" • ") || "Entered",
+      // This endpoint summary exposes participant roles, not tournament outcomes.
+      result: "",
       sourceUrl: tabroomTournUrl(tourn.id),
       location: tourn.location,
       role: summary.roles.join(" • "),

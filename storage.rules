@@ -126,6 +126,21 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    // Folder uploads support common media and document formats. File metadata
+    // controls whether an attachment appears in a public folder; upload and
+    // removal remain restricted to the folder owner.
+    match /folders/{userId}/{folderId}/{fileName} {
+      allow read: if isSignedIn()
+        && (request.auth.uid == userId
+          || firestore.get(/databases/(default)/documents/folders/$(folderId)).data.userId == userId
+            && firestore.get(/databases/(default)/documents/folders/$(folderId)).data.visibility == "public");
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.size <= 100 * 1024 * 1024;
+      allow update: if false;
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
     // Deny everything else by default.
     match /{allPaths=**} {
       allow read, write: if false;
