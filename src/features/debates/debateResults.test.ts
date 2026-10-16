@@ -46,6 +46,16 @@ describe("debate vote results", () => {
     expect(getUserDebateResult({ ...voted, status: "Active" }, "avery")).toBeNull();
   });
 
+  it("leaves the win rate empty for a month where every debate tied", () => {
+    const performance = summarizeDebatePerformance([
+      debate({ id: "tied", updatedAt: "2026-07-04T00:00:00.000Z", communityVoteCounts: { aff: 2, neg: 2 } }),
+    ], "blake");
+    expect(performance.overTime).toEqual([
+      { label: "Jul 2026", wins: 0, losses: 0, ties: 1, winRate: null, voteShare: 50 },
+    ]);
+    expect(performance.bySide.map((group) => group.label)).toEqual(["Negative"]);
+  });
+
   it("summarizes a record, monthly results, and vote share by format", () => {
     const performance = summarizeDebatePerformance([
       debate({ id: "a", updatedAt: "2026-08-02T00:00:00.000Z", communityVoteCounts: { aff: 4, neg: 1 } }),
@@ -56,12 +66,15 @@ describe("debate vote results", () => {
 
     expect(performance).toMatchObject({ wins: 1, losses: 1, ties: 1, winRate: 50, averageVoteShare: 52 });
     expect(performance.overTime).toEqual([
-      { label: "Aug 2026", score: 80, wins: 1, losses: 0 },
-      { label: "Sep 2026", score: 38, wins: 0, losses: 1 },
+      { label: "Aug 2026", wins: 1, losses: 0, ties: 0, winRate: 100, voteShare: 80 },
+      { label: "Sep 2026", wins: 0, losses: 1, ties: 1, winRate: 0, voteShare: 38 },
+    ]);
+    expect(performance.bySide).toEqual([
+      { label: "Affirmative", wins: 1, losses: 1, ties: 1, winRate: 50, voteShare: 52 },
     ]);
     expect(performance.byFormat).toEqual([
-      { label: "Public Forum", score: 65 },
-      { label: "Lincoln-Douglas", score: 25 },
+      { label: "Public Forum", wins: 1, losses: 0, ties: 1, winRate: 100, voteShare: 65 },
+      { label: "Lincoln-Douglas", wins: 0, losses: 1, ties: 0, winRate: 0, voteShare: 25 },
     ]);
   });
 });

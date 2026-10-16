@@ -1,17 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
-import {
-  BarElement,
-  CategoryScale,
-  Chart as ChartJS,
-  Legend,
-  LinearScale,
-  Tooltip,
-} from "chart.js";
-import { Bar } from "react-chartjs-2";
 import { Ban, CalendarClock, Flag, History, MapPin, MoreVertical, Share2 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
+import { PerformanceCharts } from "@/components/profile/PerformanceCharts";
 import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import {
   seededChannelMemberships,
@@ -46,14 +38,6 @@ import type {
   UserBlock,
   UserStats,
 } from "@/types/models";
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Tooltip,
-  Legend,
-);
 
 interface UserProfileViewProps {
   userId: string;
@@ -154,44 +138,6 @@ const normalizeProfileForView = (profile: UserProfile) => ({
   recommendationSlots: toStringArray(profile.recommendationSlots),
   activeChannelIds: toStringArray(profile.activeChannelIds),
 });
-
-const resultsChartOptions = {
-  responsive: true,
-  plugins: {
-    legend: {
-      display: true,
-      position: "bottom" as const,
-    },
-  },
-  scales: {
-    x: { stacked: true },
-    y: {
-      stacked: true,
-      beginAtZero: true,
-      ticks: {
-        precision: 0 as const,
-      },
-    },
-  },
-};
-
-const voteShareChartOptions = {
-  responsive: true,
-  plugins: {
-    legend: {
-      display: false,
-    },
-  },
-  scales: {
-    y: {
-      beginAtZero: true,
-      max: 100,
-      ticks: {
-        callback: (value: string | number) => `${value}%`,
-      },
-    },
-  },
-};
 
 const safeName = (value?: string | null, fallback = "Unknown Speaker") => {
   const trimmed = value?.trim();
@@ -498,43 +444,6 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   );
   const isBlocked = blocksState.data.some((block) => block.blockedId === userId);
 
-  const resultsChartData = useMemo(
-    () => ({
-      labels: debatePerformance.overTime.map((entry) => entry.label),
-      datasets: [
-        {
-          label: "Wins",
-          data: debatePerformance.overTime.map((entry) => entry.wins ?? 0),
-          backgroundColor: "rgba(118, 128, 107, 0.7)",
-          borderRadius: 8,
-        },
-        {
-          label: "Losses",
-          data: debatePerformance.overTime.map((entry) => entry.losses ?? 0),
-          backgroundColor: "rgba(234, 121, 103, 0.62)",
-          borderRadius: 8,
-        },
-      ],
-    }),
-    [debatePerformance.overTime],
-  );
-
-  const voteShareChartData = useMemo(
-    () => ({
-      labels: debatePerformance.byFormat.map((entry) => entry.label),
-      datasets: [
-        {
-          label: "Average vote share",
-          data: debatePerformance.byFormat.map((entry) => entry.score),
-          backgroundColor: "rgba(203, 141, 108, 0.6)",
-          borderRadius: 12,
-        },
-      ],
-    }),
-    [debatePerformance.byFormat],
-  );
-  const hasDebateResults = debatePerformance.results.length > 0;
-  const hasVoteShares = debatePerformance.byFormat.length > 0;
   const hasTabroomRecord = stats.wins + stats.losses > 0;
 
   if (usersState.isLoading && !profile) {
@@ -913,43 +822,9 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
           </article>
         </section> : null}
 
-        {activeTab === "Performance" && !isPerformanceHidden ? <section className="settings-grid">
-          <article className="app-card">
-            <h2 className="card-title">Results over time</h2>
-            <div className="chart-panel">
-              {hasDebateResults ? (
-                <Bar
-                  key={`profile-results-${userId}`}
-                  data={resultsChartData}
-                  options={resultsChartOptions}
-                />
-              ) : (
-                <div className="empty-state chart-empty-state">
-                  <h3 className="card-title">No results yet</h3>
-                  <p className="card-copy">Wins and losses appear here once completed debates receive community votes.</p>
-                </div>
-              )}
-            </div>
-          </article>
-
-          <article className="app-card">
-            <h2 className="card-title">Vote share by format</h2>
-            <div className="chart-panel">
-              {hasVoteShares ? (
-                <Bar
-                  key={`profile-vote-share-${userId}`}
-                  data={voteShareChartData}
-                  options={voteShareChartOptions}
-                />
-              ) : (
-                <div className="empty-state chart-empty-state">
-                  <h3 className="card-title">No votes yet</h3>
-                  <p className="card-copy">The share of spectator votes won in each format appears here.</p>
-                </div>
-              )}
-            </div>
-          </article>
-        </section> : null}
+        {activeTab === "Performance" && !isPerformanceHidden ? (
+          <PerformanceCharts key={userId} performance={debatePerformance} />
+        ) : null}
 
         {activeTab === "Activity" ? <section className="settings-grid">
           <article className="app-card">

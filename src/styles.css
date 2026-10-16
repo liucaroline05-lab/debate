@@ -3374,6 +3374,58 @@ button {
   gap: 0.45rem;
 }
 
+/* Profile performance charts: the win-rate trend spans the full width, the
+   monthly record and strengths sit side by side beneath it. */
+.profile-chart-card {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.profile-chart-card.is-wide {
+  grid-column: 1 / -1;
+}
+
+.profile-chart-heading {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.profile-chart-heading .card-title,
+.profile-chart-heading .meta-line {
+  margin: 0;
+}
+
+.profile-chart-canvas {
+  position: relative;
+  height: 18rem;
+}
+
+.profile-chart-card.is-wide .profile-chart-canvas {
+  height: 16rem;
+}
+
+.profile-chart-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem 1.25rem;
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+.profile-chart-summary strong {
+  color: var(--color-charcoal);
+}
+
+@media (max-width: 900px) {
+  .profile-performance-charts {
+    grid-template-columns: 1fr;
+  }
+}
+
 .settings-avatar-panel {
   display: flex;
   flex-direction: column;

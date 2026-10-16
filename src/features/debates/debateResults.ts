@@ -1,4 +1,4 @@
-import type { DebateThread, PerformancePoint } from "@/types/models";
+import type { DebateThread } from "@/types/models";
 
 type DebateSide = "Aff" | "Neg";
 type DebateResultSource = Pick<DebateThread, "status" | "winner" | "communityVoteCounts">;
@@ -66,6 +66,18 @@ export const getUserDebateResult = (debate: DebateThread, userId: string): UserD
   };
 };
 
+/** Results grouped by month, side, or format. Rates are 0–100. */
+export interface PerformanceGroup {
+  label: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  /** Wins over decided debates; null when every debate in the group tied. */
+  winRate: number | null;
+  /** Average share of community votes; null when no votes were cast. */
+  voteShare: number | null;
+}
+
 export interface DebatePerformance {
   wins: number;
   losses: number;
@@ -73,10 +85,12 @@ export interface DebatePerformance {
   winRate: number;
   averageVoteShare: number | null;
   results: UserDebateResult[];
-  /** Wins and losses per month, oldest first. */
-  overTime: PerformancePoint[];
-  /** Average vote share per format. */
-  byFormat: PerformancePoint[];
+  /** One group per month, oldest first. */
+  overTime: PerformanceGroup[];
+  /** Affirmative and Negative, for sides the user has debated. */
+  bySide: PerformanceGroup[];
+  /** One group per format, strongest vote share first. */
+  byFormat: PerformanceGroup[];
 }
 
 const resultDate = (debate: DebateThread) => debate.updatedAt ?? debate.createdAt ?? debate.nextDeadline;
@@ -84,49 +98,64 @@ const resultDate = (debate: DebateThread) => debate.updatedAt ?? debate.createdA
 const average = (values: number[]) =>
   values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
 
+const summarizeGroup = (label: string, results: UserDebateResult[]): PerformanceGroup => {
+  const wins = results.filter((result) => result.outcome === "win").length;
+  const losses = results.filter((result) => result.outcome === "loss").length;
+  return {
+    label,
+    wins,
+    losses,
+    ties: results.length - wins - losses,
+    winRate: wins + losses ? Math.round((wins / (wins + losses)) * 100) : null,
+    voteShare: average(results.flatMap((result) => result.voteShare === null ? [] : [result.voteShare])),
+  };
+};
+
+const groupResults = (results: UserDebateResult[], keyOf: (result: UserDebateResult) => string) => {
+  const groups = new Map<string, UserDebateResult[]>();
+  results.forEach((result) => {
+    const key = keyOf(result);
+    groups.set(key, [...(groups.get(key) ?? []), result]);
+  });
+  return groups;
+};
+
+const monthKey = (result: UserDebateResult) => {
+  const date = new Date(resultDate(result.debate) ?? "");
+  return Number.isNaN(date.getTime())
+    ? "undated"
+    : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const monthLabel = (key: string) => {
+  if (key === "undated") return "Undated";
+  const [year, month] = key.split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+};
+
 export const summarizeDebatePerformance = (debates: DebateThread[], userId: string): DebatePerformance => {
   const results = debates
     .map((debate) => getUserDebateResult(debate, userId))
     .filter((result): result is UserDebateResult => Boolean(result))
     .sort((left, right) => (resultDate(left.debate) ?? "").localeCompare(resultDate(right.debate) ?? ""));
-
-  const wins = results.filter((result) => result.outcome === "win").length;
-  const losses = results.filter((result) => result.outcome === "loss").length;
-  const ties = results.length - wins - losses;
-  const voteShares = results.flatMap((result) => result.voteShare === null ? [] : [result.voteShare]);
-
-  const months = new Map<string, { label: string; wins: number; losses: number; shares: number[] }>();
-  results.forEach((result) => {
-    const date = new Date(resultDate(result.debate) ?? "");
-    const valid = !Number.isNaN(date.getTime());
-    const key = valid ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}` : "unknown";
-    const label = valid ? date.toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "Undated";
-    const month = months.get(key) ?? { label, wins: 0, losses: 0, shares: [] };
-    if (result.outcome === "win") month.wins += 1;
-    if (result.outcome === "loss") month.losses += 1;
-    if (result.voteShare !== null) month.shares.push(result.voteShare);
-    months.set(key, month);
-  });
-
-  const formats = new Map<string, number[]>();
-  results.forEach((result) => {
-    if (result.voteShare === null) return;
-    const format = result.debate.format || "Other";
-    formats.set(format, [...(formats.get(format) ?? []), result.voteShare]);
-  });
+  const overall = summarizeGroup("All debates", results);
 
   return {
-    wins,
-    losses,
-    ties,
-    winRate: wins + losses ? Math.round((wins / (wins + losses)) * 100) : 0,
-    averageVoteShare: average(voteShares),
+    wins: overall.wins,
+    losses: overall.losses,
+    ties: overall.ties,
+    winRate: overall.winRate ?? 0,
+    averageVoteShare: overall.voteShare,
     results,
-    overTime: [...months.entries()]
+    overTime: [...groupResults(results, monthKey).entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([, month]) => ({ label: month.label, score: average(month.shares) ?? 0, wins: month.wins, losses: month.losses })),
-    byFormat: [...formats.entries()]
-      .map(([label, shares]) => ({ label, score: average(shares) ?? 0 }))
-      .sort((left, right) => right.score - left.score),
+      .map(([key, group]) => summarizeGroup(monthLabel(key), group)),
+    bySide: (["Aff", "Neg"] as const).flatMap((side) => {
+      const group = results.filter((result) => result.side === side);
+      return group.length ? [summarizeGroup(side === "Aff" ? "Affirmative" : "Negative", group)] : [];
+    }),
+    byFormat: [...groupResults(results, (result) => result.debate.format || "Other").entries()]
+      .map(([format, group]) => summarizeGroup(format, group))
+      .sort((left, right) => (right.voteShare ?? -1) - (left.voteShare ?? -1)),
   };
 };

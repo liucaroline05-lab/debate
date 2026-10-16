@@ -44,6 +44,7 @@ vi.mock("@/hooks/useSeededFirestoreCollection", () => ({
 
 vi.mock("react-chartjs-2", () => ({
   Bar: () => null,
+  Line: () => null,
   Radar: () => null,
 }));
 
