@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Bookmark,
-  ChevronLeft,
-  ChevronRight,
   ExternalLink,
   FileUp,
   Search,
@@ -13,6 +11,7 @@ import {
 import { PageMeta } from "@/components/common/PageMeta";
 import { seededResources } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
+import { QuickReadsCarousel } from "@/features/resources/QuickReadsCarousel";
 import { createResource } from "@/features/resources/resourceService";
 import { where, type QueryConstraint } from "firebase/firestore";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
@@ -147,47 +146,6 @@ export const ResourcesPage = () => {
     () => filtered.filter((resource) => resource.resourceType !== "Quick Read"),
     [filtered],
   );
-
-  const quickReadsTrackRef = useRef<HTMLDivElement | null>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-  const [centeredQuickReadId, setCenteredQuickReadId] = useState<string | null>(null);
-
-  const updateQuickReadsScroll = useCallback(() => {
-    const track = quickReadsTrackRef.current;
-    if (!track) return;
-    const { scrollLeft, scrollWidth, clientWidth } = track;
-    setCanScrollLeft(scrollLeft > 1);
-    setCanScrollRight(Math.ceil(scrollLeft + clientWidth) < scrollWidth - 1);
-
-    // The card nearest the middle of the carousel is enlarged.
-    const trackRect = track.getBoundingClientRect();
-    const trackCenter = trackRect.left + trackRect.width / 2;
-    let closestId: string | null = null;
-    let closestDistance = Number.POSITIVE_INFINITY;
-    track.querySelectorAll<HTMLElement>("[data-quick-read-id]").forEach((card) => {
-      const rect = card.getBoundingClientRect();
-      const distance = Math.abs(rect.left + rect.width / 2 - trackCenter);
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestId = card.dataset.quickReadId ?? null;
-      }
-    });
-    setCenteredQuickReadId(closestId);
-  }, []);
-
-  const scrollQuickReads = (direction: "left" | "right") => {
-    const track = quickReadsTrackRef.current;
-    if (!track) return;
-    const amount = track.clientWidth * 0.8;
-    track.scrollBy({ left: direction === "left" ? -amount : amount, behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    updateQuickReadsScroll();
-    window.addEventListener("resize", updateQuickReadsScroll);
-    return () => window.removeEventListener("resize", updateQuickReadsScroll);
-  }, [quickReads, updateQuickReadsScroll]);
 
   const submitResource = async () => {
     if (!currentUser) {
@@ -577,43 +535,7 @@ export const ResourcesPage = () => {
             <h2 id="quick-reads-heading" className="card-title">Quick reads</h2>
             <span className="meta-line">{quickReads.length} quick read{quickReads.length === 1 ? "" : "s"}</span>
           </div>
-          <div className="resource-quick-reads-viewport">
-            <button
-              type="button"
-              className="carousel-button carousel-button-left"
-              aria-label="Scroll quick reads left"
-              onClick={() => scrollQuickReads("left")}
-              disabled={!canScrollLeft}
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <div className="resource-quick-reads-row" ref={quickReadsTrackRef} onScroll={updateQuickReadsScroll}>
-              {quickReads.map((resource) => (
-                <Link
-                  key={resource.id}
-                  to={getResourcePath(resource)}
-                  data-quick-read-id={resource.id}
-                  className={centeredQuickReadId === resource.id ? "resource-quick-read-card is-centered" : "resource-quick-read-card"}
-                >
-                  <span className="pill">{resource.category}</span>
-                  <strong>{resource.title}</strong>
-                  <p className="card-copy">{getShortDescription(resource)}</p>
-                  <span className="meta-line">
-                    {resource.level} • {resource.format ?? "All Formats"} • {resource.estimatedTime ?? "Quick read"}
-                  </span>
-                </Link>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="carousel-button carousel-button-right"
-              aria-label="Scroll quick reads right"
-              onClick={() => scrollQuickReads("right")}
-              disabled={!canScrollRight}
-            >
-              <ChevronRight size={18} />
-            </button>
-          </div>
+          <QuickReadsCarousel resources={quickReads} getPath={getResourcePath} getDescription={getShortDescription} />
         </section>
       ) : null}
 

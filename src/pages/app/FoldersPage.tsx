@@ -517,7 +517,7 @@ export const FoldersPage = () => {
           <span className="folder-card-count">{itemCount} item{itemCount === 1 ? "" : "s"}{folder.ownerName ? ` · ${isOwner ? "You" : folder.ownerName}` : ""}</span>
           {isShared ? <span className="folder-shared-tag"><UsersRound size={14} aria-hidden="true" /> Shared with you</span> : null}
           {folder.tournamentName ? <span className="folder-tournament-tag"><CalendarDays size={14} /> {folder.tournamentName}</span> : null}
-          <span className="folder-card-preview">{folder.description || (isPublic ? "Open this public collection to review its summaries and files." : "Open to review your collected materials and files.")}</span>
+          {folder.description ? <span className="folder-card-preview">{folder.description}</span> : null}
           <span className="folder-card-open">Open folder <ChevronRight size={15} /></span>
         </Link>
         {isPublic ? <FolderEngagementBar folder={folder} userId={userId!} reaction={reactionsByFolder.get(folder.id)} isSaved={savedFolderIds.has(folder.id)} compact /> : null}

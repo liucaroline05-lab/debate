@@ -1464,6 +1464,9 @@ button {
 
 .resource-quick-reads-viewport {
   position: relative;
+  /* The looping copies make the row's natural width very large; without
+     this the section's grid column would grow to fit and scroll the page. */
+  min-width: 0;
 }
 
 .carousel-button {
@@ -1604,10 +1607,8 @@ button {
   box-shadow: 0 14px 30px rgba(53, 47, 42, 0.14);
 }
 
-/* Keep the arrows level with the cards despite the extra bottom padding. */
-.resource-quick-reads-viewport .carousel-button {
-  top: calc(50% - 1.125rem);
-}
+/* The row's negative bottom margin already cancels its extra shadow room,
+   so the viewport's 50% sits level with the middle of the cards. */
 
 .resource-quick-reads-row .resource-quick-read-card:hover {
   opacity: 1;
@@ -5376,20 +5377,35 @@ button {
   margin-top: 1rem;
 }
 
+/* Same treatment as the site's other round icon buttons: a hairline border,
+   warm white fill, and the moss accent on hover. */
 .carousel-button {
   z-index: 4;
-  width: 3.15rem;
-  height: 3.15rem;
-  border: 2px solid rgba(78, 90, 71, 0.42);
+  width: 2.6rem;
+  height: 2.6rem;
+  padding: 0;
+  border: 1px solid rgba(53, 47, 42, 0.12);
+  background: rgba(255, 253, 248, 0.96);
+  color: var(--color-charcoal);
+  box-shadow: 0 6px 18px rgba(53, 47, 42, 0.12);
+  transition:
+    transform var(--transition),
+    background-color var(--transition),
+    border-color var(--transition),
+    color var(--transition);
+}
+
+.carousel-button:hover:not(:disabled),
+.carousel-button:focus-visible {
+  border-color: rgba(118, 128, 107, 0.4);
   background: var(--color-white);
   color: var(--color-moss);
-  box-shadow: 0 10px 24px rgba(53, 47, 42, 0.2);
 }
 
 .carousel-button svg {
-  width: 1.5rem;
-  height: 1.5rem;
-  stroke-width: 3;
+  width: 1.15rem;
+  height: 1.15rem;
+  stroke-width: 2;
 }
 
 @media (max-width: 900px) {
