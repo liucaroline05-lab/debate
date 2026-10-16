@@ -484,9 +484,6 @@ export const DebatesPage = () => {
     const votes = getDebateVoteSummary(debate);
     const isPublic = debate.visibility === "public";
     const label = votes.leader || isPublic ? debateLeaderLabel(votes) : "FINAL";
-    const voteLine = votes.fromVotes
-      ? `${votes.total} community ${votes.total === 1 ? "vote" : "votes"}`
-      : isPublic ? "Spectator voting is open" : "Private debate";
     const ariaLabel = `Community votes: ${votes.aff} for Affirmative, ${votes.neg} for Negative`;
 
     if (compact) {
@@ -501,7 +498,6 @@ export const DebatesPage = () => {
           <div className={votes.total ? "debate-vote-bar" : "debate-vote-bar is-empty"} aria-hidden="true">
             <span style={{ width: `${affShare}%` }} />
           </div>
-          <span className="meta-line">{voteLine}</span>
         </div>
       );
     }
@@ -511,7 +507,6 @@ export const DebatesPage = () => {
         <strong className="score aff">{votes.fromVotes ? votes.aff : debate.score?.aff ?? "--"}</strong>
         <span className="score-winner">{label}</span>
         <strong className="score neg">{votes.fromVotes ? votes.neg : debate.score?.neg ?? "--"}</strong>
-        <span className="meta-line">{voteLine}</span>
       </div>
     );
   };

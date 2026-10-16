@@ -2415,11 +2415,6 @@ button {
   font-size: 0.75rem;
 }
 
-.debate-vote-preview .meta-line {
-  margin: 0;
-  text-align: center;
-}
-
 .debate-vote-bar {
   overflow: hidden;
   height: 0.45rem;
@@ -6439,11 +6434,90 @@ button {
 
 .folder-library-list {
   display: grid;
-  gap: 0.9rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 0.75rem;
   max-height: 46rem;
   margin-top: 1rem;
   overflow-y: auto;
   padding-right: 0.25rem;
+}
+
+/* Two compact cards per row in "Your folders" and "Public folders". */
+.folder-library-list .folder-card {
+  gap: 0.5rem;
+  padding: 0.8rem;
+  border-radius: 16px;
+}
+
+.folder-library-list .folder-card-main {
+  gap: 0.45rem;
+}
+
+.folder-library-list .folder-card-icon {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 11px;
+}
+
+.folder-library-list .folder-card-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.folder-library-list .folder-card-main h3 {
+  font-size: 0.98rem;
+  line-height: 1.3;
+}
+
+.folder-library-list .folder-card-count,
+.folder-library-list .folder-card-preview,
+.folder-library-list .folder-card-open {
+  font-size: 0.78rem;
+}
+
+.folder-library-list .folder-card-preview {
+  -webkit-line-clamp: 2;
+}
+
+.folder-library-list .folder-visibility-pill,
+.folder-library-list .folder-tournament-tag,
+.folder-library-list .folder-shared-tag {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.7rem;
+}
+
+/* All five actions stay on one row, spread across the card. */
+.folder-library-list .folder-engagement-bar {
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 0.2rem;
+  margin-top: 0.4rem;
+  padding-top: 0.55rem;
+}
+
+.folder-library-list .folder-engagement-bar.is-compact .btn {
+  gap: 0.2rem;
+  min-height: 1.9rem;
+  padding: 0.3rem 0.35rem;
+  font-size: 0.72rem;
+}
+
+.folder-library-list .folder-engagement-bar svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Fall back to one card per row when a section itself is too narrow for
+   two, whatever the window width. */
+.folder-library-card {
+  container-type: inline-size;
+}
+
+@container (max-width: 23rem) {
+  .folder-library-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .folder-library-empty {
