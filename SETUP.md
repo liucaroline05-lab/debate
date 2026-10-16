@@ -22,7 +22,7 @@
 ## Tabroom session linking
 - Create a high-entropy secret of at least 32 characters and run `firebase functions:secrets:set TABROOM_SESSION_ENCRYPTION_KEY`.
 - Deploy Functions and Firestore rules after setting the secret: `firebase deploy --only functions,firestore:rules`.
-- Tabroom passwords are sent only to the link callable and are never stored. The resulting `TabroomToken` cookie is encrypted with AES-256-GCM in `tabroomSessions/{userId}`, which client Firestore rules deny access to.
+- Tabroom logins are sent only to the link callable. The resulting `TabroomToken` session and the email and password are encrypted with AES-256-GCM in `tabroomSessions/{userId}`, which client Firestore rules deny access to. When Tabroom ends a session, the sync functions sign in again with the saved login; if Tabroom rejects it, the document is deleted and the user is asked to reconnect. Unlinking deletes the document.
 
 ## AI debate summaries
 - Set the server-only OpenAI key with `firebase functions:secrets:set OPENAI_API_KEY`. Do not add it to a Vite environment file or expose it with a `VITE_` prefix.

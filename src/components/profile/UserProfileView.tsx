@@ -1048,7 +1048,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
                         onChange={(event) => setTabroomPassword(event.target.value)}
                       />
                       <span className="meta-line">
-                        Your password is used once to sign in and is never stored. Only an encrypted Tabroom session is retained.
+                        Your Tabroom login is encrypted and stored on our server so your calendar can keep syncing when Tabroom signs you out. It is never shown to anyone, and unlinking deletes it.
                       </span>
                     </div>
                     <div className="button-row full">

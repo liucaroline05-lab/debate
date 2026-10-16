@@ -54,6 +54,20 @@ interface EncryptedTabroomSession {
   version: 1;
 }
 
+/**
+ * Server-only `tabroomSessions/{uid}` document: the current Tabroom token plus
+ * the encrypted login used to start a new session when Tabroom ends one.
+ * Unlinking deletes the whole document.
+ */
+interface StoredTabroomSession extends EncryptedTabroomSession {
+  credentials?: EncryptedTabroomSession;
+}
+
+interface TabroomLogin {
+  email: string;
+  password: string;
+}
+
 const maxDisplayNameLength = 30;
 const displayNameAllowedCharacters = /^[\p{L}\p{N} ._'-]+$/u;
 const displayNameUrlOrContactPattern = /https?:\/\/|www\.|\.com\b|\.net\b|\.org\b|@/i;
@@ -593,10 +607,10 @@ const getTabroomSecretKey = () => {
   return createHash("sha256").update(secret, "utf8").digest();
 };
 
-const encryptTabroomToken = (token: string): EncryptedTabroomSession => {
+const encryptTabroomSecret = (secret: string): EncryptedTabroomSession => {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", getTabroomSecretKey(), iv);
-  const ciphertext = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
 
   return {
     ciphertext: ciphertext.toString("base64"),
@@ -606,20 +620,34 @@ const encryptTabroomToken = (token: string): EncryptedTabroomSession => {
   };
 };
 
-const decryptTabroomToken = (session: EncryptedTabroomSession) => {
-  if (session.version !== 1) {
+const decryptTabroomSecret = (encrypted: EncryptedTabroomSession) => {
+  if (encrypted.version !== 1) {
     throw new Error("Unsupported Tabroom session encryption version.");
   }
   const decipher = createDecipheriv(
     "aes-256-gcm",
     getTabroomSecretKey(),
-    Buffer.from(session.iv, "base64"),
+    Buffer.from(encrypted.iv, "base64"),
   );
-  decipher.setAuthTag(Buffer.from(session.authTag, "base64"));
+  decipher.setAuthTag(Buffer.from(encrypted.authTag, "base64"));
   return Buffer.concat([
-    decipher.update(Buffer.from(session.ciphertext, "base64")),
+    decipher.update(Buffer.from(encrypted.ciphertext, "base64")),
     decipher.final(),
   ]).toString("utf8");
+};
+
+const encryptTabroomLogin = (login: TabroomLogin) => encryptTabroomSecret(JSON.stringify(login));
+
+const decryptTabroomLogin = (session: StoredTabroomSession): TabroomLogin | null => {
+  if (!session.credentials) return null;
+  try {
+    const login = JSON.parse(decryptTabroomSecret(session.credentials)) as Partial<TabroomLogin>;
+    return typeof login.email === "string" && typeof login.password === "string"
+      ? { email: login.email, password: login.password }
+      : null;
+  } catch {
+    return null;
+  }
 };
 
 const tabroomCredentials = (data: LinkTabroomSessionRequest) => {
@@ -694,6 +722,7 @@ const loginToTabroom = async (email: string, password: string) => {
     throw new HttpsError(
       "unauthenticated",
       "Tabroom rejected those credentials. Check your email and password and try again.",
+      { status: response.status },
     );
   }
   if (!response.ok) {
@@ -1021,6 +1050,46 @@ const markTabroomSyncFailed = async (uid: string, message: string, errorCode?: "
 const isTabroomSessionExpired = (error: unknown) =>
   error instanceof HttpsError && error.code === "unauthenticated";
 
+/**
+ * Syncs with the saved token. When Tabroom has ended that session, signs in
+ * again with the saved login, stores the new token, and retries once. Only a
+ * 401 from the login means the saved password no longer works.
+ */
+const refreshWithStoredTabroomSession = async (
+  uid: string,
+  sessionRef: FirebaseFirestore.DocumentReference,
+  session: StoredTabroomSession,
+  syncedAt: string,
+) => {
+  const token = decryptTabroomSecret(session);
+  try {
+    return await refreshTabroomImport(uid, token, syncedAt);
+  } catch (error) {
+    const login = isTabroomSessionExpired(error) ? decryptTabroomLogin(session) : null;
+    if (!login) throw error;
+
+    let freshToken: string;
+    try {
+      freshToken = await loginToTabroom(login.email, login.password);
+    } catch (loginError) {
+      const status = loginError instanceof HttpsError
+        ? (loginError.details as { status?: number } | undefined)?.status
+        : undefined;
+      if (isTabroomSessionExpired(loginError) && status === 401) {
+        throw new HttpsError(
+          "unauthenticated",
+          "Tabroom no longer accepts your saved login. Reconnect your account to sync again.",
+        );
+      }
+      throw new HttpsError("unavailable", "Tabroom could not sign you back in right now. Try again shortly.");
+    }
+
+    console.info("Signed back in to Tabroom with the saved login", { uid });
+    await sessionRef.set({ ...encryptTabroomSecret(freshToken), validatedAt: syncedAt, reauthenticatedAt: syncedAt }, { merge: true });
+    return refreshTabroomImport(uid, freshToken, syncedAt);
+  }
+};
+
 export const linkTabroomSession = onCall(
   {
     cors: true,
@@ -1042,7 +1111,10 @@ export const linkTabroomSession = onCall(
 
     await db.doc(`tabroomSessions/${uid}`).set({
       userId: uid,
-      ...encryptTabroomToken(token),
+      ...encryptTabroomSecret(token),
+      // Kept encrypted so the calendar keeps syncing after Tabroom ends this
+      // session; never readable by clients and removed on unlink.
+      credentials: encryptTabroomLogin({ email, password }),
       createdAt: linkedAt,
       validatedAt: linkedAt,
     });
@@ -1091,9 +1163,9 @@ export const syncTabroomSession = onCall(
       ),
     ]);
 
-    let token: string;
+    const storedSession = sessionSnapshot.data() as StoredTabroomSession;
     try {
-      token = decryptTabroomToken(sessionSnapshot.data() as EncryptedTabroomSession);
+      decryptTabroomSecret(storedSession);
     } catch {
       console.error("Stored Tabroom session could not be decrypted", { uid });
       await markTabroomSyncFailed(uid, tabroomSessionExpiredMessage, "session-expired");
@@ -1102,7 +1174,7 @@ export const syncTabroomSession = onCall(
     }
 
     try {
-      return await refreshTabroomImport(uid, token, syncedAt);
+      return await refreshWithStoredTabroomSession(uid, sessionRef, storedSession, syncedAt);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to sync Tabroom.";
       if (isTabroomSessionExpired(error)) {
@@ -1131,14 +1203,22 @@ export const refreshLinkedTabroomAccounts = onSchedule(
       await Promise.all(sessions.slice(offset, offset + scheduledTabroomRefreshBatchSize).map(async (session) => {
         const uid = session.id;
         try {
-          const token = decryptTabroomToken(session.data() as EncryptedTabroomSession);
-          await refreshTabroomImport(uid, token, new Date().toISOString());
+          await refreshWithStoredTabroomSession(
+            uid,
+            session.ref,
+            session.data() as StoredTabroomSession,
+            new Date().toISOString(),
+          );
         } catch (error) {
           // An expired session needs the user to link again, exactly as a
           // manual sync would report. Anything else is likely transient, so
           // the last good import stays in place until the next run.
           if (isTabroomSessionExpired(error)) {
-            await markTabroomSyncFailed(uid, tabroomSessionExpiredMessage, "session-expired");
+            await markTabroomSyncFailed(
+              uid,
+              error instanceof Error ? error.message : tabroomSessionExpiredMessage,
+              "session-expired",
+            );
             await session.ref.delete();
             return;
           }
