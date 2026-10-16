@@ -435,6 +435,37 @@ service cloud.firestore {
         && folderDocument(folderId).data.visibility == "public";
     }
 
+    // Owners and collaborators who accepted an invite can manage a folder's
+    // content. Only the owner can rename it, change visibility, or delete it.
+    function isFolderMember(folderId) {
+      let folder = folderDocument(folderId);
+      return isSignedIn()
+        && (folder.data.userId == request.auth.uid
+          || request.auth.uid in folder.data.get("collaboratorIds", []));
+    }
+
+    function folderInviteId(folderId, inviteeId) {
+      return folderId + "__" + inviteeId;
+    }
+
+    function folderBoardLayoutChange() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(["boardOrder", "boardSize", "boardWidth", "boardHeight"]);
+    }
+
+    function stepsByOne(field, previous) {
+      return request.resource.data[field] is int
+        && request.resource.data[field] >= 0
+        && (request.resource.data[field] == previous + 1 || request.resource.data[field] == previous - 1);
+    }
+
+    function commentReactionCountsAreValid() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(["likeCount", "dislikeCount"])
+        && (!("likeCount" in changed) || stepsByOne("likeCount", resource.data.get("likeCount", 0)))
+        && (!("dislikeCount" in changed) || stepsByOne("dislikeCount", resource.data.get("dislikeCount", 0)));
+    }
+
     function countChangesAreValid() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       let oldLikes = ("likeCount" in resource.data) ? resource.data.likeCount : 0;
@@ -453,7 +484,9 @@ service cloud.firestore {
 
     match /folders/{folderId} {
       allow read: if isSignedIn()
-        && (resource.data.userId == request.auth.uid || resource.data.visibility == "public");
+        && (resource.data.userId == request.auth.uid
+          || resource.data.visibility == "public"
+          || request.auth.uid in resource.data.get("collaboratorIds", []));
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.name is string
@@ -466,14 +499,31 @@ service cloud.firestore {
         && request.resource.data.shareCount == 0
         && request.resource.data.commentCount == 0
         && request.resource.data.itemCount == 0
-        && request.resource.data.fileCount == 0;
-      allow update: if ownsExistingResource("userId")
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.name is string
-        && request.resource.data.name.size() > 0
-        && request.resource.data.name.size() <= 60
-        && request.resource.data.visibility in ["public", "private"]
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name", "description", "visibility", "tournamentId", "tournamentName", "updatedAt", "itemCount", "fileCount"])
+        && request.resource.data.fileCount == 0
+        && !("collaboratorIds" in request.resource.data);
+      // Owners edit details and may remove collaborators, but collaborators
+      // are only ever added by accepting an invite.
+      allow update: if (ownsExistingResource("userId")
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 60
+          && request.resource.data.visibility in ["public", "private"]
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name", "description", "visibility", "tournamentId", "tournamentName", "updatedAt", "itemCount", "fileCount", "collaboratorIds"])
+          && request.resource.data.get("collaboratorIds", []).toSet()
+            .difference(resource.data.get("collaboratorIds", []).toSet()).size() == 0)
+        || (request.auth.uid in resource.data.get("collaboratorIds", [])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["itemCount", "fileCount", "updatedAt"]))
+        || (isSignedIn()
+          && exists(/databases/$(database)/documents/folderInvites/$(folderInviteId(folderId, request.auth.uid)))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["collaboratorIds", "updatedAt"])
+          && request.resource.data.collaboratorIds.toSet()
+            == resource.data.get("collaboratorIds", []).toSet().union([request.auth.uid].toSet()))
+        || (isSignedIn()
+          && request.auth.uid in resource.data.get("collaboratorIds", [])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["collaboratorIds", "updatedAt"])
+          && request.resource.data.collaboratorIds.toSet()
+            == resource.data.collaboratorIds.toSet().difference([request.auth.uid].toSet()))
         || (isPublicFolder(folderId) && countChangesAreValid());
       allow delete: if ownsExistingResource("userId");
     }
@@ -484,9 +534,11 @@ service cloud.firestore {
       // while keeping existing items owner/public-folder scoped.
       allow get: if isSignedIn() && (resource == null
         || resource.data.userId == request.auth.uid
+        || isFolderMember(resource.data.folderId)
         || (resource.data.visibility == "public" && isPublicFolder(resource.data.folderId)));
       allow list: if isSignedIn()
         && (resource.data.userId == request.auth.uid
+          || isFolderMember(resource.data.folderId)
           || (resource.data.visibility == "public" && isPublicFolder(resource.data.folderId)));
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
@@ -495,16 +547,44 @@ service cloud.firestore {
         && request.resource.data.itemId is string
         && request.resource.data.itemTitle is string
         && request.resource.data.sourceVisibility in ["public", "private"]
-        && ownsFolder(request.resource.data.folderId)
+        && isFolderMember(request.resource.data.folderId)
         && request.resource.data.visibility == folderDocument(request.resource.data.folderId).data.visibility
         && (request.resource.data.visibility == "private" || request.resource.data.sourceVisibility == "public");
-      allow update: if ownsExistingResource("userId")
-        && request.resource.data.userId == request.auth.uid
+      // Re-adding an item rewrites it as the member who added it; any member
+      // can arrange the board; the owner syncs visibility across all items.
+      allow update: if (isSignedIn()
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.folderId == resource.data.folderId
+          && isFolderMember(request.resource.data.folderId)
+          && request.resource.data.sourceVisibility in ["public", "private"]
+          && request.resource.data.visibility == folderDocument(request.resource.data.folderId).data.visibility
+          && (request.resource.data.visibility == "private" || request.resource.data.sourceVisibility == "public"))
+        || (isFolderMember(resource.data.folderId) && folderBoardLayoutChange())
+        || (ownsFolder(resource.data.folderId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["visibility", "sourceVisibility"])
+          && request.resource.data.visibility == folderDocument(resource.data.folderId).data.visibility);
+      allow delete: if ownsExistingResource("userId") || isFolderMember(resource.data.folderId);
+    }
+
+    match /folderInvites/{inviteId} {
+      allow read: if isSignedIn()
+        && (resource.data.inviteeId == request.auth.uid
+          || resource.data.inviterId == request.auth.uid
+          || ownsFolder(resource.data.folderId));
+      allow create: if isSignedIn()
+        && inviteId == folderInviteId(request.resource.data.folderId, request.resource.data.inviteeId)
+        && request.resource.data.inviterId == request.auth.uid
         && ownsFolder(request.resource.data.folderId)
-        && request.resource.data.sourceVisibility in ["public", "private"]
-        && request.resource.data.visibility == folderDocument(request.resource.data.folderId).data.visibility
-        && (request.resource.data.visibility == "private" || request.resource.data.sourceVisibility == "public");
-      allow delete: if ownsExistingResource("userId") || ownsFolder(resource.data.folderId);
+        && request.resource.data.inviteeId is string
+        && request.resource.data.inviteeId != request.auth.uid
+        && !(request.resource.data.inviteeId in folderDocument(request.resource.data.folderId).data.get("collaboratorIds", []))
+        && request.resource.data.folderName is string
+        && request.resource.data.inviterName is string
+        && request.resource.data.inviteeName is string;
+      allow delete: if isSignedIn()
+        && (resource.data.inviteeId == request.auth.uid
+          || resource.data.inviterId == request.auth.uid
+          || ownsFolder(resource.data.folderId));
     }
 
     match /folderReactions/{reactionId} {
@@ -545,24 +625,42 @@ service cloud.firestore {
         && request.resource.data.content is string
         && request.resource.data.content.size() > 0
         && request.resource.data.content.size() <= 2000
-        && isPublicFolder(request.resource.data.folderId);
+        && isPublicFolder(request.resource.data.folderId)
+        && request.resource.data.get("likeCount", 0) == 0
+        && request.resource.data.get("dislikeCount", 0) == 0;
+      allow update: if isPublicFolder(resource.data.folderId) && commentReactionCountsAreValid();
       allow delete: if ownsExistingResource("userId") || ownsFolder(resource.data.folderId);
+    }
+
+    match /folderCommentReactions/{reactionId} {
+      allow get: if isSignedIn()
+        && (resource == null || resource.data.userId == request.auth.uid);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create, update: if isSignedIn()
+        && reactionId == request.resource.data.commentId + "-" + request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.commentId is string
+        && isPublicFolder(request.resource.data.folderId)
+        && request.resource.data.like is bool
+        && request.resource.data.dislike is bool;
+      allow delete: if ownsExistingResource("userId");
     }
 
     match /folderFiles/{fileId} {
       allow read: if isSignedIn()
         && (resource.data.userId == request.auth.uid
+          || isFolderMember(resource.data.folderId)
           || (resource.data.visibility == "public" && isPublicFolder(resource.data.folderId)));
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
-        && ownsFolder(request.resource.data.folderId)
+        && isFolderMember(request.resource.data.folderId)
         && request.resource.data.visibility == folderDocument(request.resource.data.folderId).data.visibility
         && request.resource.data.storagePath is string;
-      allow update: if ownsExistingResource("userId")
-        && request.resource.data.userId == request.auth.uid
-        && ownsFolder(request.resource.data.folderId)
-        && request.resource.data.visibility == folderDocument(request.resource.data.folderId).data.visibility;
-      allow delete: if ownsExistingResource("userId") || ownsFolder(resource.data.folderId);
+      allow update: if (isFolderMember(resource.data.folderId) && folderBoardLayoutChange())
+        || (ownsFolder(resource.data.folderId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["visibility"])
+          && request.resource.data.visibility == folderDocument(resource.data.folderId).data.visibility);
+      allow delete: if ownsExistingResource("userId") || isFolderMember(resource.data.folderId);
     }
 
     match /channels/{channelId} {

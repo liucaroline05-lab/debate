@@ -11,6 +11,7 @@ import { getStorage } from "firebase-admin/storage";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import OpenAI from "openai";
 import { openAiApiKey } from "./secrets";
 
@@ -545,6 +546,14 @@ const tabroomTournUrl = (tournId: number) =>
 // recent tournaments are enriched with it.
 const maxEnrichedTournaments = 15;
 const maxImportedTournaments = 60;
+// Entry status takes two or more requests per tournament, so it is only
+// checked for the nearest upcoming tournaments.
+const maxStatusCheckedTournaments = 10;
+// Linked accounts are refreshed on a schedule so cancelled, dropped, and
+// waitlisted tournaments show up without the user pressing sync.
+const scheduledTabroomRefreshBatchSize = 5;
+
+type TabroomEntryStatus = "registered" | "waitlisted" | "dropped";
 
 interface TabroomProfileSummary {
   officialUserId: number | null;
@@ -564,6 +573,7 @@ interface TabroomEventRecord {
   judgeCategory: string;
   schoolName: string;
   timezone: string;
+  entryStatus: "registered" | "waitlisted";
 }
 
 interface TabroomTournamentSummary {
@@ -733,6 +743,9 @@ const asTabroomTournaments = (value: unknown) =>
       end: asOptionalString(tourn.end),
       location: formatTabroomLocation(tourn),
       timezone: asOptionalString(tourn.tz),
+      // Tabroom hides cancelled tournaments, and directors often rename them
+      // with a "Cancelled" prefix instead.
+      cancelled: Number(tourn.hidden) === 1 || /\bcancell?ed\b/i.test(asOptionalString(tourn.name)),
     }))
     .filter((tourn) => Number.isFinite(tourn.id) && tourn.id > 0)
     // Newest first. The client re-sorts upcoming tournaments ascending so the
@@ -777,6 +790,76 @@ const fetchTabroomTournamentSummary = async (
   }
 };
 
+const asRecord = (value: unknown) =>
+  value && typeof value === "object" ? value as Record<string, unknown> : {};
+
+const asIdList = (value: unknown) =>
+  (Array.isArray(value) ? value : [])
+    .map(Number)
+    .filter((id) => Number.isFinite(id) && id > 0);
+
+const readTabroomJson = async (response: Response) =>
+  response.ok ? await response.json() as unknown : null;
+
+const fetchPublicTabroomJson = async (path: string) =>
+  readTabroomJson(await tabroomRequest(path, { headers: { accept: "application/json" } }));
+
+/**
+ * Works out whether the user's entries at a tournament are active, waitlisted,
+ * or dropped. `/user/tourns/{id}` lists the user's entry and event IDs, and the
+ * public field report carries each entry's `active` and `waitlist` flags.
+ * Returns null whenever Tabroom does not publish enough to tell, so an
+ * unpublished field report never removes a tournament.
+ */
+const fetchTabroomEntryStatus = async (
+  token: string,
+  tournId: number,
+): Promise<TabroomEntryStatus | null> => {
+  try {
+    const presence = asRecord(
+      await readTabroomJson(await authorizedTabroomRequest(`/user/tourns/${tournId}`, token)),
+    );
+    const me = asRecord(presence.me);
+    const entryIds = new Set(asIdList(me.entries));
+    const eventIds = new Set(asIdList(me.events));
+    if (!entryIds.size || !eventIds.size) return null;
+
+    const invite = asRecord(await fetchPublicTabroomJson(`/rest/tourns/${tournId}/invite`));
+    const eventAbbrs = (Array.isArray(invite.Events) ? invite.Events : [])
+      .map(asRecord)
+      .filter((event) => eventIds.has(Number(event.id)))
+      .map((event) => asOptionalString(event.abbr))
+      .filter(Boolean);
+    if (!eventAbbrs.length) return null;
+
+    const fields = await Promise.all(eventAbbrs.map(async (abbr) =>
+      asRecord(await fetchPublicTabroomJson(
+        `/rest/tourns/${tournId}/events/${encodeURIComponent(abbr)}/field`,
+      ))));
+    if (fields.some((field) => !Array.isArray(field.Entries))) return null;
+
+    const myEntries = fields
+      .flatMap((field) => field.Entries as unknown[])
+      .map(asRecord)
+      .filter((entry) => entryIds.has(Number(entry.id)));
+    if (myEntries.some((entry) => Number(entry.active) === 1 && Number(entry.waitlist) !== 1)) {
+      return "registered";
+    }
+    if (myEntries.some((entry) => Number(entry.waitlist) === 1)) return "waitlisted";
+    if (myEntries.length) return "dropped";
+    // Missing from the field only means dropped when waitlisted entries would
+    // have been listed; otherwise the entry may just be on a hidden waitlist.
+    const waitlistsShown = fields.every((field) => {
+      const setting = asRecord(field.settings).fieldWaitlist;
+      return Boolean(setting) && setting !== "0";
+    });
+    return waitlistsShown ? "dropped" : null;
+  } catch {
+    // A failed status lookup keeps the tournament rather than failing the sync.
+    return null;
+  }
+};
+
 const importTabroomTournaments = async (token: string): Promise<TabroomEventRecord[]> => {
   const response = await authorizedTabroomRequest("/user/tourns", token);
 
@@ -791,7 +874,8 @@ const importTabroomTournaments = async (token: string): Promise<TabroomEventReco
     throw new HttpsError("unavailable", "Tabroom could not return your tournament history.");
   }
 
-  const tournaments = asTabroomTournaments(await response.json() as unknown);
+  const tournaments = asTabroomTournaments(await response.json() as unknown)
+    .filter((tourn) => !tourn.cancelled);
   // Enrich the tournaments a student is most likely to care about: everything
   // still upcoming, then the most recent past ones.
   const now = Date.now();
@@ -803,17 +887,38 @@ const importTabroomTournaments = async (token: string): Promise<TabroomEventReco
   });
   const enrichedIndexes = new Set(enrichmentOrder.slice(0, maxEnrichedTournaments));
 
-  const summaries = await Promise.all(
-    tournaments.map((tourn, index) =>
-      enrichedIndexes.has(index)
-        ? fetchTabroomTournamentSummary(token, tourn.id)
-        : Promise.resolve(emptyTournamentSummary),
-    ),
+  const isUpcoming = (index: number) =>
+    Date.parse(tournaments[index].end || tournaments[index].start) >= now;
+  const statusCheckedIndexes = new Set(
+    [...tournaments.keys()]
+      .filter(isUpcoming)
+      .sort((left, right) => tournaments[left].start.localeCompare(tournaments[right].start))
+      .slice(0, maxStatusCheckedTournaments),
   );
 
-  return tournaments.map((tourn, index) => {
+  const [summaries, statuses] = await Promise.all([
+    Promise.all(
+      tournaments.map((tourn, index) =>
+        enrichedIndexes.has(index)
+          ? fetchTabroomTournamentSummary(token, tourn.id)
+          : Promise.resolve(emptyTournamentSummary),
+      ),
+    ),
+    Promise.all(
+      tournaments.map((tourn, index) =>
+        statusCheckedIndexes.has(index)
+          ? fetchTabroomEntryStatus(token, tourn.id)
+          : Promise.resolve(null),
+      ),
+    ),
+  ]);
+
+  return tournaments.flatMap((tourn, index) => {
     const summary = summaries[index];
-    return {
+    const status = statuses[index];
+    // Dropped entries leave the calendar entirely.
+    if (status === "dropped") return [];
+    return [{
       id: `tabroom-tourn-${tourn.id}`,
       name: tourn.name,
       date: tourn.start || tourn.end || new Date().toISOString(),
@@ -826,7 +931,8 @@ const importTabroomTournaments = async (token: string): Promise<TabroomEventReco
       judgeCategory: summary.judgeCategory,
       schoolName: summary.schoolName,
       timezone: tourn.timezone,
-    };
+      entryStatus: status === "waitlisted" ? "waitlisted" : "registered",
+    } satisfies TabroomEventRecord];
   });
 };
 
@@ -861,6 +967,14 @@ const writeTabroomImport = async (
       errorMessage: FieldValue.delete(),
     }, { merge: true }),
   ]);
+};
+
+const refreshTabroomImport = async (uid: string, token: string, syncedAt: string) => {
+  const profile = await fetchTabroomProfile(token);
+  const events = await importTabroomTournaments(token);
+  await getFirestore().doc(`tabroomSessions/${uid}`).set({ validatedAt: syncedAt }, { merge: true });
+  await writeTabroomImport(uid, profile, events, syncedAt);
+  return { profile, eventCount: events.length };
 };
 
 const markTabroomSyncFailed = async (uid: string, message: string) => {
@@ -956,11 +1070,7 @@ export const syncTabroomSession = onCall(
     }
 
     try {
-      const profile = await fetchTabroomProfile(token);
-      const events = await importTabroomTournaments(token);
-      await sessionRef.set({ validatedAt: syncedAt }, { merge: true });
-      await writeTabroomImport(uid, profile, events, syncedAt);
-      return { profile, eventCount: events.length };
+      return await refreshTabroomImport(uid, token, syncedAt);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to sync Tabroom.";
       await markTabroomSyncFailed(uid, message);
@@ -968,6 +1078,38 @@ export const syncTabroomSession = onCall(
         await sessionRef.delete();
       }
       throw error;
+    }
+  },
+);
+
+export const refreshLinkedTabroomAccounts = onSchedule(
+  {
+    schedule: "every 60 minutes",
+    timeoutSeconds: 540,
+    secrets: [tabroomSessionEncryptionKey],
+  },
+  async () => {
+    const db = getFirestore();
+    const sessions = (await db.collection("tabroomSessions").get()).docs;
+
+    for (let offset = 0; offset < sessions.length; offset += scheduledTabroomRefreshBatchSize) {
+      await Promise.all(sessions.slice(offset, offset + scheduledTabroomRefreshBatchSize).map(async (session) => {
+        const uid = session.id;
+        try {
+          const token = decryptTabroomToken(session.data() as EncryptedTabroomSession);
+          await refreshTabroomImport(uid, token, new Date().toISOString());
+        } catch (error) {
+          // An expired session needs the user to link again, exactly as a
+          // manual sync would report. Anything else is likely transient, so
+          // the last good import stays in place until the next run.
+          if (error instanceof HttpsError && error.code === "unauthenticated") {
+            await markTabroomSyncFailed(uid, error.message);
+            await session.ref.delete();
+            return;
+          }
+          console.error("Scheduled Tabroom refresh failed", { uid, error: getErrorMessage(error) });
+        }
+      }));
     }
   },
 );

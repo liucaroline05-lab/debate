@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Bookmark, MessageCircle, Share2, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { FOLDER_COMMENTS_SECTION_ID } from "@/features/folders/FolderCommentsSection";
 import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import {
   incrementContentFolderShareCount,
@@ -15,6 +16,8 @@ interface FolderEngagementBarProps {
   reaction?: ContentFolderReaction;
   isSaved: boolean;
   compact?: boolean;
+  /** Set on the folder page, where comments expand inline below this bar. */
+  commentsExpanded?: boolean;
   onOpenComments?: () => void;
 }
 
@@ -24,6 +27,7 @@ export const FolderEngagementBar = ({
   reaction,
   isSaved,
   compact = false,
+  commentsExpanded,
   onOpenComments,
 }: FolderEngagementBarProps) => {
   const navigate = useNavigate();
@@ -73,7 +77,7 @@ export const FolderEngagementBar = ({
       <div className={compact ? "folder-engagement-bar is-compact" : "folder-engagement-bar"}>
         <button
           type="button"
-          className="btn btn-toggle"
+          className="btn btn-toggle is-like"
           aria-label={`Like ${folder.name}`}
           aria-pressed={Boolean(reaction?.like)}
           disabled={pending !== null}
@@ -83,7 +87,7 @@ export const FolderEngagementBar = ({
         </button>
         <button
           type="button"
-          className="btn btn-toggle"
+          className="btn btn-toggle is-dislike"
           aria-label={`Dislike ${folder.name}`}
           aria-pressed={Boolean(reaction?.dislike)}
           disabled={pending !== null}
@@ -105,7 +109,15 @@ export const FolderEngagementBar = ({
         <button type="button" className="btn btn-ghost" aria-label={`Share ${folder.name}`} title="Share folder" onClick={() => setShareOpen(true)}>
           <Share2 size={16} aria-hidden="true" /> {!compact ? <span>{folder.shareCount ?? 0}</span> : null}
         </button>
-        <button type="button" className="btn btn-ghost" onClick={openComments} aria-label={`Comments on ${folder.name}`} title="View comments">
+        <button
+          type="button"
+          className={commentsExpanded ? "btn btn-ghost is-active" : "btn btn-ghost"}
+          onClick={openComments}
+          aria-label={`Comments on ${folder.name}`}
+          aria-expanded={commentsExpanded}
+          aria-controls={commentsExpanded === undefined ? undefined : FOLDER_COMMENTS_SECTION_ID}
+          title={commentsExpanded ? "Hide comments" : "View comments"}
+        >
           <MessageCircle size={16} aria-hidden="true" /> {!compact ? <span>{folder.commentCount ?? 0}</span> : null}
         </button>
         {message ? <span className="folder-action-message" role="status">{message}</span> : null}

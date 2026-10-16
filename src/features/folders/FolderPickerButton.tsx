@@ -37,6 +37,17 @@ export const FolderPickerButton = (props: FolderPickerButtonProps) => {
     Boolean(userId),
     userId ? `folders:${userId}` : undefined,
   );
+  const sharedFolderConstraints = useMemo<QueryConstraint[]>(
+    () => userId ? [where("collaboratorIds", "array-contains", userId)] : [],
+    [userId],
+  );
+  const sharedFoldersState = useSeededFirestoreCollection<ContentFolder>(
+    "folders",
+    EMPTY_FOLDERS,
+    sharedFolderConstraints,
+    Boolean(userId),
+    userId ? `folders:shared:${userId}` : undefined,
+  );
   const itemConstraints = useMemo<QueryConstraint[]>(
     () => userId ? [where("userId", "==", userId)] : [],
     [userId],
@@ -48,11 +59,24 @@ export const FolderPickerButton = (props: FolderPickerButtonProps) => {
     Boolean(userId),
     userId ? `folder-items:${userId}` : undefined,
   );
-  const folders = foldersState.data.filter((folder) =>
+  const folders = [...foldersState.data, ...sharedFoldersState.data].filter((folder) =>
     folder.visibility !== "public" || props.itemVisibility === "public",
   );
   const [isOpen, setIsOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState("");
+  // Another collaborator may already have added this item to a shared folder.
+  const isSharedSelection = sharedFoldersState.data.some((folder) => folder.id === selectedFolderId);
+  const sharedItemConstraints = useMemo<QueryConstraint[]>(
+    () => isSharedSelection ? [where("folderId", "==", selectedFolderId)] : [],
+    [isSharedSelection, selectedFolderId],
+  );
+  const sharedItemsState = useSeededFirestoreCollection<ContentFolderItem>(
+    "folderItems",
+    EMPTY_FOLDER_ITEMS,
+    sharedItemConstraints,
+    isSharedSelection,
+    isSharedSelection ? `folder-items:shared:${selectedFolderId}` : undefined,
+  );
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -62,7 +86,7 @@ export const FolderPickerButton = (props: FolderPickerButtonProps) => {
     }
   }, [folders, selectedFolderId]);
 
-  const selectedEntry = itemsState.data.find((entry) =>
+  const selectedEntry = [...itemsState.data, ...sharedItemsState.data].find((entry) =>
     entry.folderId === selectedFolderId
     && entry.itemType === props.itemType
     && entry.itemId === props.itemId,
@@ -149,7 +173,7 @@ export const FolderPickerButton = (props: FolderPickerButtonProps) => {
             </p>
           )}
           {message ? <p className="meta-line" role="status">{message}</p> : null}
-          {foldersState.error || itemsState.error ? <p className="folder-error" role="alert">Folders could not load.</p> : null}
+          {foldersState.error || sharedFoldersState.error || itemsState.error ? <p className="folder-error" role="alert">Folders could not load.</p> : null}
         </section>
       ) : null}
     </div>

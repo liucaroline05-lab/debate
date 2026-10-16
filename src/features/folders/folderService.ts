@@ -1,5 +1,6 @@
 import {
-  addDoc,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -18,13 +19,28 @@ import type {
   CommunityAttachment,
   ContentFolder,
   ContentFolderComment,
+  ContentFolderCommentReaction,
   ContentFolderFile,
+  ContentFolderInvite,
   ContentFolderItem,
   ContentFolderReaction,
   FolderItemType,
 } from "@/types/models";
 
 const MAX_FOLDER_FILE_SIZE = 100 * 1024 * 1024;
+
+export const isContentFolderMember = (folder: Pick<ContentFolder, "userId" | "collaboratorIds">, userId?: string) =>
+  Boolean(userId && (folder.userId === userId || folder.collaboratorIds?.includes(userId)));
+
+// Collaborators add items and files under their own user ID, so folder-wide
+// operations look children up by folder rather than by owner.
+const getFolderChildren = async (folderId: string) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  return Promise.all([
+    getDocs(query(collection(firestore, "folderItems"), where("folderId", "==", folderId))),
+    getDocs(query(collection(firestore, "folderFiles"), where("folderId", "==", folderId))),
+  ]);
+};
 
 export interface NewFolderInput {
   userId: string;
@@ -83,11 +99,7 @@ export const updateContentFolder = async (
 ) => {
   if (!firestore) throw new Error("Firestore is not configured.");
   if (folder.visibility !== "public" && updates.visibility === "public") {
-    const items = await getDocs(query(
-      collection(firestore, "folderItems"),
-      where("userId", "==", folder.userId),
-      where("folderId", "==", folderId),
-    ));
+    const items = await getDocs(query(collection(firestore, "folderItems"), where("folderId", "==", folderId)));
     const privateItems = items.docs.filter((item) => {
       const data = item.data() as Partial<ContentFolderItem>;
       // Resources are always public. Older speech and debate references did
@@ -104,10 +116,7 @@ export const updateContentFolder = async (
   });
   if (folder.visibility === updates.visibility) return;
 
-  const [items, files] = await Promise.all([
-    getDocs(query(collection(firestore, "folderItems"), where("userId", "==", folder.userId), where("folderId", "==", folderId))),
-    getDocs(query(collection(firestore, "folderFiles"), where("userId", "==", folder.userId), where("folderId", "==", folderId))),
-  ]);
+  const [items, files] = await getFolderChildren(folderId);
   const children = [
     ...items.docs.map((item) => {
       const data = item.data() as Partial<ContentFolderItem>;
@@ -150,10 +159,10 @@ export const addContentToFolder = async (input: NewFolderItemInput) => {
       transaction.get(folderRef),
       transaction.get(itemRef),
     ]);
-    if (!folderSnapshot.exists() || folderSnapshot.data().userId !== input.userId) {
-      throw new Error("You can only add items to your own folders.");
+    const folderData = folderSnapshot.exists() ? folderSnapshot.data() as ContentFolder : null;
+    if (!folderData || !isContentFolderMember(folderData, input.userId)) {
+      throw new Error("You can only add items to folders you own or collaborate on.");
     }
-    const folderData = folderSnapshot.data() as Partial<ContentFolder>;
     const effectiveVisibility = folderData.visibility === "public" ? "public" : "private";
     if (effectiveVisibility !== input.visibility) {
       throw new Error("This folder's visibility changed. Refresh and try again.");
@@ -162,10 +171,12 @@ export const addContentToFolder = async (input: NewFolderItemInput) => {
       throw new Error("Private content can only be added to a private folder.");
     }
     transaction.set(itemRef, folderItem);
-    if (!itemSnapshot.exists() || !folderData.visibility) {
+    // Only the owner may backfill a legacy folder's missing visibility.
+    const backfillVisibility = !folderData.visibility && folderData.userId === input.userId;
+    if (!itemSnapshot.exists() || backfillVisibility) {
       transaction.update(folderRef, {
         ...(itemSnapshot.exists() ? {} : { itemCount: (folderData.itemCount ?? 0) + 1 }),
-        ...(!folderData.visibility ? { visibility: effectiveVisibility } : {}),
+        ...(backfillVisibility ? { visibility: effectiveVisibility } : {}),
         updatedAt: addedAt,
       });
     }
@@ -385,6 +396,111 @@ export const deleteContentFolderComment = async (comment: ContentFolderComment) 
   });
 };
 
+export const toggleContentFolderCommentReaction = async (
+  comment: ContentFolderComment,
+  userId: string,
+  reaction: "like" | "dislike",
+) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const commentRef = doc(firestore, "folderComments", comment.id);
+  const reactionId = `${comment.id}-${userId}`;
+  const reactionRef = doc(firestore, "folderCommentReactions", reactionId);
+
+  return runTransaction(firestore, async (transaction) => {
+    const commentSnapshot = await transaction.get(commentRef);
+    if (!commentSnapshot.exists()) throw new Error("This comment was removed.");
+    const current = commentSnapshot.data() as ContentFolderComment;
+    const reactionSnapshot = await transaction.get(reactionRef);
+    const previous = reactionSnapshot.exists()
+      ? reactionSnapshot.data() as Partial<ContentFolderCommentReaction>
+      : {};
+    const next = {
+      like: Boolean(previous.like),
+      dislike: Boolean(previous.dislike),
+    };
+    if (reaction === "like") {
+      next.like = !next.like;
+      if (next.like) next.dislike = false;
+    } else {
+      next.dislike = !next.dislike;
+      if (next.dislike) next.like = false;
+    }
+    transaction.set(reactionRef, {
+      id: reactionId,
+      commentId: comment.id,
+      folderId: comment.folderId,
+      userId,
+      ...next,
+      createdAt: new Date().toISOString(),
+    } satisfies ContentFolderCommentReaction);
+    // Same as folder reactions: only counters that move are written.
+    const likeDelta = Number(next.like) - Number(previous.like ?? false);
+    const dislikeDelta = Number(next.dislike) - Number(previous.dislike ?? false);
+    if (likeDelta || dislikeDelta) {
+      transaction.update(commentRef, {
+        ...(likeDelta ? { likeCount: Math.max(0, (current.likeCount ?? 0) + likeDelta) } : {}),
+        ...(dislikeDelta ? { dislikeCount: Math.max(0, (current.dislikeCount ?? 0) + dislikeDelta) } : {}),
+      });
+    }
+    return next;
+  });
+};
+
+const folderInviteId = (folderId: string, inviteeId: string) => `${folderId}__${inviteeId}`;
+
+export const inviteContentFolderCollaborator = async (
+  folder: ContentFolder,
+  inviter: { id: string; displayName: string },
+  invitee: { id: string; displayName: string },
+) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  if (folder.userId !== inviter.id) throw new Error("Only the folder owner can invite collaborators.");
+  if (invitee.id === folder.userId) throw new Error("You already own this folder.");
+  if (folder.collaboratorIds?.includes(invitee.id)) throw new Error(`${invitee.displayName} is already a collaborator.`);
+  const id = folderInviteId(folder.id, invitee.id);
+  const invite: ContentFolderInvite = {
+    id,
+    folderId: folder.id,
+    folderName: folder.name,
+    inviterId: inviter.id,
+    inviterName: inviter.displayName,
+    inviteeId: invitee.id,
+    inviteeName: invitee.displayName,
+    createdAt: new Date().toISOString(),
+  };
+  await setDoc(doc(firestore, "folderInvites", id), invite);
+  return invite;
+};
+
+/** Declines an invite, or cancels it when called by the folder owner. */
+export const removeContentFolderInvite = async (inviteId: string) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  await deleteDoc(doc(firestore, "folderInvites", inviteId));
+};
+
+export const acceptContentFolderInvite = async (invite: ContentFolderInvite, userId: string) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  if (invite.inviteeId !== userId) throw new Error("This invite is for someone else.");
+  // A batch, not a transaction: invitees cannot read a private folder until
+  // they have joined it. Rules confirm the invite exists before the join.
+  const batch = writeBatch(firestore);
+  batch.update(doc(firestore, "folders", invite.folderId), {
+    collaboratorIds: arrayUnion(userId),
+    updatedAt: new Date().toISOString(),
+  });
+  batch.delete(doc(firestore, "folderInvites", invite.id));
+  await batch.commit();
+};
+
+/** Removes a collaborator; the owner can remove anyone, collaborators can leave. */
+export const removeContentFolderCollaborator = async (folderId: string, collaboratorId: string) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  await updateDoc(doc(firestore, "folders", folderId), {
+    collaboratorIds: arrayRemove(collaboratorId),
+    updatedAt: new Date().toISOString(),
+  });
+};
+
 const getAttachmentKind = (contentType: string): CommunityAttachment["kind"] => {
   if (contentType.startsWith("image/")) return "image";
   if (contentType.startsWith("video/")) return "video";
@@ -397,6 +513,7 @@ const safeFileName = (name: string) => name.replace(/[^a-zA-Z0-9._-]+/g, "-").sl
 
 export const uploadContentFolderFiles = async (
   folder: ContentFolder,
+  uploaderId: string,
   files: File[],
   currentFileCount: number,
 ) => {
@@ -405,7 +522,7 @@ export const uploadContentFolderFiles = async (
   if (!database || !configuredStorage) throw new Error("Firebase Storage is not configured.");
   if (files.length === 0) return [] as ContentFolderFile[];
   const visibility = folder.visibility === "public" ? "public" : "private";
-  if (!folder.visibility) {
+  if (!folder.visibility && folder.userId === uploaderId) {
     await updateDoc(doc(database, "folders", folder.id), { visibility, updatedAt: new Date().toISOString() });
   }
   const uploaded: ContentFolderFile[] = [];
@@ -414,16 +531,16 @@ export const uploadContentFolderFiles = async (
       throw new Error(`${file.name} is larger than the 100 MB upload limit.`);
     }
     const id = doc(collection(database, "folderFiles")).id;
-    const storagePath = `folders/${folder.userId}/${folder.id}/${id}-${Date.now()}-${index}-${safeFileName(file.name)}`;
+    const storagePath = `folders/${uploaderId}/${folder.id}/${id}-${Date.now()}-${index}-${safeFileName(file.name)}`;
     const assetRef = ref(configuredStorage, storagePath);
     await uploadBytes(assetRef, file, {
       contentType: file.type || "application/octet-stream",
-      customMetadata: { userId: folder.userId, folderId: folder.id, originalName: file.name },
+      customMetadata: { userId: uploaderId, folderId: folder.id, originalName: file.name },
     });
     uploaded.push({
       id,
       folderId: folder.id,
-      userId: folder.userId,
+      userId: uploaderId,
       name: file.name,
       url: await getDownloadURL(assetRef),
       storagePath,
@@ -460,11 +577,11 @@ export const deleteContentFolderFile = async (
   await batch.commit();
 };
 
-export const deleteContentFolder = async (folderId: string, userId: string) => {
+export const deleteContentFolder = async (folderId: string) => {
   if (!firestore) throw new Error("Firestore is not configured.");
-  const [items, files] = await Promise.all([
-    getDocs(query(collection(firestore, "folderItems"), where("userId", "==", userId), where("folderId", "==", folderId))),
-    getDocs(query(collection(firestore, "folderFiles"), where("userId", "==", userId), where("folderId", "==", folderId))),
+  const [[items, files], invites] = await Promise.all([
+    getFolderChildren(folderId),
+    getDocs(query(collection(firestore, "folderInvites"), where("folderId", "==", folderId))),
   ]);
   if (storage) {
     await Promise.all(files.docs.map(async (file) => {
@@ -472,7 +589,7 @@ export const deleteContentFolder = async (folderId: string, userId: string) => {
       try { await deleteObject(ref(storage!, data.storagePath)); } catch { /* Remove stale metadata even when an object is already gone. */ }
     }));
   }
-  const children = [...items.docs, ...files.docs];
+  const children = [...items.docs, ...files.docs, ...invites.docs];
   for (let offset = 0; offset < children.length; offset += 450) {
     const batch = writeBatch(firestore);
     children.slice(offset, offset + 450).forEach((child) => batch.delete(child.ref));

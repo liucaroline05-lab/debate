@@ -445,8 +445,22 @@ export interface ContentFolder {
   commentCount?: number;
   itemCount?: number;
   fileCount?: number;
+  /** Members who accepted an invite; they can add, remove, and arrange content. */
+  collaboratorIds?: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** A pending invitation to collaborate on a folder; removed once answered. */
+export interface ContentFolderInvite {
+  id: string;
+  folderId: string;
+  folderName: string;
+  inviterId: string;
+  inviterName: string;
+  inviteeId: string;
+  inviteeName: string;
+  createdAt: string;
 }
 
 /** A user's saved pointer to a speech, async debate, or resource. */
@@ -492,6 +506,18 @@ export interface ContentFolderComment {
   authorName: string;
   content: string;
   visibility: "public";
+  likeCount?: number;
+  dislikeCount?: number;
+  createdAt: string;
+}
+
+export interface ContentFolderCommentReaction {
+  id: string;
+  commentId: string;
+  folderId: string;
+  userId: string;
+  like: boolean;
+  dislike: boolean;
   createdAt: string;
 }
 
@@ -680,6 +706,8 @@ export interface TabroomEvent {
   judgeCategory?: string;
   schoolName?: string;
   timezone?: string;
+  /** Checked for upcoming tournaments; dropped and cancelled ones are not imported. */
+  entryStatus?: "registered" | "waitlisted" | "dropped" | "cancelled";
 }
 
 export interface TabroomImport {

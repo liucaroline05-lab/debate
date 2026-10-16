@@ -893,6 +893,12 @@ button {
   font-weight: 700;
 }
 
+.dashboard-calendar-day.has-event.is-waitlisted {
+  background: rgba(234, 179, 8, 0.26);
+  color: #7a5b00;
+  font-weight: 700;
+}
+
 .dashboard-calendar-day.has-event:hover,
 .dashboard-calendar-day.has-event:focus-visible {
   transform: translateY(-1px);
@@ -957,6 +963,10 @@ button {
 
 .dashboard-calendar-legend-swatch.is-past {
   background: rgba(234, 121, 103, 0.58);
+}
+
+.dashboard-calendar-legend-swatch.is-waitlisted {
+  background: rgba(234, 179, 8, 0.6);
 }
 
 .dashboard-calendar-events-heading .eyebrow {
@@ -1027,6 +1037,24 @@ button {
 .dashboard-upcoming-date strong {
   font-size: 0.62rem;
   letter-spacing: 0.09em;
+}
+
+.dashboard-upcoming-event.is-waitlisted .dashboard-upcoming-date {
+  background: rgba(234, 179, 8, 0.22);
+  color: #7a5b00;
+}
+
+.dashboard-upcoming-waitlist {
+  justify-self: start;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(234, 179, 8, 0.2);
+  color: #7a5b00;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .dashboard-upcoming-date b {
@@ -1105,6 +1133,11 @@ button {
 .dashboard-event-status.is-past {
   background: rgba(234, 121, 103, 0.18);
   color: #9b4f41;
+}
+
+.dashboard-event-status.is-waitlisted {
+  background: rgba(234, 179, 8, 0.2);
+  color: #7a5b00;
 }
 
 .dashboard-event-detail h3 {
@@ -6313,6 +6346,25 @@ button {
   font-size: 0.78rem;
 }
 
+/* Match the green/red like and dislike states used on posts and debates. */
+.folder-engagement-bar .btn-toggle.is-like[aria-pressed="true"] {
+  background: rgba(118, 128, 107, 0.16);
+  border-color: rgba(78, 90, 71, 0.35);
+  color: var(--color-moss);
+}
+
+.folder-engagement-bar .btn-toggle.is-dislike[aria-pressed="true"] {
+  background: rgba(234, 121, 103, 0.14);
+  border-color: rgba(234, 121, 103, 0.35);
+  color: var(--color-terracotta);
+}
+
+.folder-engagement-bar .btn-toggle.is-like[aria-pressed="true"] svg,
+.folder-engagement-bar .btn-toggle.is-dislike[aria-pressed="true"] svg {
+  color: currentColor;
+  fill: none;
+}
+
 .folder-action-message {
   width: 100%;
   color: var(--color-muted);
@@ -6886,42 +6938,57 @@ button {
   background: rgba(245, 239, 230, 0.68);
 }
 
-.folder-comments-modal-backdrop {
-  position: fixed;
-  z-index: 70;
-  inset: 0;
+/* Comments slide open below the engagement bar. Animating grid rows from 0fr
+   to 1fr reveals the panel at its natural height without measuring it. */
+.folder-comments-reveal {
   display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: rgba(36, 32, 28, 0.45);
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 360ms cubic-bezier(0.2, 0.75, 0.25, 1), opacity 260ms ease;
 }
 
-.folder-comments-dialog {
+.folder-comments-reveal.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.folder-comments-reveal-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.folder-comments-panel {
   display: grid;
   gap: 0.9rem;
-  width: min(46rem, 100%);
-  max-height: calc(100dvh - 2rem);
-  overflow-y: auto;
-  padding: clamp(1.1rem, 3vw, 1.7rem);
-  border: 1px solid rgba(53, 47, 42, 0.1);
-  border-radius: 24px;
-  background: var(--color-white);
-  box-shadow: 0 24px 60px rgba(53, 47, 42, 0.28);
+  margin-top: 1rem;
+  transform: translateY(-0.75rem);
+  transition: transform 360ms cubic-bezier(0.2, 0.75, 0.25, 1);
 }
 
-.folder-comments-dialog-header {
+.folder-comments-reveal.is-open .folder-comments-panel {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .folder-comments-reveal,
+  .folder-comments-panel {
+    transition: none;
+  }
+}
+
+.folder-comments-panel-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
 }
 
-.folder-comments-dialog-header .eyebrow,
-.folder-comments-dialog-header h2 {
+.folder-comments-panel-header .eyebrow,
+.folder-comments-panel-header h2 {
   margin: 0;
 }
 
-.folder-comments-dialog-header h2 {
+.folder-comments-panel-header h2 {
   margin-top: 0.2rem;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 1.7rem;
@@ -6933,8 +7000,104 @@ button {
   font-size: 0.9rem;
 }
 
-.folder-comments-dialog .folder-comment-list {
-  max-height: min(42dvh, 24rem);
-  overflow-y: auto;
-  padding-right: 0.2rem;
+.folder-engagement-bar .btn-ghost.is-active {
+  background: rgba(118, 128, 107, 0.12);
+  color: var(--color-moss);
+}
+
+.folder-collaborators {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1.4rem;
+}
+
+.folder-collaborator-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folder-collaborator-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.6rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid rgba(53, 47, 42, 0.08);
+  border-radius: 14px;
+  background: rgba(245, 239, 230, 0.55);
+}
+
+.folder-collaborator-list.is-results li {
+  background: rgba(255, 253, 248, 0.92);
+}
+
+.folder-collaborator-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.folder-collaborator-name small {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+.folder-collaborator-list .btn {
+  flex: 0 0 auto;
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.folder-collaborator-subheading {
+  margin: 0.4rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.folder-invite-search {
+  width: 100%;
+}
+
+.folder-invites {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.folder-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--color-moss);
+}
+
+.folder-invite p {
+  flex: 1 1 16rem;
+  margin: 0;
+  color: var(--color-charcoal);
+}
+
+.folder-invite .button-row {
+  gap: 0.5rem;
+}
+
+.folder-shared-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: fit-content;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(118, 128, 107, 0.14);
+  color: var(--color-moss);
+  font-size: 0.75rem;
+  font-weight: 600;
 }

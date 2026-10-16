@@ -21,19 +21,21 @@ import {
   SlidersHorizontal,
   Trash2,
   Upload,
+  UsersRound,
   Video,
-  X,
 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { seededDebates, seededResources } from "@/data/firestoreSeeds";
+import { FolderCollaboratorsPanel } from "@/features/folders/FolderCollaboratorsPanel";
+import { FolderCommentsSection } from "@/features/folders/FolderCommentsSection";
 import { FolderEngagementBar } from "@/features/folders/FolderEngagementBar";
+import { FolderInvitesBanner } from "@/features/folders/FolderInvitesBanner";
 import { useAuth } from "@/features/auth/AuthContext";
 import {
-  addContentFolderComment,
   createContentFolder,
   deleteContentFolder,
-  deleteContentFolderComment,
   deleteContentFolderFile,
+  isContentFolderMember,
   saveContentFolderBoardOrder,
   saveContentFolderBoardDimensions,
   updateContentFolder,
@@ -42,7 +44,6 @@ import {
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type {
   ContentFolder,
-  ContentFolderComment,
   ContentFolderFile,
   ContentFolderItem,
   ContentFolderReaction,
@@ -56,7 +57,6 @@ import type {
 
 const EMPTY_FOLDERS: ContentFolder[] = [];
 const EMPTY_FOLDER_ITEMS: ContentFolderItem[] = [];
-const EMPTY_FOLDER_COMMENTS: ContentFolderComment[] = [];
 const EMPTY_FOLDER_FILES: ContentFolderFile[] = [];
 const EMPTY_FOLDER_REACTIONS: ContentFolderReaction[] = [];
 const EMPTY_FOLDER_SAVES: ContentFolderSave[] = [];
@@ -164,6 +164,14 @@ export const FoldersPage = () => {
     "folders", EMPTY_FOLDERS, publicFolderConstraints, Boolean(userId),
     "folders:public",
   );
+  const sharedFolderConstraints = useMemo<QueryConstraint[]>(
+    () => userId ? [where("collaboratorIds", "array-contains", userId)] : [],
+    [userId],
+  );
+  const sharedFoldersState = useSeededFirestoreCollection<ContentFolder>(
+    "folders", EMPTY_FOLDERS, sharedFolderConstraints, Boolean(userId),
+    userId ? `folders:shared:${userId}` : undefined,
+  );
   const ownerFolderItemsState = useSeededFirestoreCollection<ContentFolderItem>(
     "folderItems", EMPTY_FOLDER_ITEMS, ownerConstraints, Boolean(userId),
     userId ? `folder-items:${userId}` : undefined,
@@ -184,16 +192,19 @@ export const FoldersPage = () => {
   const resourceState = useSeededFirestoreCollection<ResourceItem>("resources", seededResources);
 
   const allFolders = useMemo(() => Array.from(new Map(
-    [...foldersState.data, ...publicFoldersState.data].map((folder) => [folder.id, folder]),
-  ).values()).sort((left, right) => right.createdAt.localeCompare(left.createdAt)), [foldersState.data, publicFoldersState.data]);
+    [...foldersState.data, ...publicFoldersState.data, ...sharedFoldersState.data].map((folder) => [folder.id, folder]),
+  ).values()).sort((left, right) => right.createdAt.localeCompare(left.createdAt)), [foldersState.data, publicFoldersState.data, sharedFoldersState.data]);
   const selectedFolder = allFolders.find((folder) => folder.id === folderId);
   const isFolderOwner = Boolean(selectedFolder && selectedFolder.userId === userId);
+  const canEditFolder = Boolean(selectedFolder && isContentFolderMember(selectedFolder, userId));
 
   const selectedContentConstraints = useMemo<QueryConstraint[]>(() => {
     if (!folderId || !selectedFolder || !userId) return [];
+    // Private folders are readable by their owner and collaborators, whose
+    // items are each stored under the member who added them.
     return folderVisibility(selectedFolder) === "public"
       ? [where("folderId", "==", folderId), where("visibility", "==", "public")]
-      : [where("folderId", "==", folderId), where("userId", "==", userId)];
+      : [where("folderId", "==", folderId)];
   }, [folderId, selectedFolder, userId]);
   const selectedFolderItemsState = useSeededFirestoreCollection<ContentFolderItem>(
     "folderItems", EMPTY_FOLDER_ITEMS, selectedContentConstraints,
@@ -202,16 +213,6 @@ export const FoldersPage = () => {
   const selectedFolderFilesState = useSeededFirestoreCollection<ContentFolderFile>(
     "folderFiles", EMPTY_FOLDER_FILES, selectedContentConstraints,
     Boolean(folderId && selectedFolder), folderId && selectedFolder ? `folder-files:${folderId}:${folderVisibility(selectedFolder)}` : undefined,
-  );
-  const commentConstraints = useMemo<QueryConstraint[]>(() =>
-    folderId && selectedFolder && folderVisibility(selectedFolder) === "public"
-      ? [where("folderId", "==", folderId), where("visibility", "==", "public")]
-      : [],
-  [folderId, selectedFolder]);
-  const commentsState = useSeededFirestoreCollection<ContentFolderComment>(
-    "folderComments", EMPTY_FOLDER_COMMENTS, commentConstraints,
-    Boolean(folderId && selectedFolder && folderVisibility(selectedFolder) === "public"),
-    folderId && selectedFolder ? `folder-comments:${folderId}:${folderVisibility(selectedFolder)}` : undefined,
   );
   const personalConstraints = useMemo<QueryConstraint[]>(
     () => userId ? [where("userId", "==", userId)] : [],
@@ -237,9 +238,6 @@ export const FoldersPage = () => {
   const [savedOnly, setSavedOnly] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [commentDraft, setCommentDraft] = useState("");
-  const [commentBusy, setCommentBusy] = useState(false);
-  const [commentNotice, setCommentNotice] = useState("");
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [isBoardEditing, setIsBoardEditing] = useState(false);
   const [boardOrderOverride, setBoardOrderOverride] = useState<string[] | null>(null);
@@ -469,15 +467,6 @@ export const FoldersPage = () => {
     setSearchParams(nextSearchParams, { replace: true });
   }, [folderId, searchParams, setSearchParams]);
 
-  useEffect(() => {
-    if (!commentsOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setCommentsOpen(false);
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [commentsOpen]);
-
   const allEvents = useMemo(() => {
     const events = importState.data.flatMap((entry) => entry.events ?? []);
     return Array.from(new Map(events.map((event) => [event.id, event])).values())
@@ -495,7 +484,7 @@ export const FoldersPage = () => {
     const normalizedQuery = queryText.trim().toLowerCase();
     return allFolders.filter((folder) => {
       const isPublic = folderVisibility(folder) === "public";
-      if (!isPublic && folder.userId !== userId) return false;
+      if (!isPublic && !isContentFolderMember(folder, userId)) return false;
       if (visibilityFilter === "Public" && !isPublic) return false;
       if (visibilityFilter === "Private" && isPublic) return false;
       if (savedOnly && !savedFolderIds.has(folder.id)) return false;
@@ -558,7 +547,7 @@ export const FoldersPage = () => {
     setBusy(true);
     setMessage("");
     try {
-      await deleteContentFolder(selectedFolder.id, userId);
+      await deleteContentFolder(selectedFolder.id);
       navigate("/app/folders");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to delete this folder.");
@@ -586,35 +575,12 @@ export const FoldersPage = () => {
     }
   };
 
-  const handleComment = async () => {
-    if (!selectedFolder || !currentUser) return;
-    setCommentBusy(true);
-    setCommentNotice("");
-    try {
-      await addContentFolderComment(selectedFolder.id, currentUser.id, currentUser.displayName, commentDraft);
-      setCommentDraft("");
-      setCommentNotice("Comment posted.");
-    } catch (error) {
-      setCommentNotice(error instanceof Error ? error.message : "Unable to post this comment.");
-    } finally {
-      setCommentBusy(false);
-    }
-  };
-
-  const handleDeleteComment = async (comment: ContentFolderComment) => {
-    try {
-      await deleteContentFolderComment(comment);
-    } catch (error) {
-      setCommentNotice(error instanceof Error ? error.message : "Unable to remove this comment.");
-    }
-  };
-
   const handleUploadFiles = async () => {
-    if (!selectedFolder || !isFolderOwner || fileDraft.length === 0) return;
+    if (!selectedFolder || !canEditFolder || !userId || fileDraft.length === 0) return;
     setFileBusy(true);
     setFileNotice("");
     try {
-      await uploadContentFolderFiles(selectedFolder, fileDraft, selectedFolderFilesState.data.length);
+      await uploadContentFolderFiles(selectedFolder, userId, fileDraft, selectedFolderFilesState.data.length);
       setFileDraft([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
       setFileNotice("Files uploaded.");
@@ -626,7 +592,7 @@ export const FoldersPage = () => {
   };
 
   const handleDeleteFile = async (file: ContentFolderFile) => {
-    if (!selectedFolder || !isFolderOwner) return;
+    if (!selectedFolder || !canEditFolder) return;
     if (!window.confirm(`Remove “${file.name}” from this folder?`)) return;
     try {
       await deleteContentFolderFile(selectedFolder, file, Math.max(0, selectedFolderFilesState.data.length - 1));
@@ -680,7 +646,6 @@ export const FoldersPage = () => {
       );
     }
 
-    const sortedComments = [...commentsState.data].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     const sortedFiles = [...selectedFolderFilesState.data].sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt));
     const boardCards: FolderBoardEntry[] = [
       ...selectedFolderItemsState.data.map((item) => ({ kind: "item" as const, sortAt: item.addedAt, item })),
@@ -852,7 +817,9 @@ export const FoldersPage = () => {
                   <option value="public">Public</option>
                 </select>
               </label>
-            ) : <span className="folder-visibility-pill"><FolderOpen size={15} /> Public</span>}
+            ) : folderVisibility(selectedFolder) === "public"
+              ? <span className="folder-visibility-pill"><FolderOpen size={15} /> Public</span>
+              : <span className="folder-visibility-pill"><LockKeyhole size={15} /> Private · shared with you</span>}
             {isFolderOwner ? <button type="button" className="btn btn-ghost folder-delete-button" disabled={busy} onClick={() => void handleDeleteFolder()}><Trash2 size={16} aria-hidden="true" /> Delete folder</button> : null}
           </div>
         </header>
@@ -864,11 +831,11 @@ export const FoldersPage = () => {
             <div><p className="eyebrow">Your collection</p><h2 id="folder-board-heading">Board</h2></div>
             <div className="folder-board-heading-actions">
               <span className="meta-line">{boardCards.length} item{boardCards.length === 1 ? "" : "s"}</span>
-              {isFolderOwner ? <button type="button" className={isBoardEditing ? "btn btn-primary" : "btn btn-secondary"} disabled={boardLayoutBusy} onClick={toggleBoardEditing}>{isBoardEditing ? <Check size={16} aria-hidden="true" /> : <Pencil size={16} aria-hidden="true" />}{isBoardEditing ? "Done editing" : "Edit board"}</button> : null}
+              {canEditFolder ? <button type="button" className={isBoardEditing ? "btn btn-primary" : "btn btn-secondary"} disabled={boardLayoutBusy} onClick={toggleBoardEditing}>{isBoardEditing ? <Check size={16} aria-hidden="true" /> : <Pencil size={16} aria-hidden="true" />}{isBoardEditing ? "Done editing" : "Edit board"}</button> : null}
             </div>
           </div>
           {boardLayoutNotice ? <p className="folder-board-layout-notice" role="status">{boardLayoutNotice}</p> : null}
-          {isFolderOwner ? (
+          {canEditFolder ? (
             <div className="folder-upload-box">
               <div className="file-input-shell forum-file-input">
                 <input ref={fileInputRef} id="folderFiles" type="file" multiple className="file-input-native" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv,.odt,.ods,.odp" onChange={(event) => setFileDraft(Array.from(event.target.files ?? []))} />
@@ -917,7 +884,7 @@ export const FoldersPage = () => {
                       {file.kind === "image" ? <img src={file.url} alt={file.name} loading="lazy" /> : file.kind === "video" ? <video src={`${file.url}#t=0.1`} preload="metadata" muted playsInline aria-label={file.name} /> : <span className="folder-file-icon"><Icon size={25} aria-hidden="true" /></span>}
                       <strong>{file.name}</strong><span className="meta-line">{fileSizeLabel(file.size)}</span>
                     </a>
-                    {isFolderOwner ? <button type="button" className="folder-file-remove" onClick={() => void handleDeleteFile(file)} aria-label={`Remove ${file.name}`}><Trash2 size={15} /></button> : null}
+                    {canEditFolder ? <button type="button" className="folder-file-remove" onClick={() => void handleDeleteFile(file)} aria-label={`Remove ${file.name}`}><Trash2 size={15} /></button> : null}
                     {renderBoardEditControls(card)}
                   </article>
                 );
@@ -935,44 +902,31 @@ export const FoldersPage = () => {
           {selectedFolderFilesState.error ? <p className="folder-error" role="alert">Files could not be loaded: {selectedFolderFilesState.error}</p> : null}
         </section>
 
+        {canEditFolder && currentUser ? (
+          <FolderCollaboratorsPanel folder={selectedFolder} currentUser={{ id: currentUser.id, displayName: currentUser.displayName }} />
+        ) : null}
+
         {folderVisibility(selectedFolder) === "public" ? (
           <FolderEngagementBar
             folder={selectedFolder}
             userId={userId}
             reaction={reactionsByFolder.get(selectedFolder.id)}
             isSaved={savedFolderIds.has(selectedFolder.id)}
-            onOpenComments={() => setCommentsOpen(true)}
+            commentsExpanded={commentsOpen}
+            onOpenComments={() => setCommentsOpen((open) => !open)}
           />
         ) : null}
 
-        {commentsOpen && folderVisibility(selectedFolder) === "public" ? (
-          <div className="folder-comments-modal-backdrop" role="presentation" onClick={() => setCommentsOpen(false)}>
-            <section className="folder-comments-dialog app-card" role="dialog" aria-modal="true" aria-labelledby="folder-comments-heading" onClick={(event) => event.stopPropagation()}>
-              <div className="folder-comments-dialog-header">
-                <div><p className="eyebrow">Community</p><h2 id="folder-comments-heading">Comments</h2></div>
-                <button type="button" className="forum-icon-button" aria-label="Close comments" onClick={() => setCommentsOpen(false)}><X size={19} aria-hidden="true" /></button>
-              </div>
-              <p className="folder-comments-count">{selectedFolder.commentCount ?? sortedComments.length} comments on {selectedFolder.name}</p>
-              <form className="folder-comment-form" onSubmit={(event) => { event.preventDefault(); void handleComment(); }}>
-                <label className="sr-only" htmlFor="folderComment">Write a comment</label>
-                <textarea id="folderComment" maxLength={2000} value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} placeholder="Add a useful note or question about this folder…" />
-                <div className="row-between"><span className="meta-line">{commentDraft.length}/2,000</span><button type="submit" className="btn btn-primary" disabled={commentBusy || !commentDraft.trim()}>{commentBusy ? "Posting…" : "Post comment"}</button></div>
-              </form>
-              {commentNotice ? <p className="meta-line" role="status">{commentNotice}</p> : null}
-              <div className="folder-comment-list">
-                {sortedComments.map((comment) => (
-                  <article className="folder-comment" key={comment.id}>
-                    <div className="row-between"><strong>{comment.authorName}</strong><span className="meta-line">{new Date(comment.createdAt).toLocaleDateString()}</span></div>
-                    <p>{comment.content}</p>
-                    {comment.userId === userId || isFolderOwner ? <button type="button" className="btn btn-ghost" onClick={() => void handleDeleteComment(comment)}>Delete</button> : null}
-                  </article>
-                ))}
-                {sortedComments.length === 0 ? <p className="meta-line">Be the first to comment.</p> : null}
-              </div>
-              {commentsState.error ? <p className="folder-error" role="alert">Comments could not be loaded: {commentsState.error}</p> : null}
-            </section>
-          </div>
+        {folderVisibility(selectedFolder) === "public" && currentUser ? (
+          <FolderCommentsSection
+            folder={selectedFolder}
+            currentUser={{ id: currentUser.id, displayName: currentUser.displayName }}
+            canModerate={isFolderOwner}
+            isOpen={commentsOpen}
+            onClose={() => setCommentsOpen(false)}
+          />
         ) : null}
+
       </>
     );
   }
@@ -1005,7 +959,8 @@ export const FoldersPage = () => {
         </section>
       ) : null}
       {message && !isCreateOpen ? <p className="speech-library-status" role="status">{message}</p> : null}
-      {foldersState.error || publicFoldersState.error || ownerFolderItemsState.error ? <p className="folder-error" role="alert">Folders could not load. {foldersState.error || publicFoldersState.error || ownerFolderItemsState.error}</p> : null}
+      {foldersState.error || publicFoldersState.error || sharedFoldersState.error || ownerFolderItemsState.error ? <p className="folder-error" role="alert">Folders could not load. {foldersState.error || publicFoldersState.error || sharedFoldersState.error || ownerFolderItemsState.error}</p> : null}
+      <FolderInvitesBanner userId={userId} />
 
       <section className="app-card folder-filter-panel" aria-label="Search folders">
         <label className="forum-search resource-search" htmlFor="folderSearch"><Search size={18} aria-hidden="true" /><input id="folderSearch" type="search" placeholder="Search folders, tournaments, or creators" value={queryText} onChange={(event) => setQueryText(event.target.value)} /></label>
@@ -1021,6 +976,7 @@ export const FoldersPage = () => {
           {visibleFolders.map((folder) => {
             const isPublic = folderVisibility(folder) === "public";
             const isOwner = folder.userId === userId;
+            const isShared = !isOwner && isContentFolderMember(folder, userId);
             const itemCount = (folder.itemCount ?? (isOwner ? folderItems.filter((item) => item.folderId === folder.id).length : 0)) + (folder.fileCount ?? 0);
             return (
               <article className="folder-card" key={folder.id}>
@@ -1028,6 +984,7 @@ export const FoldersPage = () => {
                   <div className="folder-card-top"><span className="folder-card-icon"><Folder size={21} aria-hidden="true" /></span><span className={isPublic ? "folder-visibility-pill is-public" : "folder-visibility-pill"}>{isPublic ? <FolderOpen size={14} /> : <LockKeyhole size={14} />}{isPublic ? "Public" : "Private"}</span></div>
                   <h3>{folder.name}</h3>
                   <span className="folder-card-count">{itemCount} item{itemCount === 1 ? "" : "s"}{folder.ownerName ? ` · ${isOwner ? "You" : folder.ownerName}` : ""}</span>
+                  {isShared ? <span className="folder-shared-tag"><UsersRound size={14} aria-hidden="true" /> Shared with you</span> : null}
                   {folder.tournamentName ? <span className="folder-tournament-tag"><CalendarDays size={14} /> {folder.tournamentName}</span> : null}
                   <span className="folder-card-preview">{folder.description || (isPublic ? "Open this public collection to review its summaries and files." : "Open to review your collected materials and files.")}</span>
                   <span className="folder-card-open">Open folder <ChevronRight size={15} /></span>

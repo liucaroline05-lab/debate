@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
 import {
@@ -20,6 +20,7 @@ import {
   seededResources,
 } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
+import { syncTabroomSession } from "@/features/profile/profileService";
 import { deleteSpeechRecord } from "@/features/speeches/speechService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { formatDate, formatDateTime } from "@/lib/date";
@@ -37,6 +38,9 @@ const EMPTY_SPEECH_SEEDS: SpeechRecord[] = [];
 const EMPTY_TABROOM_IMPORTS: TabroomImport[] = [];
 const EMPTY_RESOURCE_SAVES: ResourceSave[] = [];
 const EMPTY_CHANNEL_MEMBERSHIPS: ChannelMembership[] = [];
+// Linked accounts are also refreshed hourly on the server; opening the
+// dashboard pulls a fresh copy sooner when the last sync is older than this.
+const TABROOM_REFRESH_AFTER_MS = 15 * 60 * 1000;
 
 const toDateKey = (date: Date) => {
   const year = date.getFullYear();
@@ -97,8 +101,15 @@ const calendarMonthOptions = Array.from({ length: 12 }, (_, month) => ({
   label: new Intl.DateTimeFormat("en-US", { month: "long" }).format(new Date(2020, month, 1)),
 }));
 
+// Older imports could still hold dropped or cancelled tournaments.
 const uniqueEvents = (events: TabroomImport["events"]) =>
-  Array.from(new Map(events.map((event) => [event.id, event])).values());
+  Array.from(new Map(
+    events
+      .filter((event) => event.entryStatus !== "dropped" && event.entryStatus !== "cancelled")
+      .map((event) => [event.id, event]),
+  ).values());
+
+const isWaitlisted = (event: TabroomImport["events"][number]) => event.entryStatus === "waitlisted";
 
 const debateRecency = (debate: DebateThread) => {
   const timestamp = Date.parse(debate.createdAt ?? debate.updatedAt ?? debate.nextDeadline);
@@ -279,10 +290,13 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
                   const dayEvents = eventsByDate.get(dateKey) ?? [];
                   const isSelected = selectedDate === dateKey;
                   const isPast = dateKey < todayKey;
+                  const dayStatus = isPast
+                    ? "is-past"
+                    : dayEvents.every(isWaitlisted) ? "is-waitlisted" : "is-upcoming";
                   const dayClass = [
                     "dashboard-calendar-day",
                     dayEvents.length > 0 ? "has-event" : "",
-                    dayEvents.length > 0 ? (isPast ? "is-past" : "is-upcoming") : "",
+                    dayEvents.length > 0 ? dayStatus : "",
                     isSelected ? "is-selected" : "",
                   ].filter(Boolean).join(" ");
 
@@ -304,6 +318,7 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
 
               <div className="dashboard-calendar-legend" aria-label="Calendar legend">
                 <span><i className="dashboard-calendar-legend-swatch is-upcoming" /> Upcoming</span>
+                <span><i className="dashboard-calendar-legend-swatch is-waitlisted" /> Waitlisted</span>
                 <span><i className="dashboard-calendar-legend-swatch is-past" /> Past</span>
               </div>
             </>
@@ -323,9 +338,13 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
                   {selectedEvents.map((event) => (
                     <div className="dashboard-event-detail" key={event.id}>
                       <div className="dashboard-event-detail-heading">
-                        <span className={selectedDate < todayKey ? "dashboard-event-status is-past" : "dashboard-event-status is-upcoming"}>
-                          {selectedDate < todayKey ? "Past tournament" : "Upcoming tournament"}
-                        </span>
+                        {selectedDate < todayKey ? (
+                          <span className="dashboard-event-status is-past">Past tournament</span>
+                        ) : isWaitlisted(event) ? (
+                          <span className="dashboard-event-status is-waitlisted">Waitlisted</span>
+                        ) : (
+                          <span className="dashboard-event-status is-upcoming">Upcoming tournament</span>
+                        )}
                         <a href={event.sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open ${event.name} on Tabroom`}>
                           <ExternalLink size={17} aria-hidden="true" />
                         </a>
@@ -365,7 +384,12 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
               {upcomingEvents.length ? (
                 <div className="dashboard-upcoming-list">
                   {upcomingEvents.map((event) => (
-                    <button type="button" className="dashboard-upcoming-event" key={event.id} onClick={() => selectEvent(event)}>
+                    <button
+                      type="button"
+                      className={isWaitlisted(event) ? "dashboard-upcoming-event is-waitlisted" : "dashboard-upcoming-event"}
+                      key={event.id}
+                      onClick={() => selectEvent(event)}
+                    >
                       <span className="dashboard-upcoming-date">
                         <strong>{dateFromKey(eventDateKey(event.date)).toLocaleDateString("en-US", { month: "short" })}</strong>
                         <b>{dateFromKey(eventDateKey(event.date)).getDate()}</b>
@@ -373,6 +397,7 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
                       <span className="dashboard-upcoming-copy">
                         <strong>{event.name}</strong>
                         <span>{formatEventRange(event)}</span>
+                        {isWaitlisted(event) ? <em className="dashboard-upcoming-waitlist">Waitlisted</em> : null}
                         {event.location ? <small><MapPin size={13} aria-hidden="true" /> {event.location}</small> : null}
                       </span>
                       <ChevronRight size={18} aria-hidden="true" />
@@ -475,6 +500,19 @@ export const DashboardPage = () => {
       uniqueEvents(tabroomImportState.data.flatMap((entry) => entry.events ?? [])),
     [tabroomImportState.data],
   );
+  // The import document is watched live, so a background sync that drops a
+  // cancelled tournament updates the calendar as soon as it is written.
+  const tabroomImport = tabroomImportState.data[0];
+  const hasRequestedTabroomRefresh = useRef(false);
+  useEffect(() => {
+    if (!tabroomImport || hasRequestedTabroomRefresh.current) return;
+    if (tabroomImport.status !== "success" || tabroomImport.source !== "tabroom-api") return;
+    const lastSyncedAt = Date.parse(tabroomImport.lastSuccessfulAt ?? "");
+    if (Number.isFinite(lastSyncedAt) && Date.now() - lastSyncedAt < TABROOM_REFRESH_AFTER_MS) return;
+    hasRequestedTabroomRefresh.current = true;
+    // Failures are recorded on the import and shown on the profile page.
+    syncTabroomSession().catch(() => undefined);
+  }, [tabroomImport]);
 
   const handleDeleteSpeech = async (speechId: string) => {
     await deleteSpeechRecord(speechId);

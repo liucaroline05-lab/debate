@@ -126,19 +126,26 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
-    // Folder uploads support common media and document formats. File metadata
-    // controls whether an attachment appears in a public folder; upload and
-    // removal remain restricted to the folder owner.
+    // Folder uploads support common media and document formats. Files are
+    // stored under the uploader's ID; the folder owner and collaborators can
+    // upload, and any of them can remove files from the shared board.
+    function isFolderMember(folderId) {
+      let folder = firestore.get(/databases/(default)/documents/folders/$(folderId));
+      return folder.data.userId == request.auth.uid
+        || request.auth.uid in folder.data.get("collaboratorIds", []);
+    }
+
     match /folders/{userId}/{folderId}/{fileName} {
       allow read: if isSignedIn()
         && (request.auth.uid == userId
-          || firestore.get(/databases/(default)/documents/folders/$(folderId)).data.userId == userId
-            && firestore.get(/databases/(default)/documents/folders/$(folderId)).data.visibility == "public");
+          || isFolderMember(folderId)
+          || firestore.get(/databases/(default)/documents/folders/$(folderId)).data.visibility == "public");
       allow create: if isSignedIn()
         && request.auth.uid == userId
+        && isFolderMember(folderId)
         && request.resource.size <= 100 * 1024 * 1024;
       allow update: if false;
-      allow delete: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if isSignedIn() && (request.auth.uid == userId || isFolderMember(folderId));
     }
 
     // Deny everything else by default.
