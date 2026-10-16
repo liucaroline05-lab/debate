@@ -7086,7 +7086,7 @@ button {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
-  transition: grid-template-rows 360ms cubic-bezier(0.2, 0.75, 0.25, 1), opacity 260ms ease;
+  transition: grid-template-rows 480ms cubic-bezier(0.2, 0.75, 0.25, 1), opacity 320ms ease;
 }
 
 .folder-comments-reveal.is-open {
@@ -7099,12 +7099,17 @@ button {
   overflow: hidden;
 }
 
+/* Once fully open, comment menus may extend past the panel's edge. */
+.folder-comments-reveal.is-settled .folder-comments-reveal-inner {
+  overflow: visible;
+}
+
 .folder-comments-panel {
   display: grid;
   gap: 0.9rem;
   margin-top: 1rem;
   transform: translateY(-0.75rem);
-  transition: transform 360ms cubic-bezier(0.2, 0.75, 0.25, 1);
+  transition: transform 480ms cubic-bezier(0.2, 0.75, 0.25, 1);
 }
 
 .folder-comments-reveal.is-open .folder-comments-panel {
@@ -7140,6 +7145,52 @@ button {
   margin: 0;
   color: var(--color-muted);
   font-size: 0.9rem;
+}
+
+.folder-comment-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.folder-comment-byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+  min-width: 0;
+}
+
+.folder-comment-menu-button {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+}
+
+.folder-comment-edit {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.55rem 0;
+}
+
+.folder-comment-edit textarea {
+  width: 100%;
+  min-height: 5rem;
+  padding: 0.75rem 0.9rem;
+  resize: vertical;
+  border: 1px solid rgba(53, 47, 42, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.95);
+  color: var(--color-charcoal);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.folder-comment-edit .btn {
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
 }
 
 .folder-engagement-bar .btn-ghost.is-active {

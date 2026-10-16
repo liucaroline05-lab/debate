@@ -511,6 +511,7 @@ export interface ContentFolderComment {
   likeCount?: number;
   dislikeCount?: number;
   createdAt: string;
+  editedAt?: string;
 }
 
 export interface ContentFolderCommentReaction {

@@ -373,6 +373,17 @@ export const addContentFolderComment = async (
   });
 };
 
+export const updateContentFolderComment = async (comment: ContentFolderComment, content: string) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const trimmedContent = content.trim();
+  if (!trimmedContent) throw new Error("A comment cannot be empty.");
+  if (trimmedContent.length > 2_000) throw new Error("Comments must be 2,000 characters or fewer.");
+  await updateDoc(doc(firestore, "folderComments", comment.id), {
+    content: trimmedContent,
+    editedAt: new Date().toISOString(),
+  });
+};
+
 export const deleteContentFolderComment = async (comment: ContentFolderComment) => {
   if (!firestore) throw new Error("Firestore is not configured.");
   const folderRef = doc(firestore, "folders", comment.folderId);

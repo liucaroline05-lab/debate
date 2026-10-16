@@ -628,7 +628,14 @@ service cloud.firestore {
         && isPublicFolder(request.resource.data.folderId)
         && request.resource.data.get("likeCount", 0) == 0
         && request.resource.data.get("dislikeCount", 0) == 0;
-      allow update: if isPublicFolder(resource.data.folderId) && commentReactionCountsAreValid();
+      // Reactions adjust the counters; authors may edit only their own text.
+      allow update: if (isPublicFolder(resource.data.folderId) && commentReactionCountsAreValid())
+        || (ownsExistingResource("userId")
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["content", "editedAt"])
+          && request.resource.data.content is string
+          && request.resource.data.content.size() > 0
+          && request.resource.data.content.size() <= 2000
+          && request.resource.data.editedAt is string);
       allow delete: if ownsExistingResource("userId") || ownsFolder(resource.data.folderId);
     }
 
