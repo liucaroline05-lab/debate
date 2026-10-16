@@ -1512,8 +1512,11 @@ button {
   align-items: center;
   gap: 1rem;
   overflow-x: auto;
-  /* Extra vertical room so the enlarged middle card is not clipped. */
-  padding: 1.5rem 3.6rem 1.75rem;
+  /* A horizontally scrolling row also clips vertically, so leave room for
+     the enlarged middle card and its shadow, then pull the next section back
+     up so the page spacing is unchanged. */
+  padding: 1.5rem 3.6rem 3.75rem;
+  margin-bottom: -2.25rem;
   scroll-snap-type: x mandatory;
   scroll-padding-inline: 3.6rem;
   -webkit-overflow-scrolling: touch;
@@ -1532,9 +1535,14 @@ button {
 
 .resource-quick-read-card {
   display: grid;
+  /* Every card is the same size: one-line title, two-line description, and
+     the details pinned to the bottom. */
+  grid-template-rows: auto auto auto 1fr;
+  align-content: start;
   gap: 0.55rem;
   flex: 0 0 calc((100% - 2rem) / 3);
-  min-height: 11rem;
+  min-width: 0;
+  height: 12rem;
   scroll-snap-align: center;
   padding: 1.1rem;
   border: 1px solid rgba(53, 47, 42, 0.12);
@@ -1551,6 +1559,29 @@ button {
   transform: translateY(-2px);
   border-color: rgba(118, 128, 107, 0.36);
   box-shadow: 0 18px 42px rgba(53, 47, 42, 0.15);
+}
+
+.resource-quick-read-card > .pill,
+.resource-quick-read-card > strong,
+.resource-quick-read-card > .meta-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resource-quick-read-card > .card-copy {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.resource-quick-read-card > .meta-line {
+  align-self: end;
+  margin: 0;
 }
 
 /* Side cards recede while the card in the middle of the carousel grows. The
@@ -1570,12 +1601,18 @@ button {
   opacity: 1;
   transform: scale(1.08);
   border-color: rgba(118, 128, 107, 0.36);
-  box-shadow: 0 18px 42px rgba(53, 47, 42, 0.16);
+  box-shadow: 0 14px 30px rgba(53, 47, 42, 0.14);
+}
+
+/* Keep the arrows level with the cards despite the extra bottom padding. */
+.resource-quick-reads-viewport .carousel-button {
+  top: calc(50% - 1.125rem);
 }
 
 .resource-quick-reads-row .resource-quick-read-card:hover {
   opacity: 1;
   transform: scale(0.94) translateY(-2px);
+  box-shadow: 0 14px 30px rgba(53, 47, 42, 0.14);
 }
 
 .resource-quick-reads-row .resource-quick-read-card.is-centered:hover {
