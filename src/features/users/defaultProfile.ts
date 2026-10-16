@@ -50,5 +50,6 @@ export const normalizeUserProfile = (
   activeChannelIds: profile?.activeChannelIds ?? [],
   tabroomProfileUrl: profile?.tabroomProfileUrl?.trim() || undefined,
   showTabroomHistory: profile?.showTabroomHistory ?? false,
+  hidePerformance: profile?.hidePerformance ?? false,
   createdAt: profile?.createdAt || new Date().toISOString(),
 });

@@ -499,6 +499,32 @@ export const FoldersPage = () => {
     });
   }, [allFolders, queryText, savedFolderIds, savedOnly, tournamentFilter, userId, visibilityFilter]);
 
+  // Mirrors the speech library: your own and shared folders first, then public
+  // folders from other members.
+  const myFolders = visibleFolders.filter((folder) => isContentFolderMember(folder, userId));
+  const communityFolders = visibleFolders.filter((folder) => !isContentFolderMember(folder, userId));
+
+  const renderFolderCard = (folder: ContentFolder) => {
+    const isPublic = folderVisibility(folder) === "public";
+    const isOwner = folder.userId === userId;
+    const isShared = !isOwner && isContentFolderMember(folder, userId);
+    const itemCount = (folder.itemCount ?? (isOwner ? folderItems.filter((item) => item.folderId === folder.id).length : 0)) + (folder.fileCount ?? 0);
+    return (
+      <article className="folder-card" key={folder.id}>
+        <Link to={`/app/folders/${folder.id}`} className="folder-card-main">
+          <div className="folder-card-top"><span className="folder-card-icon"><Folder size={21} aria-hidden="true" /></span><span className={isPublic ? "folder-visibility-pill is-public" : "folder-visibility-pill"}>{isPublic ? <FolderOpen size={14} /> : <LockKeyhole size={14} />}{isPublic ? "Public" : "Private"}</span></div>
+          <h3>{folder.name}</h3>
+          <span className="folder-card-count">{itemCount} item{itemCount === 1 ? "" : "s"}{folder.ownerName ? ` · ${isOwner ? "You" : folder.ownerName}` : ""}</span>
+          {isShared ? <span className="folder-shared-tag"><UsersRound size={14} aria-hidden="true" /> Shared with you</span> : null}
+          {folder.tournamentName ? <span className="folder-tournament-tag"><CalendarDays size={14} /> {folder.tournamentName}</span> : null}
+          <span className="folder-card-preview">{folder.description || (isPublic ? "Open this public collection to review its summaries and files." : "Open to review your collected materials and files.")}</span>
+          <span className="folder-card-open">Open folder <ChevronRight size={15} /></span>
+        </Link>
+        {isPublic ? <FolderEngagementBar folder={folder} userId={userId!} reaction={reactionsByFolder.get(folder.id)} isSaved={savedFolderIds.has(folder.id)} compact /> : null}
+      </article>
+    );
+  };
+
   const openCreateFolder = () => {
     setIsCreateOpen(true);
     setMessage("");
@@ -971,31 +997,34 @@ export const FoldersPage = () => {
         <div className="resource-filter-footer"><button type="button" className="btn btn-toggle" aria-pressed={savedOnly} onClick={() => setSavedOnly((value) => !value)}><Bookmark size={16} aria-hidden="true" /> Saved only</button><span className="meta-line">{visibleFolders.length} folder{visibleFolders.length === 1 ? "" : "s"}</span></div>
       </section>
 
-      {foldersState.isLoading && publicFoldersState.isLoading && allFolders.length === 0 ? <section className="app-card folder-empty-state"><p>Loading folders…</p></section> : visibleFolders.length ? (
-        <section className="folder-card-grid" aria-label="Folders">
-          {visibleFolders.map((folder) => {
-            const isPublic = folderVisibility(folder) === "public";
-            const isOwner = folder.userId === userId;
-            const isShared = !isOwner && isContentFolderMember(folder, userId);
-            const itemCount = (folder.itemCount ?? (isOwner ? folderItems.filter((item) => item.folderId === folder.id).length : 0)) + (folder.fileCount ?? 0);
-            return (
-              <article className="folder-card" key={folder.id}>
-                <Link to={`/app/folders/${folder.id}`} className="folder-card-main">
-                  <div className="folder-card-top"><span className="folder-card-icon"><Folder size={21} aria-hidden="true" /></span><span className={isPublic ? "folder-visibility-pill is-public" : "folder-visibility-pill"}>{isPublic ? <FolderOpen size={14} /> : <LockKeyhole size={14} />}{isPublic ? "Public" : "Private"}</span></div>
-                  <h3>{folder.name}</h3>
-                  <span className="folder-card-count">{itemCount} item{itemCount === 1 ? "" : "s"}{folder.ownerName ? ` · ${isOwner ? "You" : folder.ownerName}` : ""}</span>
-                  {isShared ? <span className="folder-shared-tag"><UsersRound size={14} aria-hidden="true" /> Shared with you</span> : null}
-                  {folder.tournamentName ? <span className="folder-tournament-tag"><CalendarDays size={14} /> {folder.tournamentName}</span> : null}
-                  <span className="folder-card-preview">{folder.description || (isPublic ? "Open this public collection to review its summaries and files." : "Open to review your collected materials and files.")}</span>
-                  <span className="folder-card-open">Open folder <ChevronRight size={15} /></span>
-                </Link>
-                {isPublic ? <FolderEngagementBar folder={folder} userId={userId} reaction={reactionsByFolder.get(folder.id)} isSaved={savedFolderIds.has(folder.id)} compact /> : null}
-              </article>
-            );
-          })}
+      {foldersState.isLoading && publicFoldersState.isLoading && allFolders.length === 0 ? <section className="app-card folder-empty-state"><p>Loading folders…</p></section> : (
+        <section className="speech-library-sections folder-library-sections" aria-label="Folders">
+          <article className="app-card folder-library-card" aria-labelledby="your-folders-heading">
+            <div className="row-between">
+              <h2 className="card-title" id="your-folders-heading">Your folders</h2>
+              <span className="meta-line">{myFolders.length}</span>
+            </div>
+            {myFolders.length ? (
+              <div className="folder-library-list">{myFolders.map(renderFolderCard)}</div>
+            ) : (
+              <div className="folder-library-empty">
+                <p className="card-copy">{foldersState.isLoading ? "Loading your folders…" : allFolders.some((folder) => isContentFolderMember(folder, userId)) ? "None of your folders match these filters." : "Create a folder to keep speeches, debates, resources, and files together."}</p>
+                <button type="button" className="btn btn-secondary" onClick={openCreateFolder}><Plus size={16} aria-hidden="true" /> New folder</button>
+              </div>
+            )}
+          </article>
+          <article className="app-card folder-library-card" aria-labelledby="public-folders-heading">
+            <div className="row-between">
+              <h2 className="card-title" id="public-folders-heading">Public folders</h2>
+              <span className="meta-line">{communityFolders.length}</span>
+            </div>
+            {communityFolders.length ? (
+              <div className="folder-library-list">{communityFolders.map(renderFolderCard)}</div>
+            ) : (
+              <p className="card-copy">{publicFoldersState.isLoading ? "Loading public folders…" : "No public folders from other members match your search yet."}</p>
+            )}
+          </article>
         </section>
-      ) : (
-        <section className="app-card folder-empty-state"><FolderOpen size={32} aria-hidden="true" /><h2>No folders found</h2><p>Try another search or create a folder for the materials you want to keep together.</p><button type="button" className="btn btn-primary" onClick={openCreateFolder}><Plus size={17} /> Create a folder</button></section>
       )}
     </>
   );

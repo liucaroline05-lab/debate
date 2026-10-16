@@ -27,6 +27,7 @@ import {
   submitDebateTurn,
   toggleDebateReaction,
 } from "@/features/debates/debateService";
+import { debateLeaderLabel, getDebateVoteSummary } from "@/features/debates/debateResults";
 import { useAuth } from "@/features/auth/AuthContext";
 import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
@@ -476,6 +477,44 @@ export const DebatesPage = () => {
       </div>
     </div>
   );
+
+  // Completed debate previews follow the live community vote tally on the
+  // debate document, so they change as spectators vote.
+  const renderVotePreview = (debate: DebateThread, compact = false) => {
+    const votes = getDebateVoteSummary(debate);
+    const isPublic = debate.visibility === "public";
+    const label = votes.leader || isPublic ? debateLeaderLabel(votes) : "FINAL";
+    const voteLine = votes.fromVotes
+      ? `${votes.total} community ${votes.total === 1 ? "vote" : "votes"}`
+      : isPublic ? "Spectator voting is open" : "Private debate";
+    const ariaLabel = `Community votes: ${votes.aff} for Affirmative, ${votes.neg} for Negative`;
+
+    if (compact) {
+      const affShare = votes.total ? (votes.aff / votes.total) * 100 : 50;
+      return (
+        <div className="debate-vote-preview" aria-label={ariaLabel}>
+          <div className="debate-vote-preview-counts">
+            <strong className="score aff">{votes.aff}</strong>
+            <span className="score-winner">{label}</span>
+            <strong className="score neg">{votes.neg}</strong>
+          </div>
+          <div className={votes.total ? "debate-vote-bar" : "debate-vote-bar is-empty"} aria-hidden="true">
+            <span style={{ width: `${affShare}%` }} />
+          </div>
+          <span className="meta-line">{voteLine}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="score-pill" aria-label={ariaLabel}>
+        <strong className="score aff">{votes.fromVotes ? votes.aff : debate.score?.aff ?? "--"}</strong>
+        <span className="score-winner">{label}</span>
+        <strong className="score neg">{votes.fromVotes ? votes.neg : debate.score?.neg ?? "--"}</strong>
+        <span className="meta-line">{voteLine}</span>
+      </div>
+    );
+  };
 
   const renderReactions = (debate: DebateThread) => {
     const reaction = myReactions.get(debate.id);
@@ -1003,13 +1042,7 @@ export const DebatesPage = () => {
                         </div>
                       </div>
 
-                      <div className="score-pill">
-                        <strong className="score aff">{debate.score?.aff ?? "--"}</strong>
-                        <span className="score-winner">
-                          {debate.winner === "Aff" ? "AFF WINS" : debate.winner === "Neg" ? "NEG WINS" : "FINAL"}
-                        </span>
-                        <strong className="score neg">{debate.score?.neg ?? "--"}</strong>
-                      </div>
+                      {renderVotePreview(debate)}
 
                       <div className="debater-card is-right">
                         <div>
@@ -1082,6 +1115,8 @@ export const DebatesPage = () => {
                         <div className="debater-avatar is-neg">{safeInitial(debate.negative.name)}</div>
                       </div>
                     </div>
+
+                    {renderVotePreview(debate, true)}
 
                     <div className="public-completed-footer">
                       <span className="meta-line">

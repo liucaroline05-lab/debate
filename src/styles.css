@@ -447,6 +447,15 @@ button {
   box-shadow: var(--shadow-card);
 }
 
+.profile-performance-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.settings-profile-privacy-card .settings-toggle-row {
+  margin-top: 1rem;
+}
+
 .card-title {
   font-size: 1.55rem;
   margin-bottom: 0.6rem;
@@ -969,6 +978,41 @@ button {
   background: rgba(234, 179, 8, 0.6);
 }
 
+.dashboard-calendar-sync {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dashboard-calendar-sync .btn {
+  min-height: 2rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+}
+
+.dashboard-calendar-sync .is-spinning {
+  animation: dashboard-sync-spin 900ms linear infinite;
+}
+
+@keyframes dashboard-sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-calendar-sync .is-spinning {
+    animation: none;
+  }
+}
+
+.dashboard-calendar-sync-error {
+  margin: 0.6rem 0 0;
+  color: #9b4f41;
+  font-size: 0.8rem;
+}
+
 .dashboard-calendar-events-heading .eyebrow {
   margin-bottom: 0.6rem;
   font-size: 0.68rem;
@@ -1447,7 +1491,8 @@ button {
   align-items: center;
   gap: 1rem;
   overflow-x: auto;
-  padding: 1rem 3.6rem 1.25rem;
+  /* Extra vertical room so the enlarged middle card is not clipped. */
+  padding: 1.5rem 3.6rem 1.75rem;
   scroll-snap-type: x mandatory;
   scroll-padding-inline: 3.6rem;
   -webkit-overflow-scrolling: touch;
@@ -1485,6 +1530,41 @@ button {
   transform: translateY(-2px);
   border-color: rgba(118, 128, 107, 0.36);
   box-shadow: 0 18px 42px rgba(53, 47, 42, 0.15);
+}
+
+/* Side cards recede while the card in the middle of the carousel grows. The
+   cards scale rather than resize so scroll snapping stays put. */
+.resource-quick-reads-row .resource-quick-read-card {
+  opacity: 0.82;
+  transform: scale(0.94);
+  transition:
+    transform 260ms cubic-bezier(0.2, 0.75, 0.25, 1),
+    opacity 260ms ease,
+    border-color var(--transition),
+    box-shadow var(--transition);
+}
+
+.resource-quick-reads-row .resource-quick-read-card.is-centered {
+  z-index: 1;
+  opacity: 1;
+  transform: scale(1.08);
+  border-color: rgba(118, 128, 107, 0.36);
+  box-shadow: 0 18px 42px rgba(53, 47, 42, 0.16);
+}
+
+.resource-quick-reads-row .resource-quick-read-card:hover {
+  opacity: 1;
+  transform: scale(0.94) translateY(-2px);
+}
+
+.resource-quick-reads-row .resource-quick-read-card.is-centered:hover {
+  transform: scale(1.08) translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resource-quick-reads-row .resource-quick-read-card {
+    transition: none;
+  }
 }
 
 .resource-upload-card,
@@ -2254,6 +2334,55 @@ button {
   font-weight: 700;
   color: var(--color-moss);
   letter-spacing: 0.12em;
+}
+
+/* Compact live vote tally on public completed debate cards. */
+.debate-vote-preview {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 16px;
+  background: rgba(245, 239, 230, 0.7);
+}
+
+.debate-vote-preview-counts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.debate-vote-preview .score-winner {
+  font-size: 0.75rem;
+}
+
+.debate-vote-preview .meta-line {
+  margin: 0;
+  text-align: center;
+}
+
+.debate-vote-bar {
+  overflow: hidden;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: rgba(234, 121, 103, 0.55);
+}
+
+.debate-vote-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(118, 128, 107, 0.85);
+  transition: width 360ms cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+.debate-vote-bar.is-empty {
+  background: rgba(53, 47, 42, 0.1);
+}
+
+.debate-vote-bar.is-empty > span {
+  background: transparent;
 }
 
 .completed-debates-layout {
@@ -6244,10 +6373,25 @@ button {
   margin-bottom: 1.4rem;
 }
 
-.folder-card-grid {
+/* "Your folders" and "Public folders" sit side by side like the speech library. */
+.folder-library-card {
+  align-self: start;
+  min-width: 0;
+}
+
+.folder-library-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
+  gap: 0.9rem;
+  max-height: 46rem;
+  margin-top: 1rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.folder-library-empty {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
 }
 
 .folder-card {
@@ -6569,14 +6713,12 @@ button {
 }
 
 @media (max-width: 900px) {
-  .folder-card-grid,
   .folder-file-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 720px) {
-  .folder-card-grid,
   .folder-file-grid {
     grid-template-columns: 1fr;
   }

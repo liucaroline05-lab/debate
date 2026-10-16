@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -92,7 +92,8 @@ describe("UserProfileView", () => {
     profileActions.reportUserProfile.mockReset().mockResolvedValue(true);
   });
 
-  it("renders a user profile when Firestore has partial stats data", () => {
+  it("renders a user profile when Firestore has partial stats data", async () => {
+    const user = userEvent.setup();
     collectionState.dataByCollection.set("userStats", [
       {
         id: "stats-demo-user",
@@ -110,7 +111,48 @@ describe("UserProfileView", () => {
     expect(
       screen.getByRole("heading", { name: /maya rivera/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Performance" }));
+    expect(screen.getByText(/Tabroom record 3–0/)).toBeInTheDocument();
+  });
+
+  it("derives the performance record from community votes on completed debates", async () => {
+    const user = userEvent.setup();
+    const participants = {
+      affirmative: { name: "Maya Rivera", side: "Aff", label: "Affirmative", userId: "demo-user" },
+      negative: { name: "Jordan Lee", side: "Neg", label: "Negative", userId: "opponent" },
+      participantIds: ["demo-user", "opponent"],
+    };
+    collectionState.dataByCollection.set("debates", [
+      { id: "won", topic: "Won", format: "Public Forum", status: "Completed", visibility: "public", updatedAt: "2026-09-02T00:00:00.000Z", communityVoteCounts: { aff: 3, neg: 1 }, ...participants },
+      { id: "lost", topic: "Lost", format: "Public Forum", status: "Completed", visibility: "public", updatedAt: "2026-09-12T00:00:00.000Z", communityVoteCounts: { aff: 1, neg: 4 }, ...participants },
+      { id: "won-again", topic: "Won again", format: "Lincoln-Douglas", status: "Completed", visibility: "public", updatedAt: "2026-10-02T00:00:00.000Z", communityVoteCounts: { aff: 2, neg: 0 }, ...participants },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <UserProfileView userId="demo-user" isOwnProfile={false} />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Performance" }));
+    const record = screen.getByRole("region", { name: "Async debate record" });
+    expect(within(record).getByText("Wins").nextElementSibling).toHaveTextContent("2");
+    expect(within(record).getByText("Losses").nextElementSibling).toHaveTextContent("1");
+    expect(within(record).getByText("Win rate").nextElementSibling).toHaveTextContent("67%");
+    expect(within(record).getByText("Avg. vote share").nextElementSibling).toHaveTextContent("65%");
+  });
+
+  it("removes the Performance tab when the user hides their performance", () => {
+    collectionState.dataByCollection.set("users", [{ ...demoUser, hidePerformance: true }]);
+
+    render(
+      <MemoryRouter>
+        <UserProfileView userId="demo-user" isOwnProfile={false} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("tab", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Performance" })).not.toBeInTheDocument();
   });
 
   it("lets the signed-in user update their display name and bio", async () => {

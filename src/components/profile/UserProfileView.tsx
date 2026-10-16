@@ -5,14 +5,11 @@ import {
   BarElement,
   CategoryScale,
   Chart as ChartJS,
-  Filler,
   Legend,
   LinearScale,
-  PointElement,
-  RadialLinearScale,
   Tooltip,
 } from "chart.js";
-import { Bar, Radar } from "react-chartjs-2";
+import { Bar } from "react-chartjs-2";
 import { Ban, CalendarClock, Flag, History, MapPin, MoreVertical, Share2 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
@@ -28,6 +25,7 @@ import {
   seededUsers,
 } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
+import { summarizeDebatePerformance } from "@/features/debates/debateResults";
 import {
   linkTabroomSession,
   maxDisplayNameLength,
@@ -52,12 +50,9 @@ import type {
 ChartJS.register(
   CategoryScale,
   LinearScale,
-  RadialLinearScale,
   BarElement,
-  PointElement,
   Tooltip,
   Legend,
-  Filler,
 );
 
 interface UserProfileViewProps {
@@ -160,7 +155,27 @@ const normalizeProfileForView = (profile: UserProfile) => ({
   activeChannelIds: toStringArray(profile.activeChannelIds),
 });
 
-const chartOptions = {
+const resultsChartOptions = {
+  responsive: true,
+  plugins: {
+    legend: {
+      display: true,
+      position: "bottom" as const,
+    },
+  },
+  scales: {
+    x: { stacked: true },
+    y: {
+      stacked: true,
+      beginAtZero: true,
+      ticks: {
+        precision: 0 as const,
+      },
+    },
+  },
+};
+
+const voteShareChartOptions = {
   responsive: true,
   plugins: {
     legend: {
@@ -170,9 +185,9 @@ const chartOptions = {
   scales: {
     y: {
       beginAtZero: true,
-      suggestedMax: 100,
+      max: 100,
       ticks: {
-        precision: 0 as const,
+        callback: (value: string | number) => `${value}%`,
       },
     },
   },
@@ -422,10 +437,27 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const activeChannels = channelsState.data.filter((channel) =>
     activeChannelIds.includes(channel.id),
   );
+  // Tabroom imports still record a tournament win/loss total here.
   const stats = useMemo(
     () => normalizeProfileStats(statsState.data.find((entry) => entry.userId === userId)),
     [statsState.data, userId],
   );
+  // Async debate results follow the live community votes on each debate.
+  const debatePerformance = useMemo(
+    () => summarizeDebatePerformance(authoredDebates, userId),
+    [authoredDebates, userId],
+  );
+  const isPerformanceHidden = Boolean(profile?.hidePerformance);
+  const profileTabs = useMemo<ProfileTab[]>(
+    () => isPerformanceHidden
+      ? ["Overview", "Tabroom", "Activity"]
+      : ["Overview", "Performance", "Tabroom", "Activity"],
+    [isPerformanceHidden],
+  );
+
+  useEffect(() => {
+    if (isPerformanceHidden && activeTab === "Performance") setActiveTab("Overview");
+  }, [activeTab, isPerformanceHidden]);
   // followersCount/followingCount on the profile document are never written,
   // so derive both from the follows collection, which is the source of truth.
   const followerCount = useMemo(
@@ -466,53 +498,44 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   );
   const isBlocked = blocksState.data.some((block) => block.blockedId === userId);
 
-  const performanceData = useMemo(
+  const resultsChartData = useMemo(
     () => ({
-      labels: stats.performanceOverTime.map((entry) => entry.label),
+      labels: debatePerformance.overTime.map((entry) => entry.label),
       datasets: [
         {
-          label: "Average score",
-          data: stats.performanceOverTime.map((entry) => entry.score),
-          backgroundColor: "rgba(118, 128, 107, 0.55)",
-          borderRadius: 18,
+          label: "Wins",
+          data: debatePerformance.overTime.map((entry) => entry.wins ?? 0),
+          backgroundColor: "rgba(118, 128, 107, 0.7)",
+          borderRadius: 8,
+        },
+        {
+          label: "Losses",
+          data: debatePerformance.overTime.map((entry) => entry.losses ?? 0),
+          backgroundColor: "rgba(234, 121, 103, 0.62)",
+          borderRadius: 8,
         },
       ],
     }),
-    [stats.performanceOverTime],
+    [debatePerformance.overTime],
   );
 
-  const radarData = useMemo(
+  const voteShareChartData = useMemo(
     () => ({
-      labels: stats.topicStrengths.map((entry) => entry.skill),
+      labels: debatePerformance.byFormat.map((entry) => entry.label),
       datasets: [
         {
-          label: "Strength",
-          data: stats.topicStrengths.map((entry) => entry.value),
-          backgroundColor: "rgba(203, 141, 108, 0.18)",
-          borderColor: "rgba(189, 109, 79, 0.72)",
-          pointBackgroundColor: "rgba(78, 90, 71, 0.9)",
+          label: "Average vote share",
+          data: debatePerformance.byFormat.map((entry) => entry.score),
+          backgroundColor: "rgba(203, 141, 108, 0.6)",
+          borderRadius: 12,
         },
       ],
     }),
-    [stats.topicStrengths],
+    [debatePerformance.byFormat],
   );
-
-  const radarOptions = useMemo(
-    () => ({
-      plugins: {
-        legend: { display: false },
-      },
-      scales: {
-        r: {
-          suggestedMin: 0,
-          suggestedMax: 100,
-        },
-      },
-    }),
-    [],
-  );
-  const hasPerformanceData = stats.performanceOverTime.length > 0;
-  const hasTopicStrengths = stats.topicStrengths.length > 0;
+  const hasDebateResults = debatePerformance.results.length > 0;
+  const hasVoteShares = debatePerformance.byFormat.length > 0;
+  const hasTabroomRecord = stats.wins + stats.losses > 0;
 
   if (usersState.isLoading && !profile) {
     return (
@@ -706,7 +729,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
       </header>
 
       <div className="profile-tabs" role="tablist" aria-label="Profile sections">
-        {(["Overview", "Performance", "Tabroom", "Activity"] as const).map((tab) => (
+        {profileTabs.map((tab) => (
           <button
             key={tab}
             type="button"
@@ -806,26 +829,30 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
           </div>
 
           {message ? <p className="meta-line" role="status" style={{ marginTop: "1rem" }}>{message}</p> : null}
-          <span className="sr-only">{stats.wins}</span>
         </article> : null}
 
-        {activeTab === "Performance" ? <section className="user-profile-metrics">
+        {activeTab === "Performance" && !isPerformanceHidden ? <section className="user-profile-metrics" aria-label="Async debate record">
           <article className="metric-card">
             <span>Wins</span>
-            <strong>{stats.wins}</strong>
+            <strong>{debatePerformance.wins}</strong>
           </article>
           <article className="metric-card">
             <span>Losses</span>
-            <strong>{stats.losses}</strong>
+            <strong>{debatePerformance.losses}</strong>
           </article>
           <article className="metric-card">
             <span>Win rate</span>
-            <strong>{stats.winRate}%</strong>
+            <strong>{debatePerformance.winRate}%</strong>
           </article>
           <article className="metric-card">
-            <span>Average score</span>
-            <strong>{stats.averageScore}</strong>
+            <span>Avg. vote share</span>
+            <strong>{debatePerformance.averageVoteShare === null ? "--" : `${debatePerformance.averageVoteShare}%`}</strong>
           </article>
+          <p className="meta-line profile-performance-note">
+            Results from completed async debates, decided by community votes
+            {debatePerformance.ties ? ` · ${debatePerformance.ties} tied` : ""}
+            {hasTabroomRecord ? ` · Tabroom record ${stats.wins}–${stats.losses}` : ""}
+          </p>
         </section> : null}
 
         {activeTab === "Overview" ? <section className="settings-grid">
@@ -886,40 +913,38 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
           </article>
         </section> : null}
 
-        {activeTab === "Performance" ? <section className="settings-grid">
+        {activeTab === "Performance" && !isPerformanceHidden ? <section className="settings-grid">
           <article className="app-card">
-            <h2 className="card-title">Performance over time</h2>
+            <h2 className="card-title">Results over time</h2>
             <div className="chart-panel">
-              {hasPerformanceData ? (
+              {hasDebateResults ? (
                 <Bar
-                  key={`profile-performance-${userId}`}
-                  redraw
-                  data={performanceData}
-                  options={chartOptions}
+                  key={`profile-results-${userId}`}
+                  data={resultsChartData}
+                  options={resultsChartOptions}
                 />
               ) : (
                 <div className="empty-state chart-empty-state">
-                  <h3 className="card-title">No performance data yet</h3>
-                  <p className="card-copy">Completed rounds will appear here once this profile has stats.</p>
+                  <h3 className="card-title">No results yet</h3>
+                  <p className="card-copy">Wins and losses appear here once completed debates receive community votes.</p>
                 </div>
               )}
             </div>
           </article>
 
           <article className="app-card">
-            <h2 className="card-title">Topic strengths</h2>
+            <h2 className="card-title">Vote share by format</h2>
             <div className="chart-panel">
-              {hasTopicStrengths ? (
-                <Radar
-                  key={`profile-radar-${userId}`}
-                  redraw
-                  data={radarData}
-                  options={radarOptions}
+              {hasVoteShares ? (
+                <Bar
+                  key={`profile-vote-share-${userId}`}
+                  data={voteShareChartData}
+                  options={voteShareChartOptions}
                 />
               ) : (
                 <div className="empty-state chart-empty-state">
-                  <h3 className="card-title">No topic data yet</h3>
-                  <p className="card-copy">Topic strengths will appear here after more judged rounds.</p>
+                  <h3 className="card-title">No votes yet</h3>
+                  <p className="card-copy">The share of spectator votes won in each format appears here.</p>
                 </div>
               )}
             </div>

@@ -151,6 +151,7 @@ export const ResourcesPage = () => {
   const quickReadsTrackRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [centeredQuickReadId, setCenteredQuickReadId] = useState<string | null>(null);
 
   const updateQuickReadsScroll = useCallback(() => {
     const track = quickReadsTrackRef.current;
@@ -158,6 +159,21 @@ export const ResourcesPage = () => {
     const { scrollLeft, scrollWidth, clientWidth } = track;
     setCanScrollLeft(scrollLeft > 1);
     setCanScrollRight(Math.ceil(scrollLeft + clientWidth) < scrollWidth - 1);
+
+    // The card nearest the middle of the carousel is enlarged.
+    const trackRect = track.getBoundingClientRect();
+    const trackCenter = trackRect.left + trackRect.width / 2;
+    let closestId: string | null = null;
+    let closestDistance = Number.POSITIVE_INFINITY;
+    track.querySelectorAll<HTMLElement>("[data-quick-read-id]").forEach((card) => {
+      const rect = card.getBoundingClientRect();
+      const distance = Math.abs(rect.left + rect.width / 2 - trackCenter);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestId = card.dataset.quickReadId ?? null;
+      }
+    });
+    setCenteredQuickReadId(closestId);
   }, []);
 
   const scrollQuickReads = (direction: "left" | "right") => {
@@ -573,7 +589,12 @@ export const ResourcesPage = () => {
             </button>
             <div className="resource-quick-reads-row" ref={quickReadsTrackRef} onScroll={updateQuickReadsScroll}>
               {quickReads.map((resource) => (
-                <Link key={resource.id} to={getResourcePath(resource)} className="resource-quick-read-card">
+                <Link
+                  key={resource.id}
+                  to={getResourcePath(resource)}
+                  data-quick-read-id={resource.id}
+                  className={centeredQuickReadId === resource.id ? "resource-quick-read-card is-centered" : "resource-quick-read-card"}
+                >
                   <span className="pill">{resource.category}</span>
                   <strong>{resource.title}</strong>
                   <p className="card-copy">{getShortDescription(resource)}</p>

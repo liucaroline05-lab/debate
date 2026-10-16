@@ -11,6 +11,7 @@ import {
   MapPin,
   MoreHorizontal,
   Pencil,
+  RefreshCw,
   Trash2,
 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
@@ -111,6 +112,24 @@ const uniqueEvents = (events: TabroomImport["events"]) =>
 
 const isWaitlisted = (event: TabroomImport["events"][number]) => event.entryStatus === "waitlisted";
 
+const formatSyncAge = (value?: string) => {
+  const syncedAt = Date.parse(value ?? "");
+  if (!Number.isFinite(syncedAt)) return "Not synced yet";
+  const minutes = Math.round((Date.now() - syncedAt) / 60_000);
+  if (minutes < 1) return "Synced just now";
+  if (minutes < 60) return `Synced ${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `Synced ${hours} hr ago`;
+  return `Synced ${formatDate(new Date(syncedAt).toISOString())}`;
+};
+
+interface TabroomSyncState {
+  tabroomImport?: TabroomImport;
+  isSyncing: boolean;
+  message: string;
+  onSync: () => void;
+}
+
 const debateRecency = (debate: DebateThread) => {
   const timestamp = Date.parse(debate.createdAt ?? debate.updatedAt ?? debate.nextDeadline);
   return Number.isNaN(timestamp) ? 0 : timestamp;
@@ -124,9 +143,13 @@ const visibleTournamentRoles = (role?: string) =>
 
 interface DashboardCalendarProps {
   events: TabroomImport["events"];
+  sync: TabroomSyncState;
 }
 
-const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
+const DashboardCalendar = ({ events, sync }: DashboardCalendarProps) => {
+  const isLinked = sync.tabroomImport?.source === "tabroom-api";
+  const isSyncing = sync.isSyncing || sync.tabroomImport?.status === "syncing";
+  const syncError = sync.message || (sync.tabroomImport?.status === "error" ? sync.tabroomImport.errorMessage : "");
   const todayKey = toDateKey(new Date());
   const upcomingEvents = useMemo(
     () =>
@@ -200,8 +223,18 @@ const DashboardCalendar = ({ events }: DashboardCalendarProps) => {
               <span className="pill"><CalendarDays size={14} aria-hidden="true" /> Tabroom sync</span>
               <h2 className="card-title">Choose a date</h2>
             </div>
-            <span className="meta-line">Dates with tournaments are highlighted</span>
+            {isLinked ? (
+              <div className="dashboard-calendar-sync">
+                <span className="meta-line">{isSyncing ? "Syncing with Tabroom…" : formatSyncAge(sync.tabroomImport?.lastSuccessfulAt)}</span>
+                <button type="button" className="btn btn-ghost" disabled={isSyncing} onClick={sync.onSync}>
+                  <RefreshCw size={14} aria-hidden="true" className={isSyncing ? "is-spinning" : undefined} /> Sync now
+                </button>
+              </div>
+            ) : (
+              <span className="meta-line">Dates with tournaments are highlighted</span>
+            )}
           </div>
+          {syncError ? <p className="dashboard-calendar-sync-error" role="alert">{syncError}</p> : null}
 
           <div className="dashboard-calendar-toolbar">
             <button
@@ -503,15 +536,32 @@ export const DashboardPage = () => {
   // The import document is watched live, so a background sync that drops a
   // cancelled tournament updates the calendar as soon as it is written.
   const tabroomImport = tabroomImportState.data[0];
+  const [isSyncingTabroom, setIsSyncingTabroom] = useState(false);
+  const [tabroomSyncMessage, setTabroomSyncMessage] = useState("");
+  const refreshTabroom = async (showErrors: boolean) => {
+    setIsSyncingTabroom(true);
+    setTabroomSyncMessage("");
+    try {
+      await syncTabroomSession();
+    } catch (error) {
+      // Background refreshes rely on the error saved on the import instead.
+      if (showErrors) {
+        setTabroomSyncMessage(error instanceof Error ? error.message : "Unable to sync Tabroom right now.");
+      }
+    } finally {
+      setIsSyncingTabroom(false);
+    }
+  };
   const hasRequestedTabroomRefresh = useRef(false);
   useEffect(() => {
     if (!tabroomImport || hasRequestedTabroomRefresh.current) return;
-    if (tabroomImport.status !== "success" || tabroomImport.source !== "tabroom-api") return;
+    // A previous failure is retried too, so one bad sync cannot leave the
+    // calendar stale until the next scheduled refresh.
+    if (tabroomImport.source !== "tabroom-api" || !["success", "error"].includes(tabroomImport.status)) return;
     const lastSyncedAt = Date.parse(tabroomImport.lastSuccessfulAt ?? "");
     if (Number.isFinite(lastSyncedAt) && Date.now() - lastSyncedAt < TABROOM_REFRESH_AFTER_MS) return;
     hasRequestedTabroomRefresh.current = true;
-    // Failures are recorded on the import and shown on the profile page.
-    syncTabroomSession().catch(() => undefined);
+    void refreshTabroom(false);
   }, [tabroomImport]);
 
   const handleDeleteSpeech = async (speechId: string) => {
@@ -537,7 +587,15 @@ export const DashboardPage = () => {
       </header>
 
       <section className="dashboard-grid">
-        <DashboardCalendar events={upcomingEvents} />
+        <DashboardCalendar
+          events={upcomingEvents}
+          sync={{
+            tabroomImport,
+            isSyncing: isSyncingTabroom,
+            message: tabroomSyncMessage,
+            onSync: () => void refreshTabroom(true),
+          }}
+        />
 
         <article className="app-card">
           <div className="row-between">

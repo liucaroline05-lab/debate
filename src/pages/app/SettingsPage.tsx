@@ -73,6 +73,9 @@ export const SettingsPage = () => {
   );
   const [messagingMessage, setMessagingMessage] = useState("");
   const [isSavingMessaging, setIsSavingMessaging] = useState(false);
+  const [hidePerformance, setHidePerformance] = useState(profile?.hidePerformance ?? false);
+  const [performanceMessage, setPerformanceMessage] = useState("");
+  const [isSavingPerformance, setIsSavingPerformance] = useState(false);
   const [roleMessage, setRoleMessage] = useState("");
   const [isSavingRole, setIsSavingRole] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState(profile?.displayName ?? "");
@@ -106,6 +109,7 @@ export const SettingsPage = () => {
     );
     setDisplayNameDraft(profile.displayName ?? "");
     setBioDraft(profile.bio ?? "");
+    setHidePerformance(profile.hidePerformance ?? false);
   }, [profile]);
 
   useEffect(() => {
@@ -338,6 +342,32 @@ export const SettingsPage = () => {
       );
     } finally {
       setIsSavingMessaging(false);
+    }
+  };
+
+  const togglePerformanceVisibility = async () => {
+    if (isSavingPerformance) return;
+    const nextHidden = !hidePerformance;
+    setHidePerformance(nextHidden);
+    setPerformanceMessage("");
+    setIsSavingPerformance(true);
+
+    try {
+      await updateProfile({ hidePerformance: nextHidden });
+      setPerformanceMessage(
+        isDemoMode
+          ? "Saved for this session. Connect Firebase to keep this setting."
+          : nextHidden
+            ? "Your Performance section is now hidden."
+            : "Your Performance section is visible again.",
+      );
+    } catch (error) {
+      setHidePerformance(!nextHidden);
+      setPerformanceMessage(
+        error instanceof Error ? error.message : "Unable to update profile privacy right now.",
+      );
+    } finally {
+      setIsSavingPerformance(false);
     }
   };
 
@@ -650,6 +680,27 @@ export const SettingsPage = () => {
             </div> : null}
             {blockMessage ? <p className="meta-line" role="status">{blockMessage}</p> : null}
           </div>
+        </article>
+
+        <article className="app-card settings-profile-privacy-card">
+          <h2 className="card-title">Profile privacy</h2>
+          <p className="card-copy">Control what other members can see on your profile.</p>
+          <button
+            type="button"
+            className="settings-toggle-row"
+            aria-pressed={hidePerformance}
+            disabled={isSavingPerformance}
+            onClick={() => void togglePerformanceVisibility()}
+          >
+            <div>
+              <strong>Hide my performance</strong>
+              <span className="meta-line">Removes the Performance section, including your win record and graphs, from your profile.</span>
+            </div>
+            <span className={hidePerformance ? "settings-toggle is-on" : "settings-toggle"}>
+              {hidePerformance ? "On" : "Off"}
+            </span>
+          </button>
+          {performanceMessage ? <p className="meta-line" aria-live="polite">{performanceMessage}</p> : null}
         </article>
 
         <article className="app-card settings-debate-preferences-card">

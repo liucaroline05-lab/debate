@@ -11,6 +11,7 @@ import {
   retryDebateSummary,
   voteForDebateWinner,
 } from "@/features/debates/debateService";
+import { debateLeaderLabel, getDebateVoteSummary } from "@/features/debates/debateResults";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type {
   DebateSideSummary,
@@ -256,6 +257,7 @@ export const DebateWatchPage = () => {
     neg: debate.communityVoteCounts?.neg ?? 0,
   };
   const totalCommunityVotes = voteCounts.aff + voteCounts.neg;
+  const voteSummary = getDebateVoteSummary(debate);
 
   const handleRetrySummary = async () => {
     setIsRetryingSummary(true);
@@ -530,11 +532,7 @@ export const DebateWatchPage = () => {
                   {showCommunityVotes ? voteCounts.aff : debate.score?.aff ?? "--"}
                 </strong>
                 <span className="score-winner">
-                  {debate.winner === "Aff"
-                    ? "AFF WINS"
-                    : debate.winner === "Neg"
-                      ? "NEG WINS"
-                      : "FINAL"}
+                  {showCommunityVotes || voteSummary.leader ? debateLeaderLabel(voteSummary) : "FINAL"}
                 </span>
                 <strong
                   className="score neg"

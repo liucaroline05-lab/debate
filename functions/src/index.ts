@@ -816,12 +816,21 @@ const fetchTabroomEntryStatus = async (
   tournId: number,
 ): Promise<TabroomEntryStatus | null> => {
   try {
-    const presence = asRecord(
-      await readTabroomJson(await authorizedTabroomRequest(`/user/tourns/${tournId}`, token)),
+    const presenceJson = await readTabroomJson(
+      await authorizedTabroomRequest(`/user/tourns/${tournId}`, token),
     );
+    if (!presenceJson) return null;
+    const presence = asRecord(presenceJson);
     const me = asRecord(presence.me);
+    const mine = asRecord(presence.mine);
     const entryIds = new Set(asIdList(me.entries));
     const eventIds = new Set(asIdList(me.events));
+    // Dropping an entry can detach the person from the tournament entirely
+    // while `/user/tourns` still lists it, so no remaining entry, judge, or
+    // school entry means the user is no longer attending.
+    const hasAnyPresence = [me.entries, me.events, me.judges, mine.entries, mine.judges]
+      .some((ids) => asIdList(ids).length > 0);
+    if ("me" in presence && !hasAnyPresence) return "dropped";
     if (!entryIds.size || !eventIds.size) return null;
 
     const invite = asRecord(await fetchPublicTabroomJson(`/rest/tourns/${tournId}/invite`));

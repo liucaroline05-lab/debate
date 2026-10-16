@@ -42,6 +42,8 @@ export interface UserProfile {
   tabroomProfileUrl?: string;
   /** Whether this user has opted to show imported Tabroom history publicly. */
   showTabroomHistory?: boolean;
+  /** Removes the Performance tab from this user's profile for everyone. */
+  hidePerformance?: boolean;
   createdAt: string;
 }
 
