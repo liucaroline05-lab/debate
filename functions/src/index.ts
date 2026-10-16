@@ -14,6 +14,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import OpenAI from "openai";
 import { openAiApiKey } from "./secrets";
+import { resolveTabroomEntryStatus, type TabroomEntryStatus } from "./tabroomEntryStatus";
 
 initializeApp();
 setGlobalOptions({ invoker: "public", region: "us-central1" });
@@ -567,11 +568,12 @@ const maxStatusCheckedTournaments = 10;
 // waitlisted tournaments show up without the user pressing sync.
 const scheduledTabroomRefreshBatchSize = 5;
 
-type TabroomEntryStatus = "registered" | "waitlisted" | "dropped";
 
 interface TabroomProfileSummary {
   officialUserId: number | null;
   handle: string;
+  /** First and last name, used to find the user's entries in field reports. */
+  fullName: string;
   email: string;
 }
 
@@ -750,6 +752,7 @@ const normalizeTabroomProfile = (value: unknown): TabroomProfileSummary => {
   return {
     officialUserId: Number.isFinite(id) && id > 0 ? id : null,
     handle: [first, last].filter(Boolean).join(" ") || "Tabroom account",
+    fullName: [first, last].filter(Boolean).join(" "),
     email: typeof person.email === "string" ? person.email : "",
   };
 };
@@ -850,38 +853,32 @@ const fetchPublicTabroomJson = async (path: string) =>
   readTabroomJson(await tabroomRequest(path, { headers: { accept: "application/json" } }));
 
 /**
- * Works out whether the user's entries at a tournament are active, waitlisted,
- * or dropped. `/user/tourns/{id}` lists the user's entry and event IDs, and the
- * public field report carries each entry's `active` and `waitlist` flags.
- * Returns null whenever Tabroom does not publish enough to tell, so an
- * unpublished field report never removes a tournament.
+ * Looks up the user's entry status for one upcoming tournament from
+ * `/user/tourns/{id}` and the public field reports. Returns null whenever
+ * Tabroom does not publish enough to tell, which keeps the tournament.
  */
 const fetchTabroomEntryStatus = async (
   token: string,
   tournId: number,
+  personName: string,
 ): Promise<TabroomEntryStatus | null> => {
   try {
-    const presenceJson = await readTabroomJson(
+    const presence = asRecord(await readTabroomJson(
       await authorizedTabroomRequest(`/user/tourns/${tournId}`, token),
-    );
-    if (!presenceJson) return null;
-    const presence = asRecord(presenceJson);
+    ));
     const me = asRecord(presence.me);
     const mine = asRecord(presence.mine);
     const entryIds = new Set(asIdList(me.entries));
     const eventIds = new Set(asIdList(me.events));
-    // Dropping an entry can detach the person from the tournament entirely
-    // while `/user/tourns` still lists it, so no remaining entry, judge, or
-    // school entry means the user is no longer attending.
     const hasAnyPresence = [me.entries, me.events, me.judges, mine.entries, mine.judges]
       .some((ids) => asIdList(ids).length > 0);
-    if ("me" in presence && !hasAnyPresence) return "dropped";
-    if (!entryIds.size || !eventIds.size) return null;
 
+    // With no listed events (waitlisted entries are not listed), check every
+    // event so the user can still be found by name.
     const invite = asRecord(await fetchPublicTabroomJson(`/rest/tourns/${tournId}/invite`));
     const eventAbbrs = (Array.isArray(invite.Events) ? invite.Events : [])
       .map(asRecord)
-      .filter((event) => eventIds.has(Number(event.id)))
+      .filter((event) => !eventIds.size || eventIds.has(Number(event.id)))
       .map((event) => asOptionalString(event.abbr))
       .filter(Boolean);
     if (!eventAbbrs.length) return null;
@@ -890,31 +887,26 @@ const fetchTabroomEntryStatus = async (
       asRecord(await fetchPublicTabroomJson(
         `/rest/tourns/${tournId}/events/${encodeURIComponent(abbr)}/field`,
       ))));
-    if (fields.some((field) => !Array.isArray(field.Entries))) return null;
-
-    const myEntries = fields
-      .flatMap((field) => field.Entries as unknown[])
-      .map(asRecord)
-      .filter((entry) => entryIds.has(Number(entry.id)));
-    if (myEntries.some((entry) => Number(entry.active) === 1 && Number(entry.waitlist) !== 1)) {
-      return "registered";
-    }
-    if (myEntries.some((entry) => Number(entry.waitlist) === 1)) return "waitlisted";
-    if (myEntries.length) return "dropped";
-    // Missing from the field only means dropped when waitlisted entries would
-    // have been listed; otherwise the entry may just be on a hidden waitlist.
-    const waitlistsShown = fields.every((field) => {
-      const setting = asRecord(field.settings).fieldWaitlist;
-      return Boolean(setting) && setting !== "0";
+    const status = resolveTabroomEntryStatus({ fields, entryIds, personName, hasAnyPresence });
+    console.info("Tabroom entry status", {
+      tournId,
+      status,
+      listedEntries: entryIds.size,
+      listedEvents: eventIds.size,
+      fieldsChecked: fields.length,
+      hasAnyPresence,
     });
-    return waitlistsShown ? "dropped" : null;
+    return status;
   } catch {
     // A failed status lookup keeps the tournament rather than failing the sync.
     return null;
   }
 };
 
-const importTabroomTournaments = async (token: string): Promise<TabroomEventRecord[]> => {
+const importTabroomTournaments = async (
+  token: string,
+  profile: TabroomProfileSummary,
+): Promise<TabroomEventRecord[]> => {
   const response = await authorizedTabroomRequest("/user/tourns", token);
 
   assertTabroomSessionResponse(response, "/user/tourns");
@@ -956,7 +948,7 @@ const importTabroomTournaments = async (token: string): Promise<TabroomEventReco
     Promise.all(
       tournaments.map((tourn, index) =>
         statusCheckedIndexes.has(index)
-          ? fetchTabroomEntryStatus(token, tourn.id)
+          ? fetchTabroomEntryStatus(token, tourn.id, profile.fullName)
           : Promise.resolve(null),
       ),
     ),
@@ -1021,7 +1013,7 @@ const writeTabroomImport = async (
 
 const refreshTabroomImport = async (uid: string, token: string, syncedAt: string) => {
   const profile = await fetchTabroomProfile(token);
-  const events = await importTabroomTournaments(token);
+  const events = await importTabroomTournaments(token, profile);
   await getFirestore().doc(`tabroomSessions/${uid}`).set({ validatedAt: syncedAt }, { merge: true });
   await writeTabroomImport(uid, profile, events, syncedAt);
   return { profile, eventCount: events.length };
@@ -1120,7 +1112,7 @@ export const linkTabroomSession = onCall(
     });
 
     try {
-      const events = await importTabroomTournaments(token);
+      const events = await importTabroomTournaments(token, profile);
       await writeTabroomImport(uid, profile, events, linkedAt);
       await db.doc(`tabroomLinks/tabroom-link-${uid}`).set({ linkedAt }, { merge: true });
       return { profile, eventCount: events.length };
