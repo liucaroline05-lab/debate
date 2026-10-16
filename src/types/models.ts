@@ -681,7 +681,8 @@ export interface TabroomLink {
   userId: string;
   profileUrl?: string;
   handle?: string;
-  status: "linked" | "syncing" | "error" | "unlinked";
+  /** "expired" means Tabroom rejected the saved session; the user must link again. */
+  status: "linked" | "syncing" | "error" | "expired" | "unlinked";
   lastSyncedAt?: string;
   linkedAt?: string;
   unlinkedAt?: string;
@@ -720,6 +721,8 @@ export interface TabroomImport {
   startedAt: string;
   lastSuccessfulAt?: string;
   errorMessage?: string;
+  /** Set when Tabroom rejected the saved session and the user must reconnect. */
+  errorCode?: "session-expired";
   source?: string;
   tournamentCount?: number;
   events: TabroomEvent[];

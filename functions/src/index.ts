@@ -651,13 +651,34 @@ const tabroomRequest = async (path: string, init: RequestInit) => {
   }
 };
 
+// Tabroom's OpenAPI document describes the session token as a `TabroomToken`
+// cookie; the bearer header is kept for the deployments that accept it.
 const authorizedTabroomRequest = (path: string, token: string) =>
   tabroomRequest(path, {
     headers: {
       accept: "application/json",
       authorization: `Bearer ${token}`,
+      cookie: `TabroomToken=${token}`,
     },
   });
+
+const tabroomSessionExpiredMessage = "Your Tabroom connection expired. Reconnect your account to sync again.";
+
+/**
+ * Only a 401 means Tabroom no longer accepts the saved session. A 403 can come
+ * from Tabroom's firewall or rate limiting, so it is reported as a temporary
+ * failure and the session is kept for the next attempt.
+ */
+const assertTabroomSessionResponse = (response: Response, path: string) => {
+  if (response.status === 401) {
+    console.warn("Tabroom rejected the saved session", { path, status: response.status });
+    throw new HttpsError("unauthenticated", tabroomSessionExpiredMessage);
+  }
+  if (response.status === 403 || response.status === 429) {
+    console.warn("Tabroom refused a request", { path, status: response.status });
+    throw new HttpsError("unavailable", "Tabroom is limiting requests right now. Try again in a few minutes.");
+  }
+};
 
 const loginToTabroom = async (email: string, password: string) => {
   const response = await tabroomRequest("/auth/login", {
@@ -707,12 +728,7 @@ const normalizeTabroomProfile = (value: unknown): TabroomProfileSummary => {
 const fetchTabroomProfile = async (token: string) => {
   const response = await authorizedTabroomRequest("/user/session", token);
 
-  if (response.status === 401 || response.status === 403) {
-    throw new HttpsError(
-      "unauthenticated",
-      "Your Tabroom session has expired. Link your account again.",
-    );
-  }
+  assertTabroomSessionResponse(response, "/user/session");
   if (!response.ok) {
     console.error("Tabroom session lookup failed", { status: response.status });
     throw new HttpsError("unavailable", "Tabroom could not validate this account.");
@@ -872,12 +888,7 @@ const fetchTabroomEntryStatus = async (
 const importTabroomTournaments = async (token: string): Promise<TabroomEventRecord[]> => {
   const response = await authorizedTabroomRequest("/user/tourns", token);
 
-  if (response.status === 401 || response.status === 403) {
-    throw new HttpsError(
-      "unauthenticated",
-      "Your Tabroom session has expired. Link your account again.",
-    );
-  }
+  assertTabroomSessionResponse(response, "/user/tourns");
   if (!response.ok) {
     console.error("Tabroom tournament import failed", { status: response.status });
     throw new HttpsError("unavailable", "Tabroom could not return your tournament history.");
@@ -974,6 +985,7 @@ const writeTabroomImport = async (
       tournamentCount: events.length,
       events,
       errorMessage: FieldValue.delete(),
+      errorCode: FieldValue.delete(),
     }, { merge: true }),
   ]);
 };
@@ -986,16 +998,28 @@ const refreshTabroomImport = async (uid: string, token: string, syncedAt: string
   return { profile, eventCount: events.length };
 };
 
-const markTabroomSyncFailed = async (uid: string, message: string) => {
+const markTabroomSyncFailed = async (uid: string, message: string, errorCode?: "session-expired") => {
   const db = getFirestore();
   await Promise.all([
-    db.doc(`tabroomLinks/tabroom-link-${uid}`).set({ status: "error" }, { merge: true }),
+    db.doc(`tabroomLinks/tabroom-link-${uid}`).set(
+      { status: errorCode === "session-expired" ? "expired" : "error" },
+      { merge: true },
+    ),
     db.doc(`tabroomImports/tabroom-import-${uid}`).set(
-      { userId: uid, status: "error", errorMessage: message.slice(0, 500) },
+      {
+        userId: uid,
+        status: "error",
+        errorMessage: message.slice(0, 500),
+        // The client offers to reconnect instead of retrying a dead session.
+        errorCode: errorCode ?? FieldValue.delete(),
+      },
       { merge: true },
     ),
   ]);
 };
+
+const isTabroomSessionExpired = (error: unknown) =>
+  error instanceof HttpsError && error.code === "unauthenticated";
 
 export const linkTabroomSession = onCall(
   {
@@ -1054,7 +1078,8 @@ export const syncTabroomSession = onCall(
     const sessionSnapshot = await sessionRef.get();
 
     if (!sessionSnapshot.exists) {
-      throw new HttpsError("failed-precondition", "Link your Tabroom account before syncing.");
+      await markTabroomSyncFailed(uid, tabroomSessionExpiredMessage, "session-expired");
+      throw new HttpsError("failed-precondition", tabroomSessionExpiredMessage);
     }
 
     const syncedAt = new Date().toISOString();
@@ -1071,20 +1096,21 @@ export const syncTabroomSession = onCall(
       token = decryptTabroomToken(sessionSnapshot.data() as EncryptedTabroomSession);
     } catch {
       console.error("Stored Tabroom session could not be decrypted", { uid });
-      await markTabroomSyncFailed(uid, "The saved Tabroom session is invalid.");
-      throw new HttpsError(
-        "failed-precondition",
-        "The saved Tabroom session is invalid. Link your account again.",
-      );
+      await markTabroomSyncFailed(uid, tabroomSessionExpiredMessage, "session-expired");
+      await sessionRef.delete();
+      throw new HttpsError("failed-precondition", tabroomSessionExpiredMessage);
     }
 
     try {
       return await refreshTabroomImport(uid, token, syncedAt);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to sync Tabroom.";
-      await markTabroomSyncFailed(uid, message);
-      if (error instanceof HttpsError && error.code === "unauthenticated") {
+      if (isTabroomSessionExpired(error)) {
+        await markTabroomSyncFailed(uid, message, "session-expired");
         await sessionRef.delete();
+      } else {
+        console.error("Tabroom sync failed", { uid, error: message });
+        await markTabroomSyncFailed(uid, message);
       }
       throw error;
     }
@@ -1111,8 +1137,8 @@ export const refreshLinkedTabroomAccounts = onSchedule(
           // An expired session needs the user to link again, exactly as a
           // manual sync would report. Anything else is likely transient, so
           // the last good import stays in place until the next run.
-          if (error instanceof HttpsError && error.code === "unauthenticated") {
-            await markTabroomSyncFailed(uid, error.message);
+          if (isTabroomSessionExpired(error)) {
+            await markTabroomSyncFailed(uid, tabroomSessionExpiredMessage, "session-expired");
             await session.ref.delete();
             return;
           }

@@ -1092,7 +1092,9 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
                 <div className="list-item">
                   <strong>Status</strong>
                   <span className="meta-line">
-                    {tabroomLink?.status ?? tabroomImport?.status ?? "Not linked"}
+                    {tabroomLink?.status === "expired"
+                      ? "Connection expired. Link your account again below."
+                      : tabroomLink?.status ?? tabroomImport?.status ?? "Not linked"}
                   </span>
                 </div>
                 <div className="list-item">

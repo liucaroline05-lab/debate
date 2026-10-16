@@ -149,6 +149,7 @@ interface DashboardCalendarProps {
 const DashboardCalendar = ({ events, sync }: DashboardCalendarProps) => {
   const isLinked = sync.tabroomImport?.source === "tabroom-api";
   const isSyncing = sync.isSyncing || sync.tabroomImport?.status === "syncing";
+  const needsReconnect = sync.tabroomImport?.status === "error" && sync.tabroomImport.errorCode === "session-expired";
   const syncError = sync.message || (sync.tabroomImport?.status === "error" ? sync.tabroomImport.errorMessage : "");
   const todayKey = toDateKey(new Date());
   const upcomingEvents = useMemo(
@@ -223,18 +224,8 @@ const DashboardCalendar = ({ events, sync }: DashboardCalendarProps) => {
               <span className="pill"><CalendarDays size={14} aria-hidden="true" /> Tabroom sync</span>
               <h2 className="card-title">Choose a date</h2>
             </div>
-            {isLinked ? (
-              <div className="dashboard-calendar-sync">
-                <span className="meta-line">{isSyncing ? "Syncing with Tabroom…" : formatSyncAge(sync.tabroomImport?.lastSuccessfulAt)}</span>
-                <button type="button" className="btn btn-ghost" disabled={isSyncing} onClick={sync.onSync}>
-                  <RefreshCw size={14} aria-hidden="true" className={isSyncing ? "is-spinning" : undefined} /> Sync now
-                </button>
-              </div>
-            ) : (
-              <span className="meta-line">Dates with tournaments are highlighted</span>
-            )}
+            <span className="meta-line">Dates with tournaments are highlighted</span>
           </div>
-          {syncError ? <p className="dashboard-calendar-sync-error" role="alert">{syncError}</p> : null}
 
           <div className="dashboard-calendar-toolbar">
             <button
@@ -349,11 +340,30 @@ const DashboardCalendar = ({ events, sync }: DashboardCalendarProps) => {
                 })}
               </div>
 
-              <div className="dashboard-calendar-legend" aria-label="Calendar legend">
-                <span><i className="dashboard-calendar-legend-swatch is-upcoming" /> Upcoming</span>
-                <span><i className="dashboard-calendar-legend-swatch is-waitlisted" /> Waitlisted</span>
-                <span><i className="dashboard-calendar-legend-swatch is-past" /> Past</span>
+              <div className="dashboard-calendar-footer">
+                <div className="dashboard-calendar-legend" aria-label="Calendar legend">
+                  <span><i className="dashboard-calendar-legend-swatch is-upcoming" /> Upcoming</span>
+                  <span><i className="dashboard-calendar-legend-swatch is-waitlisted" /> Waitlisted</span>
+                  <span><i className="dashboard-calendar-legend-swatch is-past" /> Past</span>
+                </div>
+                {isLinked ? (
+                  <div className="dashboard-calendar-sync">
+                    <span className="meta-line">
+                      {isSyncing ? "Syncing…" : needsReconnect ? "Tabroom disconnected" : formatSyncAge(sync.tabroomImport?.lastSuccessfulAt)}
+                    </span>
+                    {needsReconnect ? (
+                      <NavLink to="/app/profile#tabroom" className="btn btn-secondary">
+                        <RefreshCw size={14} aria-hidden="true" /> Reconnect Tabroom
+                      </NavLink>
+                    ) : (
+                      <button type="button" className="btn btn-ghost" disabled={isSyncing} onClick={sync.onSync}>
+                        <RefreshCw size={14} aria-hidden="true" className={isSyncing ? "is-spinning" : undefined} /> Sync now
+                      </button>
+                    )}
+                  </div>
+                ) : null}
               </div>
+              {syncError ? <p className="dashboard-calendar-sync-error" role="alert">{syncError}</p> : null}
             </>
           )}
         </section>
@@ -558,6 +568,8 @@ export const DashboardPage = () => {
     // A previous failure is retried too, so one bad sync cannot leave the
     // calendar stale until the next scheduled refresh.
     if (tabroomImport.source !== "tabroom-api" || !["success", "error"].includes(tabroomImport.status)) return;
+    // An expired session cannot sync until the user reconnects.
+    if (tabroomImport.errorCode === "session-expired") return;
     const lastSyncedAt = Date.parse(tabroomImport.lastSuccessfulAt ?? "");
     if (Number.isFinite(lastSyncedAt) && Date.now() - lastSyncedAt < TABROOM_REFRESH_AFTER_MS) return;
     hasRequestedTabroomRefresh.current = true;

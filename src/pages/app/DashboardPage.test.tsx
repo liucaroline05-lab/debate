@@ -101,6 +101,40 @@ describe("DashboardPage", () => {
     expect(mocks.syncTabroomSession).not.toHaveBeenCalled();
   });
 
+  it("puts Sync now beside the calendar legend", () => {
+    mocks.tabroomImports = [tabroomImport([], new Date().toISOString())];
+
+    const { container } = render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    );
+
+    const footer = container.querySelector(".dashboard-calendar-footer");
+    expect(footer).toContainElement(screen.getByRole("button", { name: /sync now/i }));
+    expect(footer).toContainElement(screen.getByLabelText("Calendar legend"));
+  });
+
+  it("asks to reconnect instead of syncing once the Tabroom session expired", () => {
+    mocks.tabroomImports = [{
+      ...tabroomImport([], new Date(Date.now() - 60 * 60 * 1000).toISOString()),
+      status: "error",
+      errorCode: "session-expired",
+      errorMessage: "Your Tabroom connection expired. Reconnect your account to sync again.",
+    }];
+
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: /reconnect tabroom/i })).toHaveAttribute("href", "/app/profile#tabroom");
+    expect(screen.queryByRole("button", { name: /sync now/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/connection expired/i);
+    expect(mocks.syncTabroomSession).not.toHaveBeenCalled();
+  });
+
   it("refreshes a stale Tabroom import when the dashboard opens", () => {
     mocks.tabroomImports = [tabroomImport([], new Date(Date.now() - 60 * 60 * 1000).toISOString())];
 
