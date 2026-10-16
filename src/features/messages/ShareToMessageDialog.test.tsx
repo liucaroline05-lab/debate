@@ -74,6 +74,26 @@ describe("ShareToMessageDialog", () => {
     service.startDirectThread.mockResolvedValue("dm-maya--noah");
   });
 
+  it("renders on the page body so a transformed card cannot trap it", () => {
+    render(
+      <MemoryRouter>
+        <article className="folder-card" style={{ transform: "translateY(-2px)" }} data-testid="card">
+          <ShareToMessageDialog
+            title="Prep folder"
+            url="https://example.com/app/folders/folder-1"
+            previewKind="folder"
+            onClose={vi.fn()}
+          />
+        </article>
+      </MemoryRouter>,
+    );
+
+    const backdrop = screen.getByRole("dialog", { name: "Share" }).parentElement;
+    expect(backdrop).toHaveClass("share-dialog-backdrop");
+    expect(backdrop?.parentElement).toBe(document.body);
+    expect(screen.getByTestId("card")).not.toContainElement(backdrop);
+  });
+
   it("sends the link to an existing conversation", async () => {
     const user = userEvent.setup();
     renderDialog();

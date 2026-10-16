@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, Copy, Search, Send, UsersRound, X } from "lucide-react";
 import { seededUsers } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -162,7 +163,10 @@ export const ShareToMessageDialog = ({ title, url, previewKind, media, mediaCoun
     }
   };
 
-  return (
+  // Rendered on document.body: a transformed ancestor (such as a card that
+  // lifts on hover) would otherwise become the containing block for this
+  // fixed-position overlay and trap the dialog inside the card.
+  return createPortal(
     <div className="share-dialog-backdrop" role="presentation" onClick={onClose}>
       <div
         className="share-dialog"
@@ -266,6 +270,7 @@ export const ShareToMessageDialog = ({ title, url, previewKind, media, mediaCoun
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
