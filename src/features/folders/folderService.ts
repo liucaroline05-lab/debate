@@ -273,9 +273,14 @@ export const toggleContentFolderReaction = async (
       ...next,
       createdAt: now,
     });
+    // Only write counters that actually move. Rules require each changed
+    // counter to step by exactly one, and folders created before reactions
+    // existed have no counter fields, so writing an unchanged 0 was denied.
+    const likeDelta = Number(next.like) - Number(previous.like ?? false);
+    const dislikeDelta = Number(next.dislike) - Number(previous.dislike ?? false);
     transaction.update(folderRef, {
-      likeCount: (folder.likeCount ?? 0) + Number(next.like) - Number(previous.like ?? false),
-      dislikeCount: (folder.dislikeCount ?? 0) + Number(next.dislike) - Number(previous.dislike ?? false),
+      ...(likeDelta ? { likeCount: Math.max(0, (folder.likeCount ?? 0) + likeDelta) } : {}),
+      ...(dislikeDelta ? { dislikeCount: Math.max(0, (folder.dislikeCount ?? 0) + dislikeDelta) } : {}),
       updatedAt: now,
     });
     return next;
