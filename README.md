@@ -208,8 +208,34 @@ September 10, 2026:
 [X] in settings page, make the "account" card a little shorter; remove the extra space at the bottom.
 [X] In messages, add an option to delete and edit messages. If a message was deleted, say "message deleted" in the chat, and if a message was edited, say "edited" under the message.
 [X] For recent speeches, add the mouse hover effect other elements on the page use (the one with the green tint)
-[ ] 
+[X] for the calendar, details for upcoming tournaments say "result student" which shouldn't be there. also, for the date, make it selectable on a bigger scale once you click it. still keep the left and right arrows, though.
+[X] in resources, on the detailed pages of an article, swap the places of "resource notes" and "long description"
+[X] error liking/disliking folders
+[ ] fix the calendar to make the events be updated live, e.g. if they get cancelled or dropped then remove them, and do a yellow color for waitlisted tournamnets
+[X] make an option to invite other users to collaborate on folders
+[X] make "my folders" and "public folders" seperate, similar to the speech page
+[X] make the preview of the wins votes update with the votes in async debate. and also in profile, make the performance update along with that too, and integrate the graphs. In settings, users should also be able to have the option to hide their performance (if they pick this, then the "perforamnce" section in profile just dissapears completely)
+[X] for the quick reads carousel, make the middle one expand to be the biggest
+[X] for the comment button on folders, pressing it should do an animation where it brings your screen down with the comments, so you know its there without having to scroll down. similarly, closing the comments should slide your screen back up. also, for the comments, instead of a "delete" button, add the three dots on the right and clicking it should let you edit or delete your comment.
+[X] in the preview for compelted async debates, remove the text below the votes (e.g. the one that says "1 community vote", "private debate", etc)
+[X] for the folders, make them smaller in the main page so that there are 2 columns in both "my folders" and "public folders"
+[ ] in resources, the quick reads should be like a carousel, so there isn't really a start or end, it just loops around. also, make the left and right buttons more aesthetically consistent with the rest of the website (especially make the border around the circle thinner). the buttons should also be vertically centered with the quick reads, right now they are slightly too high.
+[X] for the folders on the main page, delete the text that says "open this public collection to review its summaries and files"
+[X] dms are bugging for alt account
+[ ] make users able to add folders inside of folders
+[ ] in dms, if you right click on the other person's message, you can reply/react/copy (similar to messages app). you can also pin conversations/groups
+[ ] reformat the settings page so that everything is evened out at the bottom
+[ ] fix editing own posts in "community", also just fix community in general
+[ ] you should only be able to post in channels that you have joined. and if youre not posting in a channel, there should be no text indicating it on the post (delete "general community)
+[ ] on profile, make users able to see their "following" and "followers" list. Also, each user should have a username (seperate from display name) which is unique and only changeable every 30 days.
 
-[ ] folders for speeches/async debates/resources. Clicking on a folder should show you a summarized version of everything put in there, and all are clickable and cna take you directly to that page. similar to google drive folders. You can also have an option to associate folders with specific tournaments.
+
+[X] folders for speeches/async debates/resources. Clicking on a folder should show you a summarized version of everything put in there, and all are clickable and cna take you directly to that page. similar to google drive folders. You can also have an option to associate folders with specific tournaments.
 
 [ ] Maybe (?): more social stuff kind of like social media but for debate, e.g. similar to instagram where you can upload videos
+
+
+# Tech Stack
+- React (HTML, CSS, JS + framework)
+- Firebase (Firestore, Storage, Functions, Hosting, Authentication)
+- OpenAI API (for AI summaries, moderation, and transcriptions)
