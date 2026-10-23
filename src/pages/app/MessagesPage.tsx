@@ -483,7 +483,22 @@ export const MessagesPage = () => {
       await navigator.clipboard.writeText(message.content);
       setPageError("");
     } catch {
-      setPageError("Could not copy this message. Check your browser's clipboard permission.");
+      const fallback = document.createElement("textarea");
+      let copied = false;
+      fallback.value = message.content;
+      fallback.setAttribute("readonly", "");
+      Object.assign(fallback.style, { position: "fixed", opacity: "0", pointerEvents: "none" });
+      try {
+        document.body.appendChild(fallback);
+        fallback.select();
+        copied = document.execCommand("copy");
+      } catch {
+        copied = false;
+      } finally {
+        fallback.remove();
+      }
+      if (copied) setPageError("");
+      else setPageError("Could not copy this message. Check your browser's clipboard permission.");
     }
     setContextMenu(null);
   };
@@ -864,7 +879,7 @@ export const MessagesPage = () => {
                               <button type="submit" className="btn btn-primary" disabled={Boolean(busyMessageId) || !editDraft.trim()}>{busyMessageId ? "Saving..." : "Save edit"}</button>
                             </div>
                           </form> : <>
-                            {message.replyTo ? <div className="message-reply-quote"><strong>{message.replyTo.authorName}</strong><span>{message.replyTo.content}</span></div> : null}
+                            {message.replyTo ? <div className="message-reply-quote"><span className="message-reply-quote-label"><CornerUpLeft size={12} aria-hidden="true" /> Replying to {message.replyTo.authorName}</span><span className="message-reply-quote-content">{message.replyTo.content}</span></div> : null}
                             {(!message.attachment || message.content !== `Shared ${message.attachment.kind}: ${message.attachment.name}`)
                               ? <MessageContent content={message.content} sharedPreview={message.sharedPreview} />
                               : null}
@@ -888,7 +903,7 @@ export const MessagesPage = () => {
               </div>
 
               {replyToDraft ? <div className="message-reply-draft">
-                <div><strong>Replying to {replyToDraft.authorName}</strong><span>{replyToDraft.content}</span></div>
+                <div className="message-reply-draft-copy"><strong><CornerUpLeft size={14} aria-hidden="true" /> Replying to {replyToDraft.authorName}</strong><span>{replyToDraft.content}</span></div>
                 <button type="button" className="forum-icon-button" aria-label="Cancel reply" onClick={() => setReplyToDraft(null)}><X size={17} aria-hidden="true" /></button>
               </div> : null}
               <form className="message-compose-bar" onSubmit={(event) => void submitMessage(event)}>

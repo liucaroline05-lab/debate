@@ -900,14 +900,14 @@ export const FoldersPage = () => {
             <div><p className="eyebrow">Your collection</p><h2 id="folder-board-heading">Board</h2></div>
             <div className="folder-board-heading-actions">
               <span className="meta-line">{boardCards.length} item{boardCards.length === 1 ? "" : "s"}</span>
-              {isFolderOwner ? <button type="button" className="btn btn-secondary" onClick={() => { setIsSubfolderFormOpen((value) => !value); setSubfolderNotice(""); }}><Plus size={16} aria-hidden="true" /> {isSubfolderFormOpen ? "Cancel subfolder" : "New subfolder"}</button> : null}
+              {isFolderOwner ? <button type="button" className="btn btn-secondary" onClick={() => { setIsSubfolderFormOpen((value) => !value); setSubfolderNotice(""); }}><Plus size={16} aria-hidden="true" /> {isSubfolderFormOpen ? "Cancel" : "New nested folder"}</button> : null}
               {canEditFolder ? <button type="button" className={isBoardEditing ? "btn btn-primary" : "btn btn-secondary"} disabled={boardLayoutBusy} onClick={toggleBoardEditing}>{isBoardEditing ? <Check size={16} aria-hidden="true" /> : <Pencil size={16} aria-hidden="true" />}{isBoardEditing ? "Done editing" : "Edit board"}</button> : null}
             </div>
           </div>
           {isSubfolderFormOpen && isFolderOwner ? <form className="folder-subfolder-form" onSubmit={(event) => void handleCreateSubfolder(event)}>
-            <label className="form-field"><span>Subfolder name</span><input value={subfolderName} maxLength={60} onChange={(event) => setSubfolderName(event.target.value)} placeholder="e.g. Evidence and briefs" autoFocus /></label>
+            <label className="form-field"><span>Folder name</span><input value={subfolderName} maxLength={60} onChange={(event) => setSubfolderName(event.target.value)} placeholder="e.g. Evidence and briefs" autoFocus /></label>
             <span className="folder-subfolder-visibility"><LockKeyhole size={15} aria-hidden="true" /> {folderVisibility(selectedFolder) === "public" ? "Public" : "Private"} · inherits this folder's visibility</span>
-            <button type="submit" className="btn btn-primary" disabled={subfolderBusy}>{subfolderBusy ? "Creating…" : "Create subfolder"}</button>
+            <button type="submit" className="btn btn-primary" disabled={subfolderBusy}>{subfolderBusy ? "Creating…" : "Create folder here"}</button>
           </form> : null}
           {subfolderNotice ? <p className="meta-line" role="status">{subfolderNotice}</p> : null}
           {boardLayoutNotice ? <p className="folder-board-layout-notice" role="status">{boardLayoutNotice}</p> : null}
