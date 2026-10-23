@@ -129,6 +129,23 @@ export const sendModeratedChatAttachment = onCall(
     const contentType = typeof data.contentType === "string" ? data.contentType : "";
     const name = cleanName(data.name);
     const note = typeof data.note === "string" ? data.note.trim().slice(0, 4_000) : "";
+    let replyTo: { messageId: string; authorId: string; authorName: string; content: string } | undefined;
+    if (data.replyTo !== undefined) {
+      const replyData = data.replyTo && typeof data.replyTo === "object" ? data.replyTo as Record<string, unknown> : null;
+      const replyMessageId = typeof replyData?.messageId === "string" ? replyData.messageId : "";
+      if (!replyMessageId || replyMessageId.length > 200) throw new HttpsError("invalid-argument", "Choose a valid message to reply to.");
+      const repliedMessage = await getFirestore().collection("chatMessages").doc(replyMessageId).get();
+      const original = repliedMessage.data();
+      if (!repliedMessage.exists || original?.threadId !== threadRef.id || !participantIds.includes(String(original.authorId ?? ""))) {
+        throw new HttpsError("permission-denied", "That message is not part of this conversation.");
+      }
+      replyTo = {
+        messageId: replyMessageId,
+        authorId: String(original.authorId ?? ""),
+        authorName: String(original.authorName ?? "Member").slice(0, 80),
+        content: String(original.deletedAt ? "message deleted" : original.content ?? "").slice(0, 240),
+      };
+    }
     const base64 = typeof data.dataBase64 === "string" ? data.dataBase64 : "";
     if (!name || !base64 || base64.length > Math.ceil(MAX_BYTES * 4 / 3) + 8 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
       throw new HttpsError("invalid-argument", "Choose a file smaller than 4 MB.");
@@ -158,7 +175,8 @@ export const sendModeratedChatAttachment = onCall(
       const batch = getFirestore().batch();
       batch.set(messageRef, {
         threadId: threadRef.id, participantIds, authorId: uid, authorName,
-        content: note || `Shared ${checked.kind}: ${name}`, attachment, createdAt,
+        content: note || `Shared ${checked.kind}: ${name}`, attachment,
+        ...(replyTo ? { replyTo } : {}), createdAt,
       });
       batch.update(threadRef, {
         lastMessageText: `Shared ${checked.kind}: ${name}`.slice(0, 160),

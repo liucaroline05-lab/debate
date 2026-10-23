@@ -470,7 +470,7 @@ export const SettingsPage = () => {
           </div>
         </article>
 
-        <article className="app-card">
+        <article className="app-card settings-notifications-card">
           <h2 className="card-title">Notifications</h2>
           <div className="stack" style={{ marginTop: "1rem" }}>
             <div className="settings-history-row">
@@ -557,7 +557,7 @@ export const SettingsPage = () => {
         </div>
 
         <div className="settings-right-stack">
-        <article className="app-card">
+        <article className="app-card settings-profile-card">
           <h2 className="card-title">Profile photo</h2>
           <div className="settings-avatar-panel">
             {pendingAvatarPreviewUrl ? (

@@ -3170,10 +3170,41 @@ button {
   display: grid;
   gap: 1.5rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.settings-grid > .settings-left-stack,
+.settings-grid > .settings-right-stack {
+  display: contents;
+}
+
+.settings-left-stack > .settings-account-card {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.settings-right-stack > .settings-profile-card {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.settings-left-stack > .settings-notifications-card {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.settings-right-stack > .settings-messaging-card {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.settings-right-stack > .settings-debate-preferences-card {
+  grid-column: 1 / -1;
+  grid-row: 3;
 }
 
 .settings-account-card {
-  align-self: start;
+  align-self: stretch;
 }
 
 .settings-blocked-accounts {
@@ -4244,6 +4275,15 @@ button {
 
   .settings-debate-preferences-card {
     grid-column: auto;
+  }
+
+  .settings-left-stack > .settings-account-card,
+  .settings-right-stack > .settings-profile-card,
+  .settings-left-stack > .settings-notifications-card,
+  .settings-right-stack > .settings-messaging-card,
+  .settings-right-stack > .settings-debate-preferences-card {
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .dashboard-grid .app-card:first-child {
@@ -7493,4 +7533,82 @@ button {
   color: var(--color-moss);
   font-size: 0.75rem;
   font-weight: 600;
+}
+
+
+.folder-parent-link {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: -0.35rem 0 1rem;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.folder-parent-link a {
+  color: var(--color-moss);
+  font-weight: 700;
+}
+
+.folder-subfolder-form {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid rgba(53, 47, 42, 0.1);
+  border-radius: 16px;
+  background: rgba(245, 239, 230, 0.52);
+}
+
+.folder-subfolder-form .form-field {
+  flex: 1 1 16rem;
+}
+
+.folder-subfolder-form .form-field input {
+  width: 100%;
+}
+
+.folder-subfolder-visibility,
+.folder-inherited-visibility {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.6rem;
+  color: var(--color-muted);
+  font-size: 0.82rem;
+}
+
+.folder-inherited-visibility {
+  min-height: 2.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(53, 47, 42, 0.07);
+  font-weight: 700;
+}
+
+.folder-board-folder-link {
+  display: grid;
+  justify-items: start;
+  gap: 0.55rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.folder-board-folder:hover {
+  transform: translateY(-2px);
+  border-color: rgba(118, 128, 107, 0.35);
+  background: rgba(255, 253, 248, 0.98);
+}
+
+.folder-board-folder-link > strong {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.folder-board-folder-link .folder-item-subtitle,
+.folder-board-folder-link .folder-item-summary {
+  width: 100%;
 }

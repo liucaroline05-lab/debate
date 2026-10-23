@@ -4,6 +4,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   increment,
   query,
@@ -48,6 +49,7 @@ export interface NewFolderInput {
   name: string;
   description?: string;
   visibility: "public" | "private";
+  parentFolderId?: string;
   tournamentId?: string;
   tournamentName?: string;
 }
@@ -76,6 +78,7 @@ export const createContentFolder = async (input: NewFolderInput) => {
     name: input.name.trim(),
     description: input.description?.trim() || "",
     visibility: input.visibility,
+    parentFolderId: input.parentFolderId || undefined,
     tournamentId: input.tournamentId || undefined,
     tournamentName: input.tournamentName || undefined,
     likeCount: 0,
@@ -92,18 +95,40 @@ export const createContentFolder = async (input: NewFolderInput) => {
   return folder;
 };
 
+const getDescendantFolders = async (parentFolderId: string, userId: string): Promise<ContentFolder[]> => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const owned = await getDocs(query(collection(firestore, "folders"), where("userId", "==", userId)));
+  const byParent = new Map<string, ContentFolder[]>();
+  owned.docs.forEach((child) => {
+    const folder = { id: child.id, ...child.data() } as ContentFolder;
+    if (!folder.parentFolderId) return;
+    byParent.set(folder.parentFolderId, [...(byParent.get(folder.parentFolderId) ?? []), folder]);
+  });
+  const descendants: ContentFolder[] = [];
+  const visit = (id: string) => {
+    (byParent.get(id) ?? []).forEach((child) => {
+      descendants.push(child);
+      visit(child.id);
+    });
+  };
+  visit(parentFolderId);
+  return descendants;
+};
+
 export const updateContentFolder = async (
   folder: ContentFolder,
   folderId: string,
   updates: Pick<ContentFolder, "name" | "visibility" | "tournamentId" | "tournamentName">,
 ) => {
   if (!firestore) throw new Error("Firestore is not configured.");
+  const descendants = await getDescendantFolders(folderId, folder.userId);
+  const folderIds = [folderId, ...descendants.map((child) => child.id)];
   if (folder.visibility !== "public" && updates.visibility === "public") {
-    const items = await getDocs(query(collection(firestore, "folderItems"), where("folderId", "==", folderId)));
-    const privateItems = items.docs.filter((item) => {
+    const items = (await Promise.all(folderIds.map((id) => getDocs(query(
+      collection(firestore!, "folderItems"), where("folderId", "==", id),
+    ))))).flatMap((group) => group.docs);
+    const privateItems = items.filter((item) => {
       const data = item.data() as Partial<ContentFolderItem>;
-      // Resources are always public. Older speech and debate references did
-      // not record visibility, so treat those as private until re-added.
       return data.itemType !== "resource" && data.sourceVisibility !== "public";
     });
     if (privateItems.length) {
@@ -116,9 +141,21 @@ export const updateContentFolder = async (
   });
   if (folder.visibility === updates.visibility) return;
 
-  const [items, files] = await getFolderChildren(folderId);
+  const [itemsByFolder, filesByFolder] = await Promise.all([
+    Promise.all(folderIds.map((id) => getDocs(query(collection(firestore!, "folderItems"), where("folderId", "==", id))))),
+    Promise.all(folderIds.map((id) => getDocs(query(collection(firestore!, "folderFiles"), where("folderId", "==", id))))),
+  ]);
+  const now = new Date().toISOString();
+  for (let offset = 0; offset < descendants.length; offset += 450) {
+    const batch = writeBatch(firestore);
+    descendants.slice(offset, offset + 450).forEach((child) => batch.update(
+      doc(firestore!, "folders", child.id),
+      { visibility: updates.visibility, updatedAt: now },
+    ));
+    await batch.commit();
+  }
   const children = [
-    ...items.docs.map((item) => {
+    ...itemsByFolder.flatMap((group) => group.docs).map((item) => {
       const data = item.data() as Partial<ContentFolderItem>;
       return {
         ref: item.ref,
@@ -128,7 +165,10 @@ export const updateContentFolder = async (
         },
       };
     }),
-    ...files.docs.map((file) => ({ ref: file.ref, updates: { visibility: updates.visibility } })),
+    ...filesByFolder.flatMap((group) => group.docs).map((file) => ({
+      ref: file.ref,
+      updates: { visibility: updates.visibility },
+    })),
   ];
   for (let offset = 0; offset < children.length; offset += 450) {
     const batch = writeBatch(firestore);
@@ -206,7 +246,7 @@ export const removeContentFromFolder = async (folderItemId: string) => {
 
 export interface FolderBoardOrderUpdate {
   id: string;
-  kind: "item" | "file";
+  kind: "item" | "file" | "folder";
   order: number;
 }
 
@@ -215,7 +255,7 @@ export const saveContentFolderBoardOrder = async (entries: FolderBoardOrderUpdat
   for (let offset = 0; offset < entries.length; offset += 450) {
     const batch = writeBatch(firestore);
     entries.slice(offset, offset + 450).forEach((entry) => {
-      const collectionName = entry.kind === "item" ? "folderItems" : "folderFiles";
+      const collectionName = entry.kind === "item" ? "folderItems" : entry.kind === "file" ? "folderFiles" : "folders";
       batch.update(doc(firestore!, collectionName, entry.id), { boardOrder: entry.order });
     });
     await batch.commit();
@@ -233,7 +273,7 @@ export const saveContentFolderBoardDimensions = async (
   dimensions: FolderBoardDimensions,
 ) => {
   if (!firestore) throw new Error("Firestore is not configured.");
-  const collectionName = kind === "item" ? "folderItems" : "folderFiles";
+  const collectionName = kind === "item" ? "folderItems" : kind === "file" ? "folderFiles" : "folders";
   const updates: Record<string, number> = {};
   if (dimensions.boardWidth !== undefined) updates.boardWidth = dimensions.boardWidth;
   if (dimensions.boardHeight !== undefined) updates.boardHeight = dimensions.boardHeight;
@@ -590,21 +630,34 @@ export const deleteContentFolderFile = async (
 
 export const deleteContentFolder = async (folderId: string) => {
   if (!firestore) throw new Error("Firestore is not configured.");
-  const [[items, files], invites] = await Promise.all([
-    getFolderChildren(folderId),
-    getDocs(query(collection(firestore, "folderInvites"), where("folderId", "==", folderId))),
+  const rootRef = doc(firestore, "folders", folderId);
+  const rootSnapshot = await getDoc(rootRef);
+  if (!rootSnapshot.exists()) return;
+  const rootFolder = { id: rootSnapshot.id, ...rootSnapshot.data() } as ContentFolder;
+  const descendants = await getDescendantFolders(folderId, rootFolder.userId);
+  const folderIds = [folderId, ...descendants.map((folder) => folder.id)];
+  const [itemGroups, fileGroups, inviteGroups] = await Promise.all([
+    Promise.all(folderIds.map((id) => getDocs(query(collection(firestore!, "folderItems"), where("folderId", "==", id))))),
+    Promise.all(folderIds.map((id) => getDocs(query(collection(firestore!, "folderFiles"), where("folderId", "==", id))))),
+    Promise.all(folderIds.map((id) => getDocs(query(collection(firestore!, "folderInvites"), where("folderId", "==", id))))),
   ]);
+  const files = fileGroups.flatMap((group) => group.docs);
   if (storage) {
-    await Promise.all(files.docs.map(async (file) => {
+    await Promise.all(files.map(async (file) => {
       const data = file.data() as ContentFolderFile;
       try { await deleteObject(ref(storage!, data.storagePath)); } catch { /* Remove stale metadata even when an object is already gone. */ }
     }));
   }
-  const children = [...items.docs, ...files.docs, ...invites.docs];
-  for (let offset = 0; offset < children.length; offset += 450) {
+  const childRefs = [
+    ...itemGroups.flatMap((group) => group.docs.map((child) => child.ref)),
+    ...files.map((child) => child.ref),
+    ...inviteGroups.flatMap((group) => group.docs.map((child) => child.ref)),
+    ...descendants.map((folder) => doc(firestore!, "folders", folder.id)),
+    rootRef,
+  ];
+  for (let offset = 0; offset < childRefs.length; offset += 450) {
     const batch = writeBatch(firestore);
-    children.slice(offset, offset + 450).forEach((child) => batch.delete(child.ref));
+    childRefs.slice(offset, offset + 450).forEach((childRef) => batch.delete(childRef));
     await batch.commit();
   }
-  await deleteDoc(doc(firestore, "folders", folderId));
 };

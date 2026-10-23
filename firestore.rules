@@ -493,6 +493,10 @@ service cloud.firestore {
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 60
         && request.resource.data.visibility in ["public", "private"]
+        && (!("parentFolderId" in request.resource.data)
+          || (request.resource.data.parentFolderId is string
+            && ownsFolder(request.resource.data.parentFolderId)
+            && folderDocument(request.resource.data.parentFolderId).data.visibility == request.resource.data.visibility))
         && request.resource.data.likeCount == 0
         && request.resource.data.dislikeCount == 0
         && request.resource.data.saveCount == 0
@@ -509,6 +513,8 @@ service cloud.firestore {
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 60
           && request.resource.data.visibility in ["public", "private"]
+          && (!("parentFolderId" in resource.data)
+            || folderDocument(resource.data.parentFolderId).data.visibility == request.resource.data.visibility)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name", "description", "visibility", "tournamentId", "tournamentName", "updatedAt", "itemCount", "fileCount", "collaboratorIds"])
           && request.resource.data.get("collaboratorIds", []).toSet()
             .difference(resource.data.get("collaboratorIds", []).toSet()).size() == 0)
@@ -524,6 +530,9 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["collaboratorIds", "updatedAt"])
           && request.resource.data.collaboratorIds.toSet()
             == resource.data.collaboratorIds.toSet().difference([request.auth.uid].toSet()))
+        || ((isFolderMember(folderId)
+          || ("parentFolderId" in resource.data && isFolderMember(resource.data.parentFolderId)))
+          && folderBoardLayoutChange())
         || (isPublicFolder(folderId) && countChangesAreValid());
       allow delete: if ownsExistingResource("userId");
     }
@@ -779,6 +788,13 @@ service cloud.firestore {
         && request.resource.data.content is string
         && request.resource.data.content.size() > 0
         && request.resource.data.content.size() <= 4000
+        && (!("replyTo" in request.resource.data)
+          || (request.resource.data.replyTo is map
+            && request.resource.data.replyTo.messageId is string
+            && request.resource.data.replyTo.authorId in request.resource.data.participantIds
+            && request.resource.data.replyTo.authorName is string
+            && request.resource.data.replyTo.content is string
+            && request.resource.data.replyTo.content.size() <= 240))
         && request.resource.data.participantIds
           == chatData(request.resource.data.threadId).participantIds
         && isChatParticipant(request.resource.data.threadId)
@@ -803,6 +819,31 @@ service cloud.firestore {
             && !("sharedPreview" in request.resource.data)
           )
         );
+    }
+
+    match /chatMessageReactions/{reactionId} {
+      allow read: if isSignedIn()
+        && request.auth.uid in resource.data.participantIds;
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.messageId is string
+        && reactionId == request.resource.data.messageId + "--" + request.auth.uid
+        && request.resource.data.threadId is string
+        && request.resource.data.participantIds == chatData(request.resource.data.threadId).participantIds
+        && isChatParticipant(request.resource.data.threadId)
+        && request.resource.data.emoji in ["👍", "❤️", "😂", "😮", "🙏"];
+      allow delete: if ownsExistingResource("userId")
+        && request.auth.uid in resource.data.participantIds;
+    }
+
+    match /chatThreadPins/{pinId} {
+      allow read: if ownsExistingResource("userId");
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.threadId is string
+        && pinId == request.auth.uid + "--" + request.resource.data.threadId
+        && isChatParticipant(request.resource.data.threadId);
+      allow delete: if ownsExistingResource("userId");
     }
 
     match /channelMemberships/{membershipId} {

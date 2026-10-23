@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
 import {
@@ -66,7 +66,8 @@ const FOLDER_BOARD_GAP_PX = 16;
 
 type FolderBoardEntry =
   | { kind: "item"; sortAt: string; item: ContentFolderItem }
-  | { kind: "file"; sortAt: string; file: ContentFolderFile };
+  | { kind: "file"; sortAt: string; file: ContentFolderFile }
+  | { kind: "folder"; sortAt: string; folder: ContentFolder };
 
 type FolderBoardResizeAxis = "width" | "height" | "both";
 
@@ -101,16 +102,16 @@ interface FolderBoardDragSession {
   moved: boolean;
 }
 
-const boardEntryKey = (entry: FolderBoardEntry) => `${entry.kind}:${entry.kind === "item" ? entry.item.id : entry.file.id}`;
-const boardEntryOrder = (entry: FolderBoardEntry) => entry.kind === "item" ? entry.item.boardOrder : entry.file.boardOrder;
+const boardEntryKey = (entry: FolderBoardEntry) => `${entry.kind}:${entry.kind === "item" ? entry.item.id : entry.kind === "file" ? entry.file.id : entry.folder.id}`;
+const boardEntryOrder = (entry: FolderBoardEntry) => entry.kind === "item" ? entry.item.boardOrder : entry.kind === "file" ? entry.file.boardOrder : entry.folder.boardOrder;
 const boardEntryWidth = (entry: FolderBoardEntry) => {
-  const width = entry.kind === "item" ? entry.item.boardWidth : entry.file.boardWidth;
+  const width = entry.kind === "item" ? entry.item.boardWidth : entry.kind === "file" ? entry.file.boardWidth : entry.folder.boardWidth;
   if (width) return width <= 4 ? width * 25 : Math.max(20, Math.min(100, width));
-  const legacySize = entry.kind === "item" ? entry.item.boardSize : entry.file.boardSize;
+  const legacySize = entry.kind === "item" ? entry.item.boardSize : entry.kind === "file" ? entry.file.boardSize : entry.folder.boardSize;
   return legacySize === "small" ? 25 : legacySize === "large" ? 100 : 50;
 };
-const boardEntryHeight = (entry: FolderBoardEntry) => entry.kind === "item" ? entry.item.boardHeight : entry.file.boardHeight;
-const boardEntryId = (entry: FolderBoardEntry) => entry.kind === "item" ? entry.item.id : entry.file.id;
+const boardEntryHeight = (entry: FolderBoardEntry) => entry.kind === "item" ? entry.item.boardHeight : entry.kind === "file" ? entry.file.boardHeight : entry.folder.boardHeight;
+const boardEntryId = (entry: FolderBoardEntry) => entry.kind === "item" ? entry.item.id : entry.kind === "file" ? entry.file.id : entry.folder.id;
 
 const itemTypeLabels: Record<FolderItemType, string> = {
   speech: "Speech",
@@ -239,6 +240,10 @@ export const FoldersPage = () => {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [isSubfolderFormOpen, setIsSubfolderFormOpen] = useState(false);
+  const [subfolderName, setSubfolderName] = useState("");
+  const [subfolderBusy, setSubfolderBusy] = useState(false);
+  const [subfolderNotice, setSubfolderNotice] = useState("");
   const [isBoardEditing, setIsBoardEditing] = useState(false);
   const [boardOrderOverride, setBoardOrderOverride] = useState<string[] | null>(null);
   const [boardDimensionOverrides, setBoardDimensionOverrides] = useState<Record<string, { width: number; height: number | null }>>({});
@@ -485,6 +490,7 @@ export const FoldersPage = () => {
     return allFolders.filter((folder) => {
       const isPublic = folderVisibility(folder) === "public";
       if (!isPublic && !isContentFolderMember(folder, userId)) return false;
+      if (folder.parentFolderId) return false;
       if (visibilityFilter === "Public" && !isPublic) return false;
       if (visibilityFilter === "Private" && isPublic) return false;
       if (savedOnly && !savedFolderIds.has(folder.id)) return false;
@@ -508,7 +514,7 @@ export const FoldersPage = () => {
     const isPublic = folderVisibility(folder) === "public";
     const isOwner = folder.userId === userId;
     const isShared = !isOwner && isContentFolderMember(folder, userId);
-    const itemCount = (folder.itemCount ?? (isOwner ? folderItems.filter((item) => item.folderId === folder.id).length : 0)) + (folder.fileCount ?? 0);
+    const itemCount = (folder.itemCount ?? (isOwner ? folderItems.filter((item) => item.folderId === folder.id).length : 0)) + (folder.fileCount ?? 0) + allFolders.filter((child) => child.parentFolderId === folder.id).length;
     return (
       <article className="folder-card" key={folder.id}>
         <Link to={`/app/folders/${folder.id}`} className="folder-card-main">
@@ -564,6 +570,35 @@ export const FoldersPage = () => {
       setMessage(error instanceof Error ? error.message : "Unable to create this folder.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleCreateSubfolder = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!currentUser || !selectedFolder || !isFolderOwner) return;
+    if (!subfolderName.trim()) {
+      setSubfolderNotice("Add a folder name first.");
+      return;
+    }
+    setSubfolderBusy(true);
+    setSubfolderNotice("");
+    try {
+      const folder = await createContentFolder({
+        userId: currentUser.id,
+        ownerName: currentUser.displayName,
+        name: subfolderName,
+        visibility: folderVisibility(selectedFolder),
+        parentFolderId: selectedFolder.id,
+        tournamentId: selectedFolder.tournamentId,
+        tournamentName: selectedFolder.tournamentName,
+      });
+      setSubfolderName("");
+      setIsSubfolderFormOpen(false);
+      setSubfolderNotice(`Created “${folder.name}” inside ${selectedFolder.name}.`);
+    } catch (error) {
+      setSubfolderNotice(error instanceof Error ? error.message : "Unable to create this subfolder.");
+    } finally {
+      setSubfolderBusy(false);
     }
   };
 
@@ -672,10 +707,15 @@ export const FoldersPage = () => {
       );
     }
 
+    const subfolders = allFolders.filter((folder) => folder.parentFolderId === selectedFolder.id);
+    const parentFolder = selectedFolder.parentFolderId
+      ? allFolders.find((folder) => folder.id === selectedFolder.parentFolderId)
+      : undefined;
     const sortedFiles = [...selectedFolderFilesState.data].sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt));
     const boardCards: FolderBoardEntry[] = [
       ...selectedFolderItemsState.data.map((item) => ({ kind: "item" as const, sortAt: item.addedAt, item })),
       ...sortedFiles.map((file) => ({ kind: "file" as const, sortAt: file.uploadedAt, file })),
+      ...subfolders.map((folder) => ({ kind: "folder" as const, sortAt: folder.createdAt, folder })),
     ].sort((left, right) => {
       const leftOrder = boardEntryOrder(left);
       const rightOrder = boardEntryOrder(right);
@@ -831,11 +871,11 @@ export const FoldersPage = () => {
             <Link to="/app/folders" className="folder-back-link"><ArrowLeft size={16} aria-hidden="true" /> All folders</Link>
             <p className="eyebrow">{folderVisibility(selectedFolder) === "public" ? "Public folder" : "Private folder"}</p>
             <h1>{selectedFolder.name}</h1>
-            <p>{selectedFolder.ownerName ? `Created by ${selectedFolder.ownerName} · ` : ""}{selectedFolderItemsState.data.length + selectedFolderFilesState.data.length} item{selectedFolderItemsState.data.length + selectedFolderFilesState.data.length === 1 ? "" : "s"}{selectedFolder.tournamentName ? ` · ${selectedFolder.tournamentName}` : ""}</p>
+            <p>{selectedFolder.ownerName ? `Created by ${selectedFolder.ownerName} · ` : ""}{boardCards.length} item{boardCards.length === 1 ? "" : "s"}{selectedFolder.tournamentName ? ` · ${selectedFolder.tournamentName}` : ""}</p>
             {selectedFolder.tournamentName ? <span className="folder-tournament-tag"><CalendarDays size={15} /> {selectedFolder.tournamentName}</span> : null}
           </div>
           <div className="folder-detail-header-actions">
-            {isFolderOwner ? (
+            {isFolderOwner && !selectedFolder.parentFolderId ? (
               <label className="folder-visibility-control">
                 <span>Visibility</span>
                 <select value={folderVisibility(selectedFolder)} disabled={busy} onChange={(event) => void handleVisibilityChange(event.target.value as "public" | "private")}>
@@ -843,7 +883,9 @@ export const FoldersPage = () => {
                   <option value="public">Public</option>
                 </select>
               </label>
-            ) : folderVisibility(selectedFolder) === "public"
+            ) : isFolderOwner && selectedFolder.parentFolderId
+              ? <span className="folder-inherited-visibility"><LockKeyhole size={15} aria-hidden="true" /> {folderVisibility(selectedFolder) === "public" ? "Public" : "Private"} · inherited</span>
+              : folderVisibility(selectedFolder) === "public"
               ? <span className="folder-visibility-pill"><FolderOpen size={15} /> Public</span>
               : <span className="folder-visibility-pill"><LockKeyhole size={15} /> Private · shared with you</span>}
             {isFolderOwner ? <button type="button" className="btn btn-ghost folder-delete-button" disabled={busy} onClick={() => void handleDeleteFolder()}><Trash2 size={16} aria-hidden="true" /> Delete folder</button> : null}
@@ -851,15 +893,23 @@ export const FoldersPage = () => {
         </header>
 
         {message ? <p className="speech-library-status" role="status">{message}</p> : null}
+        {parentFolder ? <p className="folder-parent-link"><Folder size={15} aria-hidden="true" /> In <Link to={`/app/folders/${parentFolder.id}`}>{parentFolder.name}</Link></p> : null}
 
         <section className="app-card folder-board-section" aria-labelledby="folder-board-heading">
           <div className="folder-detail-section-heading">
             <div><p className="eyebrow">Your collection</p><h2 id="folder-board-heading">Board</h2></div>
             <div className="folder-board-heading-actions">
               <span className="meta-line">{boardCards.length} item{boardCards.length === 1 ? "" : "s"}</span>
+              {isFolderOwner ? <button type="button" className="btn btn-secondary" onClick={() => { setIsSubfolderFormOpen((value) => !value); setSubfolderNotice(""); }}><Plus size={16} aria-hidden="true" /> {isSubfolderFormOpen ? "Cancel subfolder" : "New subfolder"}</button> : null}
               {canEditFolder ? <button type="button" className={isBoardEditing ? "btn btn-primary" : "btn btn-secondary"} disabled={boardLayoutBusy} onClick={toggleBoardEditing}>{isBoardEditing ? <Check size={16} aria-hidden="true" /> : <Pencil size={16} aria-hidden="true" />}{isBoardEditing ? "Done editing" : "Edit board"}</button> : null}
             </div>
           </div>
+          {isSubfolderFormOpen && isFolderOwner ? <form className="folder-subfolder-form" onSubmit={(event) => void handleCreateSubfolder(event)}>
+            <label className="form-field"><span>Subfolder name</span><input value={subfolderName} maxLength={60} onChange={(event) => setSubfolderName(event.target.value)} placeholder="e.g. Evidence and briefs" autoFocus /></label>
+            <span className="folder-subfolder-visibility"><LockKeyhole size={15} aria-hidden="true" /> {folderVisibility(selectedFolder) === "public" ? "Public" : "Private"} · inherits this folder's visibility</span>
+            <button type="submit" className="btn btn-primary" disabled={subfolderBusy}>{subfolderBusy ? "Creating…" : "Create subfolder"}</button>
+          </form> : null}
+          {subfolderNotice ? <p className="meta-line" role="status">{subfolderNotice}</p> : null}
           {boardLayoutNotice ? <p className="folder-board-layout-notice" role="status">{boardLayoutNotice}</p> : null}
           {canEditFolder ? (
             <div className="folder-upload-box">
@@ -902,6 +952,23 @@ export const FoldersPage = () => {
                     </article>
                   );
                 }
+                if (card.kind === "folder") {
+                  const { folder } = card;
+                  const folderItemsCount = (folder.itemCount ?? 0) + (folder.fileCount ?? 0) + allFolders.filter((child) => child.parentFolderId === folder.id).length;
+                  return (
+                    <article className={`${cardClassName} folder-board-folder`} data-board-card-key={cardKey} style={cardStyle} key={`folder-${folder.id}`}>
+                      <Link className="folder-board-folder-link" to={`/app/folders/${folder.id}`} aria-disabled={isBoardEditing} onClick={(event) => { if (isBoardEditing) event.preventDefault(); }}>
+                        <span className="folder-item-icon"><FolderOpen size={19} aria-hidden="true" /></span>
+                        <span className="folder-item-type">Subfolder</span>
+                        <strong>{folder.name}</strong>
+                        <span className="folder-item-subtitle">{folderItemsCount} item{folderItemsCount === 1 ? "" : "s"} · {folderVisibility(folder)}</span>
+                        {folder.description ? <span className="folder-item-summary">{shortText(folder.description)}</span> : null}
+                        <span className="folder-board-open">Open folder <ChevronRight size={15} aria-hidden="true" /></span>
+                      </Link>
+                      {renderBoardEditControls(card)}
+                    </article>
+                  );
+                }
                 const { file } = card;
                 const Icon = folderFileIcon(file.kind);
                 return (
@@ -920,7 +987,7 @@ export const FoldersPage = () => {
             <div className="folder-board-empty">
               <FolderOpen size={30} aria-hidden="true" />
               <h3>This board is empty</h3>
-              <p>Add speeches, async debates, resources, or upload files to collect them here.</p>
+              <p>Add speeches, async debates, resources, files, or subfolders to collect them here.</p>
               <div className="button-row"><Link to="/app/speeches/new" className="btn btn-secondary">Browse speeches</Link><Link to="/app/debates" className="btn btn-secondary">Browse async debates</Link><Link to="/app/resources" className="btn btn-secondary">Browse resources</Link></div>
             </div>
           )}

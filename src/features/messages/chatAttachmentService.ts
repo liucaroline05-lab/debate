@@ -1,5 +1,6 @@
 import { httpsCallable } from "firebase/functions";
 import { functions } from "@/lib/firebase";
+import type { ChatMessageReply } from "@/types/models";
 
 const maxFileBytes = 4 * 1024 * 1024;
 const allowedTypes = new Set([
@@ -22,11 +23,18 @@ const fileAsBase64 = async (file: File) => {
   return btoa(binary);
 };
 
-export const sendChatAttachment = async (threadId: string, file: File, note: string) => {
+export const sendChatAttachment = async (threadId: string, file: File, note: string, replyTo?: ChatMessageReply) => {
   if (!functions) throw new Error("Firebase Functions is not configured.");
   validateChatAttachment(file);
-  const send = httpsCallable<Record<string, string>, { sent: boolean }>(functions, "sendModeratedChatAttachment", { timeout: 130_000 });
-  await send({ threadId, name: file.name, contentType: file.type, dataBase64: await fileAsBase64(file), note });
+  const send = httpsCallable<{
+    threadId: string;
+    name: string;
+    contentType: string;
+    dataBase64: string;
+    note: string;
+    replyTo?: ChatMessageReply;
+  }, { sent: boolean }>(functions, "sendModeratedChatAttachment", { timeout: 130_000 });
+  await send({ threadId, name: file.name, contentType: file.type, dataBase64: await fileAsBase64(file), note, ...(replyTo ? { replyTo } : {}) });
 };
 
 export const loadChatAttachment = async (threadId: string, messageId: string) => {

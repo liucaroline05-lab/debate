@@ -2,6 +2,7 @@ import {
   addDoc,
   arrayUnion,
   collection,
+  deleteDoc,
   deleteField,
   doc,
   getDoc,
@@ -19,6 +20,7 @@ import type {
   ChatSharedPreview,
   ChatThread,
   MessagingPermission,
+  ChatMessageReply,
   UserProfile,
 } from "@/types/models";
 
@@ -282,6 +284,7 @@ export const sendChatMessage = async (
   author: UserProfile,
   content: string,
   sharedPreview?: ChatSharedPreview,
+  replyTo?: ChatMessageReply,
 ) => {
   const database = requireFirestore();
   const normalizedContent = content.trim();
@@ -309,6 +312,7 @@ export const sendChatMessage = async (
     authorName: author.displayName,
     content: normalizedContent,
     ...(sharedPreview ? { sharedPreview } : {}),
+    ...(replyTo ? { replyTo } : {}),
     createdAt,
   } satisfies Omit<ChatMessage, "id">);
 
@@ -320,6 +324,41 @@ export const sendChatMessage = async (
     lastMessageSenderId: author.id,
     updatedAt: createdAt,
   });
+};
+
+export const setChatMessageReaction = async (
+  message: ChatMessage,
+  userId: string,
+  emoji: string | null,
+  participantIds: string[] = message.participantIds,
+) => {
+  const database = requireFirestore();
+  const reactionId = `${message.id}--${userId}`;
+  const reactionRef = doc(database, "chatMessageReactions", reactionId);
+  if (!emoji) {
+    await deleteDoc(reactionRef);
+    return;
+  }
+  await setDoc(reactionRef, {
+    id: reactionId,
+    messageId: message.id,
+    threadId: message.threadId,
+    participantIds,
+    userId,
+    emoji,
+    createdAt: new Date().toISOString(),
+  });
+};
+
+export const setChatThreadPin = async (threadId: string, userId: string, isPinned: boolean) => {
+  const database = requireFirestore();
+  const pinId = `${userId}--${threadId}`;
+  const pinRef = doc(database, "chatThreadPins", pinId);
+  if (!isPinned) {
+    await deleteDoc(pinRef);
+    return;
+  }
+  await setDoc(pinRef, { id: pinId, threadId, userId, createdAt: new Date().toISOString() });
 };
 
 const updateLastMessagePreview = async (message: ChatMessage, authorId: string, content: string) => {

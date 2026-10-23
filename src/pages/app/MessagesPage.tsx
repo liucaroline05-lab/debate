@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
 import {
   AlertCircle,
+  Copy,
+  CornerUpLeft,
   MessageCircle,
   MoreHorizontal,
   Paperclip,
+  Pin,
+  PinOff,
   Mic,
   Pencil,
   Square,
   Plus,
   Search,
   Send,
+  Smile,
   Trash2,
   UserRound,
   UsersRound,
@@ -27,6 +33,8 @@ import {
   deleteChatMessage,
   editChatMessage,
   sendChatMessage,
+  setChatMessageReaction,
+  setChatThreadPin,
   startDirectThread,
   startGroupThread,
   subscribeToMessages,
@@ -34,12 +42,13 @@ import {
 } from "@/features/messages/messageService";
 import { normalizeUserProfile } from "@/features/users/defaultProfile";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { ChatMessage, ChatThread, UserBlock, UserProfile } from "@/types/models";
+import type { ChatMessage, ChatMessageReaction, ChatMessageReply, ChatThread, ChatThreadPin, UserBlock, UserProfile } from "@/types/models";
 
 type ComposerMode = "direct" | "group";
 type CachedMessageDraft = { text: string; savedAt: number };
 
 const MESSAGE_DRAFT_TTL_MS = 15 * 60 * 1000;
+const CHAT_REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "🙏"];
 const messageDraftStorageKey = (userId: string, threadId: string) =>
   `debate-studio:message-draft:${encodeURIComponent(userId)}:${encodeURIComponent(threadId)}`;
 
@@ -113,6 +122,22 @@ export const MessagesPage = () => {
     "userBlocks", [], blockConstraints, Boolean(currentUser),
     currentUser ? `user-blocks:${currentUser.id}` : undefined, true,
   );
+  const messageReactionConstraints = useMemo(
+    () => currentUser ? [where("participantIds", "array-contains", currentUser.id)] : [],
+    [currentUser?.id],
+  );
+  const messageReactionsState = useSeededFirestoreCollection<ChatMessageReaction>(
+    "chatMessageReactions", [], messageReactionConstraints, Boolean(currentUser),
+    currentUser ? `chat-reactions:${currentUser.id}` : undefined,
+  );
+  const threadPinConstraints = useMemo(
+    () => currentUser ? [where("userId", "==", currentUser.id)] : [],
+    [currentUser?.id],
+  );
+  const threadPinsState = useSeededFirestoreCollection<ChatThreadPin>(
+    "chatThreadPins", [], threadPinConstraints, Boolean(currentUser),
+    currentUser ? `chat-thread-pins:${currentUser.id}` : undefined,
+  );
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -131,6 +156,10 @@ export const MessagesPage = () => {
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [messageActionError, setMessageActionError] = useState("");
   const [busyMessageId, setBusyMessageId] = useState("");
+  const [replyToDraft, setReplyToDraft] = useState<ChatMessageReply | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ message: ChatMessage; x: number; y: number } | null>(null);
+  const [contextReactionOpen, setContextReactionOpen] = useState(false);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [attachmentError, setAttachmentError] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -166,6 +195,20 @@ export const MessagesPage = () => {
     [people],
   );
   const activeThread = threads.find((thread) => thread.id === activeThreadId);
+  const pinnedThreadIds = useMemo(() => new Set(threadPinsState.data.map((pin) => pin.threadId)), [threadPinsState.data]);
+  const sortedThreads = useMemo(
+    () => [...threads].sort((left, right) => Number(pinnedThreadIds.has(right.id)) - Number(pinnedThreadIds.has(left.id))),
+    [pinnedThreadIds, threads],
+  );
+  const activeThreadReactions = useMemo(
+    () => messageReactionsState.data.filter((reaction) => reaction.threadId === activeThreadId),
+    [activeThreadId, messageReactionsState.data],
+  );
+  const reactionsByMessage = useMemo(() => {
+    const grouped = new Map<string, ChatMessageReaction[]>();
+    activeThreadReactions.forEach((reaction) => grouped.set(reaction.messageId, [...(grouped.get(reaction.messageId) ?? []), reaction]));
+    return grouped;
+  }, [activeThreadReactions]);
   const draftKey = currentUser && activeThreadId
     ? messageDraftStorageKey(currentUser.id, activeThreadId)
     : "";
@@ -262,6 +305,9 @@ export const MessagesPage = () => {
     setMessages([]);
     setMessagesError("");
     setOpenMessageActionsId("");
+    setContextMenu(null);
+    setContextReactionOpen(false);
+    setReplyToDraft(null);
     setEditingMessageId("");
     setDeleteTarget(null);
     if (!activeThreadId) {
@@ -290,6 +336,28 @@ export const MessagesPage = () => {
       setIsMessagesLoading(false);
     }
   }, [activeThreadId]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !contextMenuRef.current?.contains(event.target)) {
+        setContextMenu(null);
+        setContextReactionOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+        setContextReactionOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [contextMenu]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
@@ -374,6 +442,52 @@ export const MessagesPage = () => {
     }
   };
 
+  const toggleThreadPin = async (thread: ChatThread) => {
+    if (!currentUser) return;
+    const isPinned = pinnedThreadIds.has(thread.id);
+    try {
+      await setChatThreadPin(thread.id, currentUser.id, !isPinned);
+      setPageError("");
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "Could not update this pin.");
+    }
+  };
+
+  const chooseMessageReaction = async (message: ChatMessage, emoji: string) => {
+    if (!currentUser) return;
+    const existing = activeThreadReactions.find((reaction) => reaction.messageId === message.id && reaction.userId === currentUser.id);
+    try {
+      await setChatMessageReaction(message, currentUser.id, existing?.emoji === emoji ? null : emoji, activeThread?.participantIds ?? message.participantIds);
+      setContextMenu(null);
+      setContextReactionOpen(false);
+      setPageError("");
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "Could not react to this message.");
+    }
+  };
+
+  const startReply = (message: ChatMessage) => {
+    setReplyToDraft({
+      messageId: message.id,
+      authorId: message.authorId,
+      authorName: message.authorName,
+      content: message.content.slice(0, 240),
+    });
+    setContextMenu(null);
+    setContextReactionOpen(false);
+    document.getElementById("messageDraft")?.focus();
+  };
+
+  const copyMessage = async (message: ChatMessage) => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setPageError("");
+    } catch {
+      setPageError("Could not copy this message. Check your browser's clipboard permission.");
+    }
+    setContextMenu(null);
+  };
+
   const submitMessage = async (event: FormEvent) => {
     event.preventDefault();
     if (!currentUser || !activeThread || (!messageDraft.trim() && !attachmentFile) || isSending) return;
@@ -382,12 +496,13 @@ export const MessagesPage = () => {
     setPageError("");
     try {
       if (attachmentFile) {
-        await sendChatAttachment(activeThread.id, attachmentFile, messageDraft);
+        await sendChatAttachment(activeThread.id, attachmentFile, messageDraft, replyToDraft ?? undefined);
         setAttachmentFile(null);
       } else {
-        await sendChatMessage(activeThread, currentUser, messageDraft);
+        await sendChatMessage(activeThread, currentUser, messageDraft, undefined, replyToDraft ?? undefined);
       }
       setMessageDraft("");
+      setReplyToDraft(null);
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Unable to send your message.");
     } finally {
@@ -597,15 +712,15 @@ export const MessagesPage = () => {
                 <span>Start a DM or bring a prep group together.</span>
               </div>
             ) : null}
-            {threads.map((thread) => {
+            {sortedThreads.map((thread) => {
               const people = threadPeople(thread);
               const previewUser = people[0];
               return (
-                <button
-                  type="button"
-                  key={thread.id}
-                  className={activeThreadId === thread.id ? "message-thread-button is-active" : "message-thread-button"}
-                  onClick={() => {
+                <div className="message-thread-row" key={thread.id}>
+                  <button
+                    type="button"
+                    className={activeThreadId === thread.id ? "message-thread-button is-active" : "message-thread-button"}
+                    onClick={() => {
                     if (recorderRef.current && recorderRef.current.state !== "inactive") {
                       recorderRef.current.onstop = null;
                       recorderRef.current.stop();
@@ -616,21 +731,25 @@ export const MessagesPage = () => {
                     setAttachmentError("");
                     setActiveThreadId(thread.id);
                     setSearchParams({ thread: thread.id });
-                  }}
-                >
-                  {thread.type === "group" ? (
-                    <span className="message-avatar message-avatar-fallback message-group-avatar" aria-hidden="true">
-                      <UsersRound size={20} />
+                    }}
+                  >
+                    {thread.type === "group" ? (
+                      <span className="message-avatar message-avatar-fallback message-group-avatar" aria-hidden="true">
+                        <UsersRound size={20} />
+                      </span>
+                    ) : <ProfileAvatar user={previewUser} />}
+                    <span className="message-thread-copy">
+                      <span className="message-thread-title">
+                        <strong>{threadTitle(thread)}</strong>
+                        <small>{formatMessageTime(thread.lastMessageAt ?? thread.updatedAt)}</small>
+                      </span>
+                      <span>{threadPreview(thread)}</span>
                     </span>
-                  ) : <ProfileAvatar user={previewUser} />}
-                  <span className="message-thread-copy">
-                    <span className="message-thread-title">
-                      <strong>{threadTitle(thread)}</strong>
-                      <small>{formatMessageTime(thread.lastMessageAt ?? thread.updatedAt)}</small>
-                    </span>
-                    <span>{threadPreview(thread)}</span>
-                  </span>
-                </button>
+                  </button>
+                  <button type="button" className={pinnedThreadIds.has(thread.id) ? "message-thread-pin is-pinned" : "message-thread-pin"} aria-label={pinnedThreadIds.has(thread.id) ? `Unpin ${threadTitle(thread)}` : `Pin ${threadTitle(thread)}`} aria-pressed={pinnedThreadIds.has(thread.id)} onClick={() => void toggleThreadPin(thread)}>
+                    {pinnedThreadIds.has(thread.id) ? <PinOff size={17} aria-hidden="true" /> : <Pin size={17} aria-hidden="true" />}
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -683,7 +802,16 @@ export const MessagesPage = () => {
                   const previous = visibleMessages[index - 1];
                   const showAuthor = !previous || previous.authorId !== message.authorId;
                   return (
-                    <div key={message.id} className={isOwn ? "message-row is-own" : "message-row"}>
+                    <div key={message.id} className={isOwn ? "message-row is-own" : "message-row"} onContextMenu={(event) => {
+                      if (isOwn || message.deletedAt) return;
+                      event.preventDefault();
+                      setContextReactionOpen(false);
+                      setContextMenu({
+                        message,
+                        x: Math.max(12, Math.min(event.clientX, window.innerWidth - 220)),
+                        y: Math.max(12, Math.min(event.clientY, window.innerHeight - 190)),
+                      });
+                    }}>
                       {!isOwn && showAuthor ? <ProfileAvatar user={userById.get(message.authorId)} small /> : <span className="message-avatar-spacer" />}
                       <div className="message-bubble-wrap">
                         {showAuthor ? (
@@ -736,11 +864,19 @@ export const MessagesPage = () => {
                               <button type="submit" className="btn btn-primary" disabled={Boolean(busyMessageId) || !editDraft.trim()}>{busyMessageId ? "Saving..." : "Save edit"}</button>
                             </div>
                           </form> : <>
+                            {message.replyTo ? <div className="message-reply-quote"><strong>{message.replyTo.authorName}</strong><span>{message.replyTo.content}</span></div> : null}
                             {(!message.attachment || message.content !== `Shared ${message.attachment.kind}: ${message.attachment.name}`)
                               ? <MessageContent content={message.content} sharedPreview={message.sharedPreview} />
                               : null}
                             {message.attachment ? <ChatAttachmentView message={message} viewerId={currentUser.id} /> : null}
                             {message.editedAt ? <span className="message-edited-label">edited</span> : null}
+                            {(reactionsByMessage.get(message.id)?.length ?? 0) > 0 ? <div className="message-reactions" aria-label="Message reactions">
+                              {Array.from(new Set((reactionsByMessage.get(message.id) ?? []).map((reaction) => reaction.emoji))).map((emoji) => {
+                                const matching = (reactionsByMessage.get(message.id) ?? []).filter((reaction) => reaction.emoji === emoji);
+                                const reacted = matching.some((reaction) => reaction.userId === currentUser.id);
+                                return <button key={emoji} type="button" className={reacted ? "message-reaction is-selected" : "message-reaction"} aria-pressed={reacted} aria-label={`${emoji}, ${matching.length} reaction${matching.length === 1 ? "" : "s"}`} onClick={() => void chooseMessageReaction(message, emoji)}>{emoji} <span>{matching.length}</span></button>;
+                              })}
+                            </div> : null}
                           </>}
                           </div>
                         </div>
@@ -751,6 +887,10 @@ export const MessagesPage = () => {
                 <div ref={messageEndRef} />
               </div>
 
+              {replyToDraft ? <div className="message-reply-draft">
+                <div><strong>Replying to {replyToDraft.authorName}</strong><span>{replyToDraft.content}</span></div>
+                <button type="button" className="forum-icon-button" aria-label="Cancel reply" onClick={() => setReplyToDraft(null)}><X size={17} aria-hidden="true" /></button>
+              </div> : null}
               <form className="message-compose-bar" onSubmit={(event) => void submitMessage(event)}>
                 <label className="message-attach-button" aria-label="Attach a file" title="Attach a file"><Paperclip size={19} aria-hidden="true" />
                   <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,audio/*,.pdf,.docx,.txt" onChange={(event) => {
@@ -797,6 +937,12 @@ export const MessagesPage = () => {
               </button>
             </div>
           )}
+          {contextMenu ? createPortal(<div ref={contextMenuRef} className="message-context-menu" role="menu" aria-label="Message actions" style={{ left: contextMenu.x, top: contextMenu.y }} onContextMenu={(event) => event.preventDefault()}>
+            <button type="button" role="menuitem" onClick={() => startReply(contextMenu.message)}><CornerUpLeft size={16} aria-hidden="true" /> Reply</button>
+            <button type="button" role="menuitem" aria-expanded={contextReactionOpen} onClick={() => setContextReactionOpen((value) => !value)}><Smile size={16} aria-hidden="true" /> React</button>
+            {contextReactionOpen ? <div className="message-context-reactions" aria-label="Choose a reaction">{CHAT_REACTION_EMOJIS.map((emoji) => <button key={emoji} type="button" aria-label={`React ${emoji}`} onClick={() => void chooseMessageReaction(contextMenu.message, emoji)}>{emoji}</button>)}</div> : null}
+            <button type="button" role="menuitem" onClick={() => void copyMessage(contextMenu.message)}><Copy size={16} aria-hidden="true" /> Copy</button>
+          </div>, document.body) : null}
         </article>
       </section>
       {pageError ? <p className="messages-page-error" role="alert">{pageError}</p> : null}

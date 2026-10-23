@@ -324,6 +324,13 @@ export interface ChatThread {
   lastMessageSenderId?: string;
 }
 
+export interface ChatMessageReply {
+  messageId: string;
+  authorId: string;
+  authorName: string;
+  content: string;
+}
+
 export interface ChatMessage {
   id: string;
   threadId: string;
@@ -334,9 +341,27 @@ export interface ChatMessage {
   content: string;
   sharedPreview?: ChatSharedPreview;
   attachment?: ChatAttachment;
+  replyTo?: ChatMessageReply;
   createdAt: string;
   editedAt?: string;
   deletedAt?: string;
+}
+
+export interface ChatMessageReaction {
+  id: string;
+  messageId: string;
+  threadId: string;
+  participantIds: string[];
+  userId: string;
+  emoji: string;
+  createdAt: string;
+}
+
+export interface ChatThreadPin {
+  id: string;
+  threadId: string;
+  userId: string;
+  createdAt: string;
 }
 
 export interface ChatAttachment {
@@ -438,6 +463,11 @@ export interface ContentFolder {
   name: string;
   description?: string;
   visibility: "public" | "private";
+  parentFolderId?: string;
+  boardOrder?: number;
+  boardSize?: ContentFolderBoardSize;
+  boardWidth?: number;
+  boardHeight?: number;
   tournamentId?: string;
   tournamentName?: string;
   likeCount?: number;
