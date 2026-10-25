@@ -1361,7 +1361,7 @@ export const CommunityPage = () => {
                 <Plus size={18} />
               </button>
             </div>
-            <div className="stack">
+            <div className="stack forum-communities-list">
               <Link to="/app/community" className="forum-reddit-channel dashboard-list-link is-all-posts">
                 <div className="forum-channel-badge is-sage">All</div>
                 <div className="forum-reddit-channel-copy">
@@ -1369,34 +1369,36 @@ export const CommunityPage = () => {
                   <span className="meta-line">Posts shared outside a channel</span>
                 </div>
               </Link>
-              {matchingChannels.map((channel) => {
-                const isJoined = joinedChannelIds.has(channel.id);
-                const memberCount = membershipsState.data.filter((membership) => membership.channelId === channel.id).length;
-                return (
-                  <div key={channel.id} className="forum-reddit-channel">
-                    <Link to={`/app/community?channel=${channel.id}`} className="dashboard-list-link forum-reddit-channel-link">
-                      <div className={channelAccentClass(channel.accent)}>{channel.shortCode ?? channel.name.slice(0, 2).toUpperCase()}</div>
-                      <div className="forum-reddit-channel-copy">
-                        <strong>{channel.name}</strong>
-                        <span className="meta-line">{memberCount || channel.memberCount || channel.followers} members</span>
-                        <span className="forum-reddit-channel-summary">{channel.summary}</span>
-                      </div>
-                    </Link>
-                    <button
-                      type="button"
-                      className={isJoined ? "forum-community-join is-joined" : "forum-community-join"}
-                      aria-label={isJoined ? `Leave ${channel.name}` : `Join ${channel.name}`}
-                      disabled={channel.visibility === "private" && !isJoined}
-                      onClick={() => void toggleChannelMembership(channel.id)}
-                    >
-                      {isJoined ? "Joined" : channel.visibility === "private" ? "Private" : "Join"}
-                    </button>
-                  </div>
-                );
-              })}
-              {matchingChannels.length === 0 ? (
-                <p className="meta-line">{searchQuery.trim() ? "No communities match your search." : "No communities yet. Create one to get started."}</p>
-              ) : null}
+              <div className="stack forum-communities-scroll" role="region" aria-label="Community channels" tabIndex={0}>
+                {matchingChannels.map((channel) => {
+                  const isJoined = joinedChannelIds.has(channel.id);
+                  const memberCount = membershipsState.data.filter((membership) => membership.channelId === channel.id).length;
+                  return (
+                    <div key={channel.id} className="forum-reddit-channel">
+                      <Link to={`/app/community?channel=${channel.id}`} className="dashboard-list-link forum-reddit-channel-link">
+                        <div className={channelAccentClass(channel.accent)}>{channel.shortCode ?? channel.name.slice(0, 2).toUpperCase()}</div>
+                        <div className="forum-reddit-channel-copy">
+                          <strong>{channel.name}</strong>
+                          <span className="meta-line">{memberCount || channel.memberCount || channel.followers} members</span>
+                          <span className="forum-reddit-channel-summary">{channel.summary}</span>
+                        </div>
+                      </Link>
+                      <button
+                        type="button"
+                        className={isJoined ? "forum-community-join is-joined" : "forum-community-join"}
+                        aria-label={isJoined ? `Leave ${channel.name}` : `Join ${channel.name}`}
+                        disabled={channel.visibility === "private" && !isJoined}
+                        onClick={() => void toggleChannelMembership(channel.id)}
+                      >
+                        {isJoined ? "Joined" : channel.visibility === "private" ? "Private" : "Join"}
+                      </button>
+                    </div>
+                  );
+                })}
+                {matchingChannels.length === 0 ? (
+                  <p className="meta-line">{searchQuery.trim() ? "No communities match your search." : "No communities yet. Create one to get started."}</p>
+                ) : null}
+              </div>
             </div>
             <div className="debate-join-row forum-group-join">
               <input
