@@ -23,7 +23,7 @@ import type {
 const maxCommentLength = 2_000;
 
 interface NewPostInput {
-  channelId: string;
+  channelId?: string;
   title: string;
   content: string;
   category: CommunityPost["category"];
@@ -95,11 +95,51 @@ export const createPost = async (input: NewPostInput) => {
     throw new Error("Firestore is not configured.");
   }
 
+  // Older posts used a fake `community-general` channel. Treat that legacy
+  // value as an unassigned community post and only allow real channel posts
+  // when the author has joined that channel.
+  const channelId = input.channelId?.trim();
+  const assignedChannelId = channelId && channelId !== "community-general"
+    ? channelId
+    : undefined;
+  if (assignedChannelId) {
+    const membershipRef = doc(firestore, "channelMemberships", `${assignedChannelId}-${input.authorId}`);
+    const canonicalMembership = await getDoc(membershipRef);
+    if (!canonicalMembership.exists()) {
+      const existingMemberships = await getDocs(query(
+        collection(firestore, "channelMemberships"),
+        where("channelId", "==", assignedChannelId),
+      ));
+      const existingMembership = existingMemberships.docs.find(
+        (membership) => membership.data().userId === input.authorId,
+      );
+      if (!existingMembership) {
+        throw new Error("Join this channel before posting in it.");
+      }
+
+      // Older membership records did not always use the deterministic
+      // channelId-userId document key. Copy a valid existing membership to
+      // the canonical key so the Firestore post rule can check it atomically.
+      const channelSnapshot = await getDoc(doc(firestore, "channels", assignedChannelId));
+      const channel = channelSnapshot.data() as (Partial<CommunityChannel> & { inviteCode?: string }) | undefined;
+      const priorInviteCode = existingMembership.data().inviteCode ?? channel?.inviteCode;
+      await setDoc(membershipRef, {
+        channelId: assignedChannelId,
+        userId: input.authorId,
+        role: existingMembership.data().role ?? "Member",
+        lastActiveAt: new Date().toISOString(),
+        ...(channel?.visibility === "private" && priorInviteCode
+          ? { inviteCode: priorInviteCode }
+          : {}),
+      });
+    }
+  }
+
   const createdAt = new Date().toISOString();
   const attachments = await uploadPostAttachments(input.authorId, input.files ?? []);
 
   await addDoc(collection(firestore, "posts"), {
-    channelId: input.channelId,
+    ...(assignedChannelId ? { channelId: assignedChannelId } : {}),
     authorId: input.authorId,
     author: input.author,
     authorRole: input.authorRole,
@@ -153,11 +193,17 @@ export const createPracticeGroup = async (input: NewPracticeGroupInput) => {
     accent: "sage",
     visibility: input.visibility,
     creatorId: input.creatorId,
-    inviteCode,
     createdAt,
   };
 
   const channelRef = await addDoc(collection(firestore, "channels"), channel);
+  if (inviteCode) {
+    await setDoc(doc(firestore, "channelInvites", inviteCode), {
+      channelId: channelRef.id,
+      createdBy: input.creatorId,
+      createdAt,
+    });
+  }
   await setDoc(doc(firestore, "channelMemberships", `${channelRef.id}-${input.creatorId}`), {
     channelId: channelRef.id,
     userId: input.creatorId,
@@ -168,32 +214,86 @@ export const createPracticeGroup = async (input: NewPracticeGroupInput) => {
   return { id: channelRef.id, inviteCode };
 };
 
+export const joinCommunityChannel = async (
+  channelId: string,
+  userId: string,
+  inviteCode?: string,
+) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const channelRef = doc(firestore, "channels", channelId);
+  const channelSnapshot = await getDoc(channelRef);
+  if (!channelSnapshot.exists()) throw new Error("That channel could not be found.");
+
+  const channel = channelSnapshot.data() as Partial<CommunityChannel>;
+  const membershipRef = doc(firestore, "channelMemberships", `${channelId}-${userId}`);
+  if ((await getDoc(membershipRef)).exists()) return channel.name ?? "channel";
+  const existingMemberships = await getDocs(query(
+    collection(firestore, "channelMemberships"),
+    where("channelId", "==", channelId),
+  ));
+  if (existingMemberships.docs.some((membership) => membership.data().userId === userId)) {
+    return channel.name ?? "channel";
+  }
+
+  const isPrivate = channel.visibility === "private";
+  const normalizedInviteCode = inviteCode?.trim().toUpperCase();
+  if (isPrivate) {
+    const invitation = normalizedInviteCode
+      ? await getDoc(doc(firestore, "channelInvites", normalizedInviteCode))
+      : null;
+    const legacyChannel = channel as Partial<CommunityChannel> & { inviteCode?: string };
+    const validInvitation = invitation?.exists()
+      ? invitation.data().channelId === channelId
+      : normalizedInviteCode === legacyChannel.inviteCode;
+    if (!validInvitation) {
+      throw new Error("Enter the correct invite code to join this private channel.");
+    }
+  }
+
+  await setDoc(membershipRef, {
+    channelId,
+    userId,
+    role: "Member",
+    lastActiveAt: new Date().toISOString(),
+    ...(isPrivate && normalizedInviteCode ? { inviteCode: normalizedInviteCode } : {}),
+  });
+  return channel.name ?? "channel";
+};
+
+export const leaveCommunityChannel = async (channelId: string, userId: string) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const memberships = await getDocs(query(
+    collection(firestore, "channelMemberships"),
+    where("channelId", "==", channelId),
+  ));
+  await Promise.all(
+    memberships.docs
+      .filter((membership) => membership.data().userId === userId)
+      .map((membership) => deleteDoc(membership.ref)),
+  );
+};
+
 export const joinPracticeGroupByCode = async (inviteCode: string, userId: string) => {
   if (!firestore) throw new Error("Firestore is not configured.");
   const normalizedCode = inviteCode.trim().toUpperCase();
   if (!normalizedCode) throw new Error("Enter an invite code first.");
+  if (!/^[A-Z0-9]{8}$/.test(normalizedCode)) {
+    throw new Error("Invite codes use eight letters or numbers.");
+  }
 
-  const snapshot = await getDocs(
+  const invitation = await getDoc(doc(firestore, "channelInvites", normalizedCode));
+  if (invitation.exists()) {
+    const channelId = invitation.data().channelId as string;
+    return joinCommunityChannel(channelId, userId, normalizedCode);
+  }
+
+  // Support channels created before invite codes were stored separately.
+  const legacyChannels = await getDocs(
     query(collection(firestore, "channels"), where("inviteCode", "==", normalizedCode)),
   );
-  const channel = snapshot.docs[0];
-  if (!channel) throw new Error("No practice group uses that invite code.");
-
-  const membershipRef = doc(firestore, "channelMemberships", `${channel.id}-${userId}`);
-  if ((await getDoc(membershipRef)).exists()) return channel.data().name as string;
-
-  await setDoc(membershipRef, {
-    channelId: channel.id,
-    userId,
-    role: "Member",
-    lastActiveAt: new Date().toISOString(),
-  });
-  await updateDoc(channel.ref, {
-    memberCount: ((channel.data().memberCount as number | undefined) ?? 0) + 1,
-    followers: ((channel.data().followers as number | undefined) ?? 0) + 1,
-    activityLabel: "New member joined",
-  });
-  return channel.data().name as string;
+  const legacyChannel = legacyChannels.docs[0];
+  if (!legacyChannel) throw new Error("No private community uses that invite code.");
+  return joinCommunityChannel(legacyChannel.id, userId, normalizedCode);
 };
 
 export const updatePostContent = async (

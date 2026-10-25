@@ -43,6 +43,10 @@ interface UpdateDisplayNameRequest {
   displayName?: unknown;
 }
 
+interface UpdateUsernameRequest {
+  username?: unknown;
+}
+
 interface LinkTabroomSessionRequest {
   email?: unknown;
   password?: unknown;
@@ -70,6 +74,8 @@ interface TabroomLogin {
 }
 
 const maxDisplayNameLength = 30;
+const usernamePattern = /^[a-z0-9_]{3,20}$/;
+const usernameChangeCooldownMs = 30 * 24 * 60 * 60 * 1000;
 const displayNameAllowedCharacters = /^[\p{L}\p{N} ._'-]+$/u;
 const displayNameUrlOrContactPattern = /https?:\/\/|www\.|\.com\b|\.net\b|\.org\b|@/i;
 const displayNameReservedPattern = /\b(admin|moderator|official|staff|support)\b/i;
@@ -315,6 +321,105 @@ export const updateDisplayName = onCall(
     );
 
     return { displayName };
+  },
+);
+
+export const updateUsername = onCall(
+  {
+    cors: true,
+    invoker: "public",
+    timeoutSeconds: 30,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in before choosing a username.");
+    }
+
+    const uid = request.auth.uid;
+    const suppliedUsername = (request.data as UpdateUsernameRequest | undefined)?.username;
+    const userRef = getFirestore().doc(`users/${uid}`);
+    const now = Date.now();
+
+    return getFirestore().runTransaction(async (transaction) => {
+      const userSnapshot = await transaction.get(userRef);
+      if (!userSnapshot.exists) {
+        throw new HttpsError("failed-precondition", "Your account profile is not ready yet.");
+      }
+
+      const profile = userSnapshot.data() ?? {};
+      const existingUsername = typeof profile.username === "string"
+        ? profile.username.trim().toLowerCase()
+        : "";
+
+      let username: string;
+      if (suppliedUsername !== undefined && typeof suppliedUsername !== "string") {
+        throw new HttpsError("invalid-argument", "Username must be text.");
+      }
+      if (typeof suppliedUsername === "string") {
+        username = suppliedUsername.trim().toLowerCase().replace(/^@/, "");
+      } else if (!existingUsername) {
+        const emailName = typeof profile.email === "string" ? profile.email.split("@")[0] : "member";
+        const base = emailName.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 9) || "member";
+        const uidSuffix = uid.toLowerCase().replace(/[^a-z0-9]/g, "").slice(-10) || "member";
+        username = `${base}_${uidSuffix}`.slice(0, 20);
+      } else {
+        username = existingUsername;
+      }
+
+      if (!usernamePattern.test(username)) {
+        throw new HttpsError(
+          "invalid-argument",
+          "Use 3–20 characters: lowercase letters, numbers, and underscores.",
+        );
+      }
+
+      if (username === existingUsername) {
+        return {
+          username,
+          usernameUpdatedAt: typeof profile.usernameUpdatedAt === "string"
+            ? profile.usernameUpdatedAt
+            : "",
+        };
+      }
+
+      const priorChange = typeof profile.usernameUpdatedAt === "string"
+        ? Date.parse(profile.usernameUpdatedAt)
+        : typeof profile.createdAt === "string"
+          ? Date.parse(profile.createdAt)
+          : Number.NaN;
+      const nextAllowedAt = priorChange + usernameChangeCooldownMs;
+      if (existingUsername && Number.isFinite(priorChange) && now < nextAllowedAt) {
+        throw new HttpsError(
+          "failed-precondition",
+          `You can change your username again on ${new Date(nextAllowedAt).toLocaleDateString()}.`,
+        );
+      }
+
+      const usernameRef = getFirestore().doc(`usernames/${username}`);
+      const reservationSnapshot = await transaction.get(usernameRef);
+      const usersWithName = await transaction.get(
+        getFirestore().collection("users").where("username", "==", username),
+      );
+      if (reservationSnapshot.exists && reservationSnapshot.data()?.userId !== uid) {
+        throw new HttpsError("already-exists", "That username is already taken.");
+      }
+      if (usersWithName.docs.some((candidate) => candidate.id !== uid)) {
+        throw new HttpsError("already-exists", "That username is already taken.");
+      }
+
+      if (existingUsername) {
+        const oldReservationRef = getFirestore().doc(`usernames/${existingUsername}`);
+        const oldReservation = await transaction.get(oldReservationRef);
+        if (oldReservation.exists && oldReservation.data()?.userId === uid) {
+          transaction.delete(oldReservationRef);
+        }
+      }
+
+      const usernameUpdatedAt = new Date(now).toISOString();
+      transaction.set(usernameRef, { userId: uid, username, updatedAt: usernameUpdatedAt });
+      transaction.set(userRef, { username, usernameUpdatedAt }, { merge: true });
+      return { username, usernameUpdatedAt };
+    });
   },
 );
 

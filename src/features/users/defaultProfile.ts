@@ -24,6 +24,7 @@ export const normalizeUserProfile = (
   id: profile?.id ?? "",
   displayName: profile?.displayName?.trim() || "DebateSpace Member",
   username: profile?.username?.trim() || undefined,
+  usernameUpdatedAt: profile?.usernameUpdatedAt?.trim() || undefined,
   email: profile?.email?.trim() || "",
   role: (profile?.role as UserRole | undefined) ?? "student",
   avatarUrl: profile?.avatarUrl?.trim() || undefined,

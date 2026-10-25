@@ -22,6 +22,7 @@ import {
 import { PageMeta } from "@/components/common/PageMeta";
 import {
   seededChannels,
+  seededChannelMemberships,
   seededComments,
   seededFollows,
   seededPosts,
@@ -33,7 +34,9 @@ import {
   createPost,
   deletePostById,
   incrementPostShareCount,
+  joinCommunityChannel,
   joinPracticeGroupByCode,
+  leaveCommunityChannel,
   reportPostById,
   toggleCommentReaction,
   togglePostReaction,
@@ -42,7 +45,7 @@ import {
 import { useAuth } from "@/features/auth/AuthContext";
 import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
-import type { CommunityPost, PostComment, PostCommentReaction, UserBlock, UserProfile } from "@/types/models";
+import type { ChannelMembership, CommunityPost, PostComment, PostCommentReaction, UserBlock, UserProfile } from "@/types/models";
 
 type ForumTab = "All Posts" | "Saved" | "Question" | "Speech Review" | "Tips & Strategies";
 type PostCategory = Exclude<ForumTab, "Saved">;
@@ -62,7 +65,6 @@ const EMPTY_REACTIONS: PostReaction[] = [];
 const EMPTY_COMMENT_REACTIONS: PostCommentReaction[] = [];
 const MAX_COMMENT_DEPTH = 4;
 const GENERAL_COMMUNITY_CHANNEL_ID = "community-general";
-const GENERAL_COMMUNITY_CHANNEL_NAME = "General Community";
 
 const forumTabs: Array<{ id: ForumTab; label: string }> = [
   { id: "All Posts", label: "All Posts" },
@@ -185,6 +187,13 @@ export const CommunityPage = () => {
     mediaCount: number;
   } | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [postEditDraft, setPostEditDraft] = useState({
+    title: "",
+    content: "",
+    category: "Question" as PostCategory,
+    debateType: "",
+  });
   const [composerFiles, setComposerFiles] = useState<File[]>([]);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [groupInviteNotice, setGroupInviteNotice] = useState("");
@@ -203,7 +212,7 @@ export const CommunityPage = () => {
     category: "All Posts" as ForumTab,
     debateType: "",
     topicTags: "",
-    channelId: GENERAL_COMMUNITY_CHANNEL_ID,
+    channelId: "",
   });
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -214,6 +223,10 @@ export const CommunityPage = () => {
 
   const usersState = useSeededFirestoreCollection("users", seededUsers);
   const channelState = useSeededFirestoreCollection("channels", seededChannels);
+  const membershipsState = useSeededFirestoreCollection<ChannelMembership>(
+    "channelMemberships",
+    seededChannelMemberships,
+  );
   const postState = useSeededFirestoreCollection("posts", seededPosts);
   const commentState = useSeededFirestoreCollection("postComments", seededComments);
   const followsState = useSeededFirestoreCollection("follows", seededFollows);
@@ -308,22 +321,64 @@ export const CommunityPage = () => {
     .map((follow) => follow.followingId)
     .filter((id) => !blockedIds.has(id));
 
+  const joinedChannelIds = useMemo(
+    () => new Set(
+      membershipsState.data
+        .filter((membership) => membership.userId === author.id)
+        .map((membership) => membership.channelId),
+    ),
+    [author.id, membershipsState.data],
+  );
+  const joinedChannels = useMemo(
+    () => channelState.data.filter((channel) => joinedChannelIds.has(channel.id)),
+    [channelState.data, joinedChannelIds],
+  );
+  const discoverableChannels = useMemo(
+    () => channelState.data.filter((channel) =>
+      channel.visibility !== "private"
+      || joinedChannelIds.has(channel.id)
+      || channel.creatorId === author.id,
+    ),
+    [author.id, channelState.data, joinedChannelIds],
+  );
+  const matchingChannels = useMemo(() => {
+    const loweredQuery = searchQuery.trim().toLowerCase();
+    return discoverableChannels.filter((channel) =>
+      !loweredQuery
+      || [channel.name, channel.summary, channel.category, ...(channel.topicTags ?? [])]
+        .filter(Boolean)
+        .some((value) => value?.toLowerCase().includes(loweredQuery)),
+    );
+  }, [discoverableChannels, searchQuery]);
+  const selectedChannel = channelState.data.find((channel) => channel.id === selectedChannelId);
+  const canViewSelectedChannel = !selectedChannel
+    || selectedChannel.visibility !== "private"
+    || joinedChannelIds.has(selectedChannel.id)
+    || selectedChannel.creatorId === author.id;
+
   const filteredPosts = useMemo(() => {
     const loweredQuery = searchQuery.toLowerCase();
 
     return postState.data.filter((post) => {
       if (blockedIds.has(post.authorId)) return false;
       const channel = channelState.data.find((item) => item.id === post.channelId);
+      if (
+        channel?.visibility === "private"
+        && !joinedChannelIds.has(channel.id)
+        && channel.creatorId !== author.id
+      ) return false;
       const authorProfile = usersState.data.find((item) => item.id === post.authorId);
-      const channelName = post.channelId === GENERAL_COMMUNITY_CHANNEL_ID
-        ? GENERAL_COMMUNITY_CHANNEL_NAME
-        : channel?.name;
+      const channelName = post.channelId === GENERAL_COMMUNITY_CHANNEL_ID ? undefined : channel?.name;
 
       const matchesFeed =
         feedScope === "all" ? true : followingIds.includes(post.authorId);
       const matchesCategory =
         activeTab === "All Posts" ? true : activeTab === "Saved" ? getMyReaction(post.id).favorite === true : post.category === activeTab;
-      const matchesChannel = selectedChannelId ? post.channelId === selectedChannelId : true;
+      const matchesChannel = !selectedChannelId
+        ? true
+        : selectedChannelId === GENERAL_COMMUNITY_CHANNEL_ID
+          ? !post.channelId || post.channelId === GENERAL_COMMUNITY_CHANNEL_ID
+          : post.channelId === selectedChannelId;
       const matchesQuery =
         loweredQuery.length === 0
           ? true
@@ -338,17 +393,21 @@ export const CommunityPage = () => {
               .filter(Boolean)
               .some((value) => value?.toLowerCase().includes(loweredQuery));
 
-      return matchesFeed && matchesCategory && matchesChannel && matchesQuery;
+      return matchesFeed && matchesCategory && matchesChannel && matchesQuery && canViewSelectedChannel;
     });
   }, [
     activeTab,
+    author.id,
     blockedIds,
+    canViewSelectedChannel,
     channelState.data,
     feedScope,
     followingIds,
     getMyReaction,
+    joinedChannelIds,
     postState.data,
     searchQuery,
+    selectedChannel,
     selectedChannelId,
     usersState.data,
   ]);
@@ -363,22 +422,6 @@ export const CommunityPage = () => {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [selectedPostId, postState.data]);
-
-  const practiceGroups = useMemo(
-    () =>
-      channelState.data.filter((channel) =>
-        ["Practice Group", "Debate Type"].includes(channel.category ?? ""),
-      ),
-    [channelState.data],
-  );
-
-  const schoolAndTournamentChannels = useMemo(
-    () =>
-      channelState.data.filter((channel) =>
-        ["Tournament", "School"].includes(channel.category ?? ""),
-      ),
-    [channelState.data],
-  );
 
   const topContributors = useMemo(() => {
     const counts = postState.data.reduce<Record<string, number>>((accumulator, post) => {
@@ -434,7 +477,7 @@ export const CommunityPage = () => {
         category: composer.category as PostCategory,
         debateType: composer.debateType || undefined,
         topicTags: composer.topicTags.split(",").map((tag) => tag.trim()).filter(Boolean),
-        channelId: composer.channelId,
+        channelId: composer.channelId || undefined,
         title: composer.title || "Community update",
         content: composer.content,
         files: composerFiles,
@@ -479,6 +522,25 @@ export const CommunityPage = () => {
       setGroupJoinCode("");
     } catch (error) {
       setGroupInviteNotice(error instanceof Error ? error.message : "Unable to join group.");
+    }
+  };
+
+  const toggleChannelMembership = async (channelId: string) => {
+    const channel = channelState.data.find((entry) => entry.id === channelId);
+    if (!channel) return;
+    setGroupInviteNotice("");
+    try {
+      if (joinedChannelIds.has(channelId)) {
+        await leaveCommunityChannel(channelId, author.id);
+        setGroupInviteNotice(`Left ${channel.name}.`);
+      } else if (channel.visibility === "private") {
+        setGroupInviteNotice("Use the private channel invite code to join.");
+      } else {
+        const name = await joinCommunityChannel(channelId, author.id);
+        setGroupInviteNotice(`Joined ${name}.`);
+      }
+    } catch (error) {
+      setGroupInviteNotice(error instanceof Error ? error.message : "Unable to update channel membership.");
     }
   };
 
@@ -585,27 +647,43 @@ export const CommunityPage = () => {
     }
   };
 
-  const editPost = async (postId: string, currentTitle?: string, currentContent?: string, currentCategory?: PostCategory, currentDebateType?: string) => {
-    const nextTitle = window.prompt("Edit post title", currentTitle ?? "");
-    if (nextTitle === null) {
+  const beginEditPost = (post: CommunityPost) => {
+    setPostEditDraft({
+      title: post.title ?? "",
+      content: post.content,
+      category: (post.category ?? "Question") as PostCategory,
+      debateType: post.debateType ?? "",
+    });
+    setEditingPostId(post.id);
+    setMenuPostId(null);
+  };
+
+  const savePostEdit = async (postId: string) => {
+    if (!postEditDraft.content.trim()) {
+      setMessage("Post content cannot be empty.");
       return;
     }
-
-    const nextContent = window.prompt("Edit post content", currentContent ?? "");
-    if (nextContent === null) {
-      return;
-    }
-
     try {
       await updatePostContent(postId, {
-        title: nextTitle,
-        content: nextContent,
-        category: currentCategory,
-        debateType: currentDebateType,
+        title: postEditDraft.title.trim() || "Community update",
+        content: postEditDraft.content.trim(),
+        category: postEditDraft.category,
+        debateType: postEditDraft.debateType.trim() || undefined,
       });
-      setMenuPostId(null);
+      setEditingPostId(null);
+      setMessage("Post updated.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to edit post.");
+    }
+  };
+
+  const deleteCommunityPost = async (postId: string) => {
+    try {
+      await deletePostById(postId);
+      setMenuPostId(null);
+      setMessage("Post deleted.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to delete post.");
     }
   };
 
@@ -629,9 +707,20 @@ export const CommunityPage = () => {
             type="button"
             className="btn btn-primary forum-primary-cta"
             onClick={() => {
+              if (
+                selectedChannelId
+                && selectedChannelId !== GENERAL_COMMUNITY_CHANNEL_ID
+                && !joinedChannelIds.has(selectedChannelId)
+              ) {
+                setMessage("Join this channel before posting in it.");
+                return;
+              }
+              setMessage("");
               setComposer((current) => ({
                 ...current,
-                channelId: selectedChannelId ?? GENERAL_COMMUNITY_CHANNEL_ID,
+                channelId: selectedChannelId && selectedChannelId !== GENERAL_COMMUNITY_CHANNEL_ID
+                  ? selectedChannelId
+                  : "",
               }));
               setIsComposerOpen(true);
               window.setTimeout(() => composerRef.current?.focus(), 180);
@@ -715,8 +804,8 @@ export const CommunityPage = () => {
                     setComposer((current) => ({ ...current, channelId: event.target.value }))
                   }
                 >
-                  <option value={GENERAL_COMMUNITY_CHANNEL_ID}>{GENERAL_COMMUNITY_CHANNEL_NAME}</option>
-                  {channelState.data.map((channel) => (
+                  <option value="">Community-wide post (no channel)</option>
+                  {joinedChannels.map((channel) => (
                     <option key={channel.id} value={channel.id}>
                       {channel.name}
                     </option>
@@ -781,7 +870,7 @@ export const CommunityPage = () => {
                 id="communitySearch"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search posts, users, channels, or topics"
+                placeholder="Search posts, people, communities, or topics"
               />
             </label>
 
@@ -805,10 +894,39 @@ export const CommunityPage = () => {
           {selectedChannelId ? (
             <div className="debate-banner">
               Showing {selectedChannelId === GENERAL_COMMUNITY_CHANNEL_ID
-                ? GENERAL_COMMUNITY_CHANNEL_NAME
-                : channelState.data.find((channel) => channel.id === selectedChannelId)?.name ?? "selected channel"}
+                ? "community-wide posts"
+                : selectedChannel?.name ?? "selected channel"}
               <button type="button" className="forum-icon-button" aria-label="Clear channel filter" onClick={() => setSearchParams({})}>×</button>
             </div>
+          ) : null}
+
+          {selectedChannel ? (
+            <article className="forum-selected-community app-card">
+              <div className={channelAccentClass(selectedChannel.accent)} aria-hidden="true">
+                {selectedChannel.shortCode ?? selectedChannel.name.slice(0, 2).toUpperCase()}
+              </div>
+              <div className="forum-selected-community-copy">
+                <p className="eyebrow">Community</p>
+                <h2>{selectedChannel.name}</h2>
+                <p className="card-copy">{selectedChannel.summary}</p>
+                <span className="meta-line">
+                  {membershipsState.data.filter((membership) => membership.channelId === selectedChannel.id).length
+                    || selectedChannel.memberCount
+                    || selectedChannel.followers} members
+                </span>
+                {selectedChannel.visibility === "private" && !canViewSelectedChannel ? (
+                  <p className="meta-line">This is a private community. Join with an invite code to view its posts.</p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className={joinedChannelIds.has(selectedChannel.id) ? "btn btn-secondary" : "btn btn-primary"}
+                disabled={selectedChannel.visibility === "private" && !joinedChannelIds.has(selectedChannel.id)}
+                onClick={() => void toggleChannelMembership(selectedChannel.id)}
+              >
+                {joinedChannelIds.has(selectedChannel.id) ? "Leave" : selectedChannel.visibility === "private" ? "Private" : "Join"}
+              </button>
+            </article>
           ) : null}
 
           <div className="forum-tabs" role="tablist" aria-label="Community feed filters">
@@ -830,9 +948,7 @@ export const CommunityPage = () => {
           <div className="stack">
             {filteredPosts.map((post) => {
               const channel = channelState.data.find((item) => item.id === post.channelId);
-              const channelName = post.channelId === GENERAL_COMMUNITY_CHANNEL_ID
-                ? GENERAL_COMMUNITY_CHANNEL_NAME
-                : channel?.name;
+              const channelName = post.channelId === GENERAL_COMMUNITY_CHANNEL_ID ? undefined : channel?.name;
               const authorProfile = usersState.data.find((item) => item.id === post.authorId);
               const postAuthorName = safeName(authorProfile?.displayName ?? post.author);
               const comments = commentState.data.filter((entry) => entry.postId === post.id);
@@ -1008,14 +1124,14 @@ export const CommunityPage = () => {
                               <button
                                 type="button"
                                 className="forum-menu-item"
-                                onClick={() => void editPost(post.id, post.title, post.content, post.category as PostCategory, post.debateType)}
+                                onClick={() => beginEditPost(post)}
                               >
                                 <Pencil size={16} /> Edit
                               </button>
                               <button
                                 type="button"
                                 className="forum-menu-item"
-                                onClick={() => void deletePostById(post.id).then(() => setMenuPostId(null))}
+                                onClick={() => void deleteCommunityPost(post.id)}
                               >
                                 <Trash2 size={16} /> Delete
                               </button>
@@ -1034,8 +1150,56 @@ export const CommunityPage = () => {
                   </div>
 
                   <div className="forum-post-body">
-                    <h2 className="forum-post-title">{post.title ?? "Community post"}</h2>
-                    <p className="card-copy">{post.content}</p>
+                    {editingPostId === post.id ? (
+                      <div className="forum-post-edit-form">
+                        <div className="form-field">
+                          <label htmlFor={`edit-post-title-${post.id}`}>Title</label>
+                          <input
+                            id={`edit-post-title-${post.id}`}
+                            value={postEditDraft.title}
+                            onChange={(event) => setPostEditDraft((draft) => ({ ...draft, title: event.target.value }))}
+                          />
+                        </div>
+                        <div className="form-field">
+                          <label htmlFor={`edit-post-category-${post.id}`}>Category</label>
+                          <select
+                            id={`edit-post-category-${post.id}`}
+                            value={postEditDraft.category}
+                            onChange={(event) => setPostEditDraft((draft) => ({ ...draft, category: event.target.value as PostCategory }))}
+                          >
+                            <option>Question</option>
+                            <option>Speech Review</option>
+                            <option>Tips &amp; Strategies</option>
+                            <option>All Posts</option>
+                          </select>
+                        </div>
+                        <div className="form-field">
+                          <label htmlFor={`edit-post-format-${post.id}`}>Format (optional)</label>
+                          <input
+                            id={`edit-post-format-${post.id}`}
+                            value={postEditDraft.debateType}
+                            onChange={(event) => setPostEditDraft((draft) => ({ ...draft, debateType: event.target.value }))}
+                          />
+                        </div>
+                        <div className="form-field full">
+                          <label htmlFor={`edit-post-content-${post.id}`}>Post</label>
+                          <textarea
+                            id={`edit-post-content-${post.id}`}
+                            value={postEditDraft.content}
+                            onChange={(event) => setPostEditDraft((draft) => ({ ...draft, content: event.target.value }))}
+                          />
+                        </div>
+                        <div className="button-row full">
+                          <button type="button" className="btn btn-secondary" onClick={() => setEditingPostId(null)}>Cancel</button>
+                          <button type="button" className="btn btn-primary" onClick={() => void savePostEdit(post.id)}>Save changes</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <h2 className="forum-post-title">{post.title ?? "Community post"}</h2>
+                        <p className="card-copy">{post.content}</p>
+                      </>
+                    )}
 
                     {post.attachmentTitle ? (
                       <div className="forum-attachment">
@@ -1180,74 +1344,70 @@ export const CommunityPage = () => {
 
         <aside className="forum-sidebar">
           <article className="forum-sidebar-card">
-            <h2>General Community</h2>
-            <div className="stack">
-              <Link to={`/app/community?channel=${GENERAL_COMMUNITY_CHANNEL_ID}`} className="forum-channel-row dashboard-list-link">
-                <div className="forum-channel-badge is-sage">GC</div>
-                <div>
-                  <strong>Open community feed</strong>
-                  <span className="meta-line">Open discussion for the whole community</span>
-                </div>
-              </Link>
-            </div>
-          </article>
-
-          <article className="forum-sidebar-card">
-            <h2>Practice Groups</h2>
-            <div className="stack">
+            <div className="row-between forum-communities-heading">
+              <div>
+                <p className="eyebrow">Discover</p>
+                <h2>Communities</h2>
+              </div>
               <button
                 type="button"
-                className="forum-channel-row forum-create-group-row"
+                className="forum-icon-button"
+                aria-label="Create community"
                 onClick={() => {
                   setGroupInviteNotice("");
                   setIsGroupModalOpen(true);
                 }}
               >
-                <span className="forum-channel-badge forum-create-group-icon"><Plus size={20} /></span>
-                <span><strong>Create Channel</strong><span className="meta-line">Start a public or private community space</span></span>
+                <Plus size={18} />
               </button>
-              {practiceGroups.map((channel) => (
-                <Link key={channel.id} to={`/app/community?channel=${channel.id}`} className="forum-channel-row dashboard-list-link">
-                  <div className={channelAccentClass(channel.accent)}>{channel.shortCode ?? "DB"}</div>
-                  <div>
-                    <strong>{channel.name}</strong>
-                    <span className="meta-line">
-                      {channel.memberCount ?? channel.followers} members • {channel.activityLabel ?? "Active recently"}
-                    </span>
+            </div>
+            <div className="stack">
+              <Link to="/app/community" className="forum-reddit-channel dashboard-list-link is-all-posts">
+                <div className="forum-channel-badge is-sage">All</div>
+                <div className="forum-reddit-channel-copy">
+                  <strong>All community posts</strong>
+                  <span className="meta-line">Posts shared outside a channel</span>
+                </div>
+              </Link>
+              {matchingChannels.map((channel) => {
+                const isJoined = joinedChannelIds.has(channel.id);
+                const memberCount = membershipsState.data.filter((membership) => membership.channelId === channel.id).length;
+                return (
+                  <div key={channel.id} className="forum-reddit-channel">
+                    <Link to={`/app/community?channel=${channel.id}`} className="dashboard-list-link forum-reddit-channel-link">
+                      <div className={channelAccentClass(channel.accent)}>{channel.shortCode ?? channel.name.slice(0, 2).toUpperCase()}</div>
+                      <div className="forum-reddit-channel-copy">
+                        <strong>{channel.name}</strong>
+                        <span className="meta-line">{memberCount || channel.memberCount || channel.followers} members</span>
+                        <span className="forum-reddit-channel-summary">{channel.summary}</span>
+                      </div>
+                    </Link>
+                    <button
+                      type="button"
+                      className={isJoined ? "forum-community-join is-joined" : "forum-community-join"}
+                      aria-label={isJoined ? `Leave ${channel.name}` : `Join ${channel.name}`}
+                      disabled={channel.visibility === "private" && !isJoined}
+                      onClick={() => void toggleChannelMembership(channel.id)}
+                    >
+                      {isJoined ? "Joined" : channel.visibility === "private" ? "Private" : "Join"}
+                    </button>
                   </div>
-                </Link>
-              ))}
+                );
+              })}
+              {matchingChannels.length === 0 ? (
+                <p className="meta-line">{searchQuery.trim() ? "No communities match your search." : "No communities yet. Create one to get started."}</p>
+              ) : null}
             </div>
             <div className="debate-join-row forum-group-join">
               <input
-                aria-label="Practice group invite code"
+                aria-label="Private community invite code"
                 value={groupJoinCode}
                 onChange={(event) => setGroupJoinCode(event.target.value.toUpperCase())}
-                placeholder="Private group code"
+                placeholder="Private community code"
               />
               <button type="button" className="btn btn-ghost" onClick={() => void joinPracticeGroup()}>Join</button>
             </div>
             {groupInviteNotice ? <p className="meta-line" role="status">{groupInviteNotice}</p> : null}
-          </article>
-
-          <article className="forum-sidebar-card">
-            <h2>School & Tournament Channels</h2>
-            <div className="stack">
-              {schoolAndTournamentChannels.map((channel) => (
-                <Link key={channel.id} to={`/app/community?channel=${channel.id}`} className="forum-channel-row dashboard-list-link">
-                  <div className={channelAccentClass(channel.accent)}>{channel.shortCode ?? "CH"}</div>
-                  <div>
-                    <strong>{channel.name}</strong>
-                    <span className="meta-line">
-                      {channel.category} • {channel.activityLabel}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-              {schoolAndTournamentChannels.length === 0 ? (
-                <p className="meta-line">Create a School or Tournament channel to begin.</p>
-              ) : null}
-            </div>
           </article>
 
           <article className="forum-sidebar-card">

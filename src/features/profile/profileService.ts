@@ -10,6 +10,8 @@ import { httpsCallable } from "firebase/functions";
 import { firestore, functions } from "@/lib/firebase";
 
 export const maxDisplayNameLength = 30;
+export const maxUsernameLength = 20;
+export const usernameChangeCooldownMs = 30 * 24 * 60 * 60 * 1000;
 
 export const normalizeDisplayNameInput = (displayName: string) =>
   displayName.trim().replace(/\s+/g, " ");
@@ -54,6 +56,22 @@ const formatDisplayNameFunctionError = (error: unknown) => {
     : "Unable to update your display name right now.";
 };
 
+export const normalizeUsernameInput = (username: string) =>
+  username.trim().toLowerCase().replace(/^@/, "");
+
+const formatUsernameFunctionError = (error: unknown) => {
+  if (error instanceof FirebaseError) {
+    if (["functions/invalid-argument", "functions/failed-precondition", "functions/already-exists"].includes(error.code)) {
+      return error.message;
+    }
+    if (error.code === "functions/unauthenticated") return "Sign in again before changing your username.";
+    if (error.code === "functions/unavailable") return "Username service is temporarily unavailable. Please try again.";
+    if (error.code === "functions/internal") return "Unable to update your username right now. Please try again.";
+    return error.message;
+  }
+  return error instanceof Error ? error.message : "Unable to update your username right now.";
+};
+
 export const updateUserDisplayName = async (displayName: string) => {
   const normalizedDisplayName = normalizeDisplayNameInput(displayName);
   validateDisplayName(normalizedDisplayName);
@@ -72,6 +90,25 @@ export const updateUserDisplayName = async (displayName: string) => {
     return result.data.displayName;
   } catch (error) {
     throw new Error(formatDisplayNameFunctionError(error));
+  }
+};
+
+export const updateUserUsername = async (username?: string) => {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  const normalizedUsername = username === undefined ? undefined : normalizeUsernameInput(username);
+  if (normalizedUsername !== undefined && !/^[a-z0-9_]{3,20}$/.test(normalizedUsername)) {
+    throw new Error("Use 3–20 characters: lowercase letters, numbers, and underscores.");
+  }
+
+  const updateUsername = httpsCallable<
+    { username?: string },
+    { username: string; usernameUpdatedAt: string }
+  >(functions, "updateUsername");
+  try {
+    const result = await updateUsername(normalizedUsername === undefined ? {} : { username: normalizedUsername });
+    return result.data;
+  } catch (error) {
+    throw new Error(formatUsernameFunctionError(error));
   }
 };
 

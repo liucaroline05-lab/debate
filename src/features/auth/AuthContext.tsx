@@ -29,6 +29,7 @@ import {
   maxDisplayNameLength,
   normalizeDisplayNameInput,
   updateUserDisplayName,
+  updateUserUsername,
 } from "@/features/profile/profileService";
 import type { UserProfile, UserRole } from "@/types/models";
 
@@ -48,6 +49,7 @@ interface AuthContextValue {
   loginWithGoogle: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  updateUsername: (username?: string) => Promise<{ username: string; usernameUpdatedAt: string }>;
   logout: () => Promise<void>;
 }
 
@@ -85,10 +87,19 @@ const loadProfile = async (firebaseUser: User): Promise<UserProfile> => {
   const snapshot = await getDoc(profileRef);
 
   if (snapshot.exists()) {
-    return normalizeUserProfile({
+    const profile = normalizeUserProfile({
       id: firebaseUser.uid,
       ...(snapshot.data() as Partial<UserProfile>),
     });
+    if (profile.username) return profile;
+    try {
+      const assignedUsername = await updateUserUsername();
+      return { ...profile, ...assignedUsername };
+    } catch {
+      // Keep sign-in available during a function rollout; the account can
+      // retry username provisioning on the next profile load.
+      return profile;
+    }
   }
 
   const fallbackProfile = normalizeUserProfile({
@@ -101,7 +112,12 @@ const loadProfile = async (firebaseUser: User): Promise<UserProfile> => {
   });
 
   await saveProfile(fallbackProfile);
-  return fallbackProfile;
+  try {
+    const assignedUsername = await updateUserUsername();
+    return { ...fallbackProfile, ...assignedUsername };
+  } catch {
+    return fallbackProfile;
+  }
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -165,7 +181,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           createdAt: new Date().toISOString(),
         });
         await saveProfile(profile);
-        setCurrentUser(profile);
+        setCurrentUser(await loadProfile(result.user));
       },
       loginWithGoogle: async () => {
         if (!auth || !firestore) {
@@ -260,6 +276,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setCurrentUser({ ...previous, ...committedUpdates });
           throw error;
         }
+      },
+      updateUsername: async (username) => {
+        if (!currentUser) {
+          throw new Error("You must be signed in to change your username.");
+        }
+        const result = await updateUserUsername(username);
+        setCurrentUser((profile) => profile ? { ...profile, ...result } : profile);
+        return result;
       },
       logout: async () => {
         setCurrentUser(null);

@@ -10,7 +10,7 @@ import {
   removeProfilePhoto,
   uploadProfilePhoto,
 } from "@/features/profile/avatarService";
-import { maxDisplayNameLength, setUserBlocked } from "@/features/profile/profileService";
+import { maxDisplayNameLength, maxUsernameLength, setUserBlocked, usernameChangeCooldownMs } from "@/features/profile/profileService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import { seededUsers } from "@/data/firestoreSeeds";
 import { defaultUserPreferences } from "@/features/users/defaultProfile";
@@ -35,7 +35,7 @@ const safeInitial = (value?: string | null) =>
   value?.trim()?.charAt(0).toUpperCase() || "D";
 
 export const SettingsPage = () => {
-  const { currentUser, isDemoMode, updateProfile } = useAuth();
+  const { currentUser, isDemoMode, updateProfile, updateUsername } = useAuth();
   const profile = currentUser;
   const blockConstraints = useMemo<QueryConstraint[]>(
     () => profile ? [where("blockerId", "==", profile.id)] : [],
@@ -81,6 +81,9 @@ export const SettingsPage = () => {
   const [displayNameDraft, setDisplayNameDraft] = useState(profile?.displayName ?? "");
   const [accountMessage, setAccountMessage] = useState("");
   const [isSavingDisplayName, setIsSavingDisplayName] = useState(false);
+  const [usernameDraft, setUsernameDraft] = useState(profile?.username ?? "");
+  const [usernameMessage, setUsernameMessage] = useState("");
+  const [isSavingUsername, setIsSavingUsername] = useState(false);
 
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
   const [avatarMessage, setAvatarMessage] = useState("");
@@ -108,6 +111,7 @@ export const SettingsPage = () => {
       profile.preferences?.messaging?.whoCanMessage ?? defaultUserPreferences.messaging.whoCanMessage,
     );
     setDisplayNameDraft(profile.displayName ?? "");
+    setUsernameDraft(profile.username ?? "");
     setBioDraft(profile.bio ?? "");
     setHidePerformance(profile.hidePerformance ?? false);
   }, [profile]);
@@ -134,6 +138,18 @@ export const SettingsPage = () => {
       </section>
     );
   }
+
+  const lastUsernameChange = profile.usernameUpdatedAt
+    ? Date.parse(profile.usernameUpdatedAt)
+    : profile.username
+      ? Date.parse(profile.createdAt)
+      : Number.NaN;
+  const nextUsernameChange = Number.isFinite(lastUsernameChange)
+    ? lastUsernameChange + usernameChangeCooldownMs
+    : Number.NaN;
+  const usernameChangeLocked = Boolean(profile.username)
+    && Number.isFinite(nextUsernameChange)
+    && Date.now() < nextUsernameChange;
 
   const handleAvatarSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
@@ -293,6 +309,21 @@ export const SettingsPage = () => {
     }
   };
 
+  const saveUsername = async () => {
+    if (isSavingUsername) return;
+    setUsernameMessage("");
+    setIsSavingUsername(true);
+    try {
+      const result = await updateUsername(usernameDraft);
+      setUsernameDraft(result.username);
+      setUsernameMessage("Username saved.");
+    } catch (error) {
+      setUsernameMessage(error instanceof Error ? error.message : "Unable to update your username.");
+    } finally {
+      setIsSavingUsername(false);
+    }
+  };
+
   const changeRole = async (nextRole: UserRole) => {
     if (nextRole === profile.role || isSavingRole) {
       return;
@@ -426,6 +457,39 @@ export const SettingsPage = () => {
             {accountMessage ? (
               <p className="meta-line" aria-live="polite" style={{ marginTop: "0.25rem" }}>
                 {accountMessage}
+              </p>
+            ) : null}
+            <div className="list-item settings-username-item">
+              <div className="form-field">
+                <label htmlFor="settingsUsername">Username</label>
+                <input
+                  id="settingsUsername"
+                  value={usernameDraft}
+                  maxLength={maxUsernameLength}
+                  autoComplete="username"
+                  onChange={(event) => setUsernameDraft(event.target.value)}
+                  placeholder="your_username"
+                  disabled={usernameChangeLocked || isSavingUsername}
+                />
+                <span className="meta-line">
+                  Your unique @username is separate from your display name. You can change it once every 30 days.
+                  {usernameChangeLocked
+                    ? ` Available again ${new Date(nextUsernameChange).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}.`
+                    : " Use 3–20 lowercase letters, numbers, or underscores."}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary settings-username-save"
+                disabled={usernameChangeLocked || isSavingUsername || !usernameDraft.trim() || usernameDraft.trim().replace(/^@/, "").toLowerCase() === profile.username?.toLowerCase()}
+                onClick={() => void saveUsername()}
+              >
+                {isSavingUsername ? "Saving..." : "Save"}
+              </button>
+            </div>
+            {usernameMessage ? (
+              <p className="meta-line" aria-live="polite" style={{ marginTop: "0.25rem" }}>
+                {usernameMessage}
               </p>
             ) : null}
             <div className="list-item">

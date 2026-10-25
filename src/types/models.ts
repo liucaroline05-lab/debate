@@ -27,6 +27,7 @@ export interface UserProfile {
   id: string;
   displayName: string;
   username?: string;
+  usernameUpdatedAt?: string;
   email: string;
   role: UserRole;
   avatarUrl?: string;
@@ -585,7 +586,6 @@ export interface CommunityChannel {
   accent?: "sage" | "gold" | "terracotta" | "sand";
   visibility?: "public" | "private";
   creatorId?: string;
-  inviteCode?: string;
   createdAt?: string;
 }
 
@@ -607,7 +607,8 @@ export interface CommunityAttachment {
 
 export interface CommunityPost {
   id: string;
-  channelId: string;
+  /** Missing channelId means the post belongs to the community-wide feed. */
+  channelId?: string;
   authorId: string;
   author: string;
   authorRole?: string;

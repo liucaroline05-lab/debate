@@ -343,6 +343,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const [isSavingTabroomVisibility, setIsSavingTabroomVisibility] = useState(false);
   const [tabroomView, setTabroomView] = useState<"upcoming" | "past">("upcoming");
   const [showAllTabroomEvents, setShowAllTabroomEvents] = useState(false);
+  const [followListOpen, setFollowListOpen] = useState<"followers" | "following" | null>(null);
 
   useEffect(() => {
     if (!profile) {
@@ -414,6 +415,15 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     () => followsState.data.filter((follow) => follow.followerId === userId).length,
     [followsState.data, userId],
   );
+  const followListUserIds = useMemo(() => {
+    if (followListOpen === "followers") {
+      return followsState.data.filter((follow) => follow.followingId === userId).map((follow) => follow.followerId);
+    }
+    if (followListOpen === "following") {
+      return followsState.data.filter((follow) => follow.followerId === userId).map((follow) => follow.followingId);
+    }
+    return [];
+  }, [followListOpen, followsState.data, userId]);
 
   const tabroomLink = tabroomLinksState.data.find((entry) => entry.userId === userId);
   const tabroomImport = tabroomImportsState.data.find((entry) => entry.userId === userId);
@@ -673,13 +683,13 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
                 {profile.username ? <span className="pill">@{profile.username}</span> : null}
               </div>
               <div className="profile-follow-counts">
-                <span>
+                <button type="button" onClick={() => setFollowListOpen("followers")}>
                   <strong>{followerCount}</strong>
                   {followerCount === 1 ? " follower" : " followers"}
-                </span>
-                <span>
+                </button>
+                <button type="button" onClick={() => setFollowListOpen("following")}>
                   <strong>{followingCount}</strong> following
-                </span>
+                </button>
               </div>
               {isOwnProfile ? (
                 <div className="stack" style={{ gap: "0.65rem" }}>
@@ -1049,6 +1059,51 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
           </div>
         </div>
       </div> : null}
+      {followListOpen ? (
+        <div className="community-modal-overlay" role="presentation" onMouseDown={() => setFollowListOpen(null)}>
+          <section
+            className="community-modal app-card profile-follow-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profileFollowListTitle"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="row-between">
+              <div>
+                <p className="eyebrow">Community</p>
+                <h2 id="profileFollowListTitle" className="card-title">
+                  {followListOpen === "followers" ? "Followers" : "Following"}
+                </h2>
+              </div>
+              <button type="button" className="forum-icon-button" aria-label="Close list" onClick={() => setFollowListOpen(null)}>×</button>
+            </div>
+            <div className="profile-follow-list">
+              {followListUserIds.map((followedUserId) => {
+                const person = usersState.data.find((user) => user.id === followedUserId);
+                return (
+                  <Link
+                    key={followedUserId}
+                    to={`/app/users/${followedUserId}`}
+                    className="profile-follow-list-item dashboard-list-link"
+                    onClick={() => setFollowListOpen(null)}
+                  >
+                    {person?.avatarUrl ? (
+                      <img src={person.avatarUrl} alt="" className="forum-avatar" />
+                    ) : (
+                      <span className="forum-avatar">{safeInitial(person?.displayName)}</span>
+                    )}
+                    <span className="profile-follow-list-copy">
+                      <strong>{safeName(person?.displayName, "Debate member")}</strong>
+                      <span className="meta-line">{person?.username ? `@${person.username}` : person?.role ?? "Member"}</span>
+                    </span>
+                  </Link>
+                );
+              })}
+              {followListUserIds.length === 0 ? <p className="meta-line">No {followListOpen} yet.</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 };

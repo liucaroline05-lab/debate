@@ -66,6 +66,13 @@ service cloud.firestore {
       ]);
     }
 
+    function keepsServerManagedUsername() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "username",
+        "usernameUpdatedAt"
+      ]);
+    }
+
     // Defaults to "everyone" when the recipient has no profile document or has
     // never saved a messaging preference. Reading `.data` off a missing
     // document instead throws, which denied every new conversation.
@@ -96,10 +103,26 @@ service cloud.firestore {
         || exists(/databases/$(database)/documents/userBlocks/$(secondId + "-" + firstId));
     }
 
+    function hasJoinedChannel(channelId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/channelMemberships/$(channelId + "-" + request.auth.uid));
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create: if isOwner(userId) && hasValidDisplayName();
-      allow update: if isOwner(userId) && keepsExistingDisplayName();
+      allow create: if isOwner(userId)
+        && hasValidDisplayName()
+        && !("username" in request.resource.data)
+        && !("usernameUpdatedAt" in request.resource.data);
+      allow update: if isOwner(userId)
+        && keepsExistingDisplayName()
+        && keepsServerManagedUsername();
+    }
+
+    // Username reservations are maintained atomically by the updateUsername
+    // callable. Clients must not create, move, or delete reservations.
+    match /usernames/{username} {
+      allow read, write: if false;
     }
 
     match /follows/{followId} {
@@ -154,8 +177,39 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if true;
       allow create: if isSignedIn()
-        && request.resource.data.authorId == request.auth.uid;
-      allow update: if isSignedIn();
+        && request.resource.data.authorId == request.auth.uid
+        && (!('channelId' in request.resource.data)
+          || request.resource.data.channelId == null
+          || request.resource.data.channelId == ''
+          || request.resource.data.channelId == 'community-general'
+          || (request.resource.data.channelId is string
+            && hasJoinedChannel(request.resource.data.channelId)));
+      allow update: if isSignedIn() && (
+        (
+          ownsExistingResource("authorId")
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "title",
+            "content",
+            "category",
+            "debateType",
+            "updatedAt"
+          ])
+          && request.resource.data.content is string
+          && request.resource.data.content.size() > 0
+        )
+        || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["reported", "updatedAt"])
+          && request.resource.data.reported == true
+        )
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["shareCount", "updatedAt"])
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["replyCount", "updatedAt"])
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "likeCount",
+          "dislikeCount",
+          "favoriteCount",
+          "updatedAt"
+        ])
+      );
       allow delete: if ownsExistingResource("authorId");
     }
 
@@ -848,9 +902,44 @@ service cloud.firestore {
 
     match /channelMemberships/{membershipId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.channelId is string
+        && membershipId == request.resource.data.channelId + "-" + request.auth.uid
+        && exists(/databases/$(database)/documents/channels/$(request.resource.data.channelId))
+        && (
+          get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data.creatorId == request.auth.uid
+          || !('visibility' in get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data)
+          || get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data.visibility == 'public'
+          || (
+            'inviteCode' in request.resource.data
+            && (
+              (
+                exists(/databases/$(database)/documents/channelInvites/$(request.resource.data.inviteCode))
+                && get(/databases/$(database)/documents/channelInvites/$(request.resource.data.inviteCode)).data.channelId == request.resource.data.channelId
+              )
+              || request.resource.data.inviteCode == get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data.inviteCode
+            )
+          )
+        );
+      allow update: if ownsExistingResource("userId")
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.channelId == resource.data.channelId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["lastActiveAt"]);
       allow delete: if ownsExistingResource("userId");
+    }
+
+    match /channelInvites/{inviteCode} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.channelId is string
+        && exists(/databases/$(database)/documents/channels/$(request.resource.data.channelId))
+        && get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data.creatorId == request.auth.uid
+        && get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data.visibility == "private";
+      allow update: if false;
+      allow delete: if ownsExistingResource("createdBy");
     }
 
     match /events/{eventId} {
