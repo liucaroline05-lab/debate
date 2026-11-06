@@ -118,13 +118,13 @@ describe("DebateWatchPage debate view", () => {
     ]);
   });
 
-  it("keeps the overview cards and renders the completed debate widget below them", () => {
+  it("hides the overview cards and renders the completed debate widget", () => {
     mocks.debates = [completedDebate()];
 
     renderPage("/app/debates/complete");
 
-    expect(screen.getByRole("heading", { name: "Matchup" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Round summary" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Matchup" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Round summary" })).not.toBeInTheDocument();
 
     const debateWidget = screen.getByRole("article", {
       name: "Completed debate round",

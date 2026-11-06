@@ -447,41 +447,43 @@ export const DebateWatchPage = () => {
         </section>
       ) : (
         <section className="stack">
-          <section className="settings-grid">
-            <article className="app-card">
-              <h2 className="card-title">Matchup</h2>
-              <div className="list" style={{ marginTop: "1rem" }}>
-                <div className="list-item">
-                  <strong>{debate.affirmative.name}</strong>
-                  <span className="meta-line">{debate.affirmative.label}</span>
+          {debate.status !== "Completed" ? (
+            <section className="settings-grid">
+              <article className="app-card">
+                <h2 className="card-title">Matchup</h2>
+                <div className="list" style={{ marginTop: "1rem" }}>
+                  <div className="list-item">
+                    <strong>{debate.affirmative.name}</strong>
+                    <span className="meta-line">{debate.affirmative.label}</span>
+                  </div>
+                  <div className="list-item">
+                    <strong>{debate.negative.name}</strong>
+                    <span className="meta-line">{debate.negative.label}</span>
+                  </div>
                 </div>
-                <div className="list-item">
-                  <strong>{debate.negative.name}</strong>
-                  <span className="meta-line">{debate.negative.label}</span>
-                </div>
-              </div>
-            </article>
+              </article>
 
-            <article className="app-card">
-              <h2 className="card-title">Round summary</h2>
-              <div className="list" style={{ marginTop: "1rem" }}>
-                <div className="list-item">
-                  <strong>Status</strong>
-                  <span className="meta-line">{debate.status}</span>
+              <article className="app-card">
+                <h2 className="card-title">Round summary</h2>
+                <div className="list" style={{ marginTop: "1rem" }}>
+                  <div className="list-item">
+                    <strong>Status</strong>
+                    <span className="meta-line">{debate.status}</span>
+                  </div>
+                  <div className="list-item">
+                    <strong>{debate.status === "Active" ? "Watching now" : "Views"}</strong>
+                    <span className="meta-line">
+                      {debate.status === "Active" ? liveViewerCount : totalViewCount}
+                    </span>
+                  </div>
+                  <div className="list-item">
+                    <strong>AI judged</strong>
+                    <span className="meta-line">{debate.aiJudged ? "Yes" : "No"}</span>
+                  </div>
                 </div>
-                <div className="list-item">
-                  <strong>{debate.status === "Active" ? "Watching now" : "Views"}</strong>
-                  <span className="meta-line">
-                    {debate.status === "Active" ? liveViewerCount : totalViewCount}
-                  </span>
-                </div>
-                <div className="list-item">
-                  <strong>AI judged</strong>
-                  <span className="meta-line">{debate.aiJudged ? "Yes" : "No"}</span>
-                </div>
-              </div>
-            </article>
-          </section>
+              </article>
+            </section>
+          ) : null}
 
           <article
             className="debate-panel"
