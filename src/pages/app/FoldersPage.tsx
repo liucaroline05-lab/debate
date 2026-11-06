@@ -491,11 +491,6 @@ export const FoldersPage = () => {
     return allFolders.filter((folder) => {
       const isPublic = folderVisibility(folder) === "public";
       if (!isPublic && !isContentFolderMember(folder, userId)) return false;
-      // Nested folders live on their parent's board, but stay findable through
-      // search and "Saved only". A collaborator who can't see the parent still
-      // needs the folder listed, or they would have no way to reach it.
-      const isReachableThroughParent = allFolders.some((parent) => parent.id === folder.parentFolderId);
-      if (isReachableThroughParent && !normalizedQuery && !savedOnly) return false;
       if (visibilityFilter === "Public" && !isPublic) return false;
       if (visibilityFilter === "Private" && isPublic) return false;
       if (savedOnly && !savedFolderIds.has(folder.id)) return false;

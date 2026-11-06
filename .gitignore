@@ -5,6 +5,7 @@ dist
 .vscode
 .firebase
 firebase-debug.log
+firestore-debug.log
 coverage
 playwright-report
 test-results

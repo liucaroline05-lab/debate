@@ -105,10 +105,6 @@ export const SettingsPage = () => {
       ...profile.preferences?.notifications,
     });
     setHistoryDaysDraft(String(profile.preferences?.notifications?.historyDays ?? 30));
-    setDebateDefaults({
-      ...defaultUserPreferences.debateDefaults,
-      ...profile.preferences?.debateDefaults,
-    });
     setMessagingPermission(
       profile.preferences?.messaging?.whoCanMessage ?? defaultUserPreferences.messaging.whoCanMessage,
     );
@@ -117,6 +113,13 @@ export const SettingsPage = () => {
     setBioDraft(profile.bio ?? "");
     setHidePerformance(profile.hidePerformance ?? false);
   }, [profile]);
+
+  // Only follow the stored values, so saving another card on this page doesn't
+  // throw away choices here that haven't been saved yet.
+  const { preferredFormat, preferredSide, asyncResponseCadence } = resolvedPreferences.debateDefaults;
+  useEffect(() => {
+    setDebateDefaults({ preferredFormat, preferredSide, asyncResponseCadence });
+  }, [preferredFormat, preferredSide, asyncResponseCadence]);
 
   useEffect(() => {
     if (!pendingAvatarFile) {

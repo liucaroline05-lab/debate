@@ -48,9 +48,11 @@ const profile: UserProfile = {
   createdAt: "2026-08-01T10:00:00.000Z",
 };
 
+let currentUser = profile;
+
 vi.mock("@/features/auth/AuthContext", () => ({
   useAuth: () => ({
-    currentUser: profile,
+    currentUser,
     isDemoMode: false,
     updateProfile: mocks.updateProfile,
   }),
@@ -97,6 +99,27 @@ describe("SettingsPage debate preferences", () => {
       },
     });
     expect(await screen.findByText("Debate preferences saved.")).toBeInTheDocument();
+  });
+
+  it("keeps unsaved choices when another card updates the profile, but follows new saved values", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+    await user.selectOptions(screen.getByLabelText("Preferred format"), "Policy");
+
+    currentUser = { ...profile, hidePerformance: true };
+    rerender(<MemoryRouter><SettingsPage /></MemoryRouter>);
+    expect(screen.getByLabelText("Preferred format")).toHaveValue("Policy");
+
+    currentUser = {
+      ...profile,
+      preferences: {
+        ...profile.preferences,
+        debateDefaults: { ...profile.preferences.debateDefaults, preferredFormat: "Congress" },
+      },
+    };
+    rerender(<MemoryRouter><SettingsPage /></MemoryRouter>);
+    expect(screen.getByLabelText("Preferred format")).toHaveValue("Congress");
+    currentUser = profile;
   });
 
   it("shows the reason when saving fails", async () => {
