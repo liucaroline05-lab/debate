@@ -68,10 +68,12 @@ const saveProfile = async (profile: UserProfile) => {
     throw new Error("Firebase is not configured. Add your Firebase environment values to continue.");
   }
 
+  // Every member can read user documents, so the address stays in Firebase Auth.
+  const { email: _email, ...storedProfile } = profile;
   await setDoc(
     doc(firestore, "users", profile.id),
     {
-      ...profile,
+      ...storedProfile,
       createdAt: profile.createdAt || serverTimestamp(),
     },
     { merge: true },
@@ -90,6 +92,7 @@ const loadProfile = async (firebaseUser: User): Promise<UserProfile> => {
     const profile = normalizeUserProfile({
       id: firebaseUser.uid,
       ...(snapshot.data() as Partial<UserProfile>),
+      email: firebaseUser.email ?? "",
     });
     if (profile.username) return profile;
     try {
@@ -231,11 +234,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
 
-        let committedUpdates: Partial<UserProfile> = {};
+        let committedUpdates: Partial<UserProfile> = Object.fromEntries(
+          Object.entries(updates).filter(([key]) => ["avatarUrl", "avatarStoragePath"].includes(key)),
+        );
 
         try {
+          // Display names and profile photos are written by Cloud Functions.
           const updateEntries = Object.entries(updates).filter(
-            ([key]) => key !== "displayName",
+            ([key]) => !["displayName", "avatarUrl", "avatarStoragePath"].includes(key),
           );
           const firestoreUpdates = updateEntries.reduce<DocumentData>(
             (accumulator, [key, value]) => {
@@ -251,7 +257,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               firestoreUpdates,
               { merge: true },
             );
-            committedUpdates = Object.fromEntries(updateEntries) as Partial<UserProfile>;
+            committedUpdates = { ...committedUpdates, ...Object.fromEntries(updateEntries) };
           }
 
           const savedDisplayName =

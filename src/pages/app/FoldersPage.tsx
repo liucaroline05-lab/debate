@@ -25,7 +25,8 @@ import {
   Video,
 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
-import { seededDebates, seededResources } from "@/data/firestoreSeeds";
+import { seededResources } from "@/data/firestoreSeeds";
+import { useVisibleDebates } from "@/features/debates/useVisibleDebates";
 import { FolderCollaboratorsPanel } from "@/features/folders/FolderCollaboratorsPanel";
 import { FolderCommentsSection } from "@/features/folders/FolderCommentsSection";
 import { FolderEngagementBar } from "@/features/folders/FolderEngagementBar";
@@ -190,7 +191,7 @@ export const FoldersPage = () => {
     "tabroomImports", EMPTY_IMPORTS, ownerConstraints, Boolean(userId),
     userId ? `tabroom-imports:${userId}` : undefined,
   );
-  const debateState = useSeededFirestoreCollection<DebateThread>("debates", seededDebates);
+  const debateState = useVisibleDebates(userId);
   const resourceState = useSeededFirestoreCollection<ResourceItem>("resources", seededResources);
 
   const allFolders = useMemo(() => Array.from(new Map(

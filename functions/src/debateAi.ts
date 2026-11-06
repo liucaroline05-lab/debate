@@ -427,11 +427,20 @@ const maybeGenerateDebateSummary = async (
     .where("debateId", "==", debateId)
     .get();
   const transcriptsByTurnId = new Map<string, { ref: string; text: string }>();
+  const storagePathByTurnId = new Map(
+    turns.map((turn) => [asString(turn.id), asString(turn.speechStoragePath)]),
+  );
 
   for (const snapshot of transcriptSnapshots.docs) {
     const transcript = snapshot.data() as TranscriptData;
     const turnId = asString(transcript.turnId);
     const text = asString(transcript.text);
+    // A transcript only counts if it came from the file the turn points at, so
+    // a separately uploaded recording tagged with this turn can't replace it.
+    const expectedPath = storagePathByTurnId.get(turnId);
+    if (expectedPath && asString(transcript.storagePath) !== expectedPath) {
+      continue;
+    }
     if (transcript.status === "completed" && turnId && text) {
       transcriptsByTurnId.set(turnId, {
         ref: snapshot.ref.path,
@@ -586,6 +595,15 @@ export const transcribeDebateSpeech = onObjectFinalized(
       || !userId
       || !isDebateSide(side)
     ) {
+      return;
+    }
+
+    // Storage rules check this at upload too. Never pay to transcribe a
+    // recording from someone who isn't in the debate it names.
+    const uploaderDebate = await getFirestore().doc(`debates/${debateId}`).get();
+    const uploaderDebateParticipants = uploaderDebate.data()?.participantIds;
+    if (!Array.isArray(uploaderDebateParticipants) || !uploaderDebateParticipants.includes(userId)) {
+      console.warn("Skipping debate recording from a non-participant.", { debateId, storagePath });
       return;
     }
 

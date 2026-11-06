@@ -125,6 +125,8 @@ export interface SpeechCommentReaction {
 
 export interface DebateMatchRequest {
   id: string;
+  /** The debate created when this challenge was accepted. */
+  matchedDebateId?: string;
   topic: string;
   format: "Lincoln-Douglas" | "Public Forum" | "Policy" | "World Schools";
   skillLevel: "Novice" | "Intermediate" | "Advanced";
@@ -228,6 +230,8 @@ export type DebateStatus =
 
 export interface DebateThread {
   id: string;
+  /** The open challenge this debate came from, if any. */
+  matchRequestId?: string;
   createdAt?: string;
   updatedAt?: string;
   topic: string;
@@ -304,6 +308,8 @@ export interface DebateWinnerVoteFeedback {
 
 export interface DebateMessage {
   id: string;
+  /** Copy of the debate's participants, which rules check when reading. */
+  participantIds?: string[];
   debateId: string;
   authorId: string;
   authorName: string;
@@ -392,6 +398,9 @@ export interface ChatSharedPreview {
 
 export interface DebateComment {
   id: string;
+  /** Copies of the debate's audience, which rules check when reading. */
+  debateVisibility?: "public" | "private";
+  participantIds?: string[];
   debateId: string;
   authorId: string;
   authorName: string;
@@ -609,6 +618,8 @@ export interface CommunityPost {
   id: string;
   /** Missing channelId means the post belongs to the community-wide feed. */
   channelId?: string;
+  /** Copy of the channel's visibility, which rules check when reading. */
+  channelVisibility?: "public" | "private";
   authorId: string;
   author: string;
   authorRole?: string;
@@ -635,6 +646,9 @@ export interface CommunityPost {
 
 export interface PostComment {
   id: string;
+  /** Copies from the post, which rules check when reading. */
+  channelId?: string;
+  channelVisibility?: "public" | "private";
   postId: string;
   /** Set when this comment is a reply to another comment on the same post. */
   parentCommentId?: string | null;

@@ -5,6 +5,7 @@ import {
   collection,
   doc,
   getDoc,
+  increment,
   runTransaction,
   setDoc,
   updateDoc,
@@ -307,7 +308,10 @@ export const acceptOpenChallenge = async (
   const db = requireFirestore();
   const createdAt = nowIso();
   const creatorSide = creatorSideFor(match.preferredSide);
-  const creatorId = match.creatorId ?? match.requestedBy;
+  const creatorId = match.creatorId;
+  if (!creatorId) {
+    throw new Error("This older challenge can't be accepted. Ask its creator to post it again.");
+  }
   const { affirmative, negative } = buildParticipants(
     creatorSide,
     { id: creatorId, name: match.requestedBy },
@@ -315,6 +319,7 @@ export const acceptOpenChallenge = async (
   );
 
   const debate: Omit<DebateThread, "id"> = {
+    matchRequestId: match.id,
     topic: match.topic,
     format: match.format,
     status: "Active",
@@ -338,61 +343,36 @@ export const acceptOpenChallenge = async (
     turns: [],
   };
 
-  const docRef = await addDoc(collection(db, "debates"), { ...debate, createdAt });
-  await updateDoc(doc(db, "matchRequests", match.id), {
-    status: "Matched",
-    updatedAt: createdAt,
+  // In one transaction, so two people accepting at once can't both get a debate.
+  const debateRef = doc(collection(db, "debates"));
+  const matchRef = doc(db, "matchRequests", match.id);
+  await runTransaction(db, async (transaction) => {
+    const latestMatch = await transaction.get(matchRef);
+    if (latestMatch.data()?.status !== "Open") {
+      throw new Error("Someone else already accepted this challenge.");
+    }
+    transaction.set(debateRef, { ...debate, createdAt });
+    transaction.update(matchRef, {
+      status: "Matched",
+      matchedDebateId: debateRef.id,
+      updatedAt: createdAt,
+    });
   });
 
-  return docRef.id;
+  return debateRef.id;
 };
 
-/** Join a private debate using its invite code. */
-export const joinDebateByInviteCode = async (
-  code: string,
-  joiner: { id: string; name: string },
-  debates: DebateThread[],
-) => {
-  const db = requireFirestore();
-  const normalized = code.trim().toUpperCase();
-
-  const debate = debates.find(
-    (entry) => entry.inviteCode?.toUpperCase() === normalized,
+/**
+ * Join a private debate using its invite code. The joiner can't read the debate
+ * until they are in it, so the server looks it up and assigns the seat.
+ */
+export const joinDebateByInviteCode = async (code: string) => {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  const join = httpsCallable<{ inviteCode: string }, { debateId: string }>(
+    functions,
+    "joinDebateByInviteCode",
   );
-
-  if (!debate) {
-    throw new Error("No debate found for that invite code.");
-  }
-
-  if ((debate.participantIds ?? []).includes(joiner.id)) {
-    throw new Error("You are already a participant in this debate.");
-  }
-
-  if (debate.status !== "Awaiting Opponent") {
-    throw new Error("This debate has already started.");
-  }
-
-  const openSide: "Aff" | "Neg" = debate.affirmative.userId ? "Neg" : "Aff";
-  const affirmative =
-    openSide === "Aff"
-      ? { ...debate.affirmative, name: joiner.name, userId: joiner.id }
-      : debate.affirmative;
-  const negative =
-    openSide === "Neg"
-      ? { ...debate.negative, name: joiner.name, userId: joiner.id }
-      : debate.negative;
-
-  await updateDoc(doc(db, "debates", debate.id), {
-    affirmative,
-    negative,
-    participantIds: [...(debate.participantIds ?? []), joiner.id],
-    status: "Active",
-    // Affirmative speaks first.
-    currentTurnUserId: affirmative.userId ?? null,
-    updatedAt: nowIso(),
-  });
-
-  return debate.id;
+  return (await join({ inviteCode: code.trim().toUpperCase() })).data.debateId;
 };
 
 // ---------------------------------------------------------------------------
@@ -481,9 +461,11 @@ export const addDebateMessage = async (
   content: string,
 ) => {
   const db = requireFirestore();
+  const debate = (await getDoc(doc(db, "debates", debateId))).data();
 
   await addDoc(collection(db, "debateMessages"), {
     debateId,
+    participantIds: debate?.participantIds ?? [],
     authorId,
     authorName,
     content: content.trim(),
@@ -512,21 +494,21 @@ export const addDebateComment = async (
 ) => {
   const db = requireFirestore();
   const createdAt = nowIso();
+  const debateRef = doc(db, "debates", debateId);
+  const debate = (await getDoc(debateRef)).data();
 
   await addDoc(collection(db, "debateComments"), {
     debateId,
+    debateVisibility: debate?.visibility,
+    participantIds: debate?.participantIds ?? [],
     authorId,
     authorName,
     content: content.trim(),
     createdAt,
   });
 
-  const debateRef = doc(db, "debates", debateId);
-  const snapshot = await getDoc(debateRef);
-  const currentCount = (snapshot.data()?.commentCount as number | undefined) ?? 0;
-
   await updateDoc(debateRef, {
-    commentCount: currentCount + 1,
+    commentCount: increment(1),
     updatedAt: createdAt,
   });
 };
@@ -611,14 +593,11 @@ export const toggleDebateReaction = async (
   });
 };
 
-export const incrementDebateShareCount = async (
-  debateId: string,
-  currentShareCount = 0,
-) => {
+export const incrementDebateShareCount = async (debateId: string) => {
   const db = requireFirestore();
 
   await updateDoc(doc(db, "debates", debateId), {
-    shareCount: currentShareCount + 1,
+    shareCount: increment(1),
     updatedAt: nowIso(),
   });
 };

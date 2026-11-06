@@ -3,7 +3,7 @@ import { where, type QueryConstraint } from "firebase/firestore";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { PageMeta } from "@/components/common/PageMeta";
 import { DebateTurnSequence } from "@/components/debates/DebateTurnSequence";
-import { seededDebates } from "@/data/firestoreSeeds";
+import { useVisibleDebates } from "@/features/debates/useVisibleDebates";
 import { useAuth } from "@/features/auth/AuthContext";
 import { FolderPickerButton } from "@/features/folders/FolderPickerButton";
 import {
@@ -116,7 +116,7 @@ export const DebateWatchPage = () => {
   const [selectedVoteSide, setSelectedVoteSide] = useState<"Aff" | "Neg" | null>(null);
   const [isRetryingSummary, setIsRetryingSummary] = useState(false);
   const [summaryRetryNotice, setSummaryRetryNotice] = useState("");
-  const debatesState = useSeededFirestoreCollection("debates", seededDebates);
+  const debatesState = useVisibleDebates(currentUser?.id);
   const voteConstraints = useMemo<QueryConstraint[]>(
     () => currentUser ? [where("userId", "==", currentUser.id)] : [],
     [currentUser],

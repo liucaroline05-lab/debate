@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { where, type QueryConstraint } from "firebase/firestore";
-import { seededDebates } from "@/data/firestoreSeeds";
+import { useVisibleDebates } from "@/features/debates/useVisibleDebates";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
 import type { ChatMessage, DebateThread, UserBlock } from "@/types/models";
 
@@ -80,7 +80,7 @@ export const useNotifications = (userId: string | undefined, historyDays?: numbe
     userId ? `user-blocks:${userId}` : undefined,
     true,
   );
-  const debateState = useSeededFirestoreCollection("debates", seededDebates);
+  const debateState = useVisibleDebates(userId);
 
   const notifications = useMemo<AppNotification[]>(() => {
     if (!userId) return [];

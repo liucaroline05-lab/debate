@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { where, type QueryConstraint } from "firebase/firestore";
 import { Link } from "react-router-dom";
 import {
   Bookmark,
@@ -13,7 +14,8 @@ import {
 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { DebateTurnSequence } from "@/components/debates/DebateTurnSequence";
-import { seededDebates, seededMatchRequests } from "@/data/firestoreSeeds";
+import { seededMatchRequests } from "@/data/firestoreSeeds";
+import { useVisibleDebateComments, useVisibleDebates } from "@/features/debates/useVisibleDebates";
 import {
   acceptOpenChallenge,
   addDebateComment,
@@ -183,23 +185,37 @@ export const DebatesPage = () => {
     commentsEnabled: true,
   });
 
-  const debateState = useSeededFirestoreCollection("debates", seededDebates);
+  const debateState = useVisibleDebates(user.id);
   const matchState = useSeededFirestoreCollection("matchRequests", seededMatchRequests);
+  const participantConstraints = useMemo<QueryConstraint[]>(
+    () => [where("participantIds", "array-contains", user.id)],
+    [user.id],
+  );
+  const ownConstraints = useMemo<QueryConstraint[]>(
+    () => [where("userId", "==", user.id)],
+    [user.id],
+  );
   const messageState = useSeededFirestoreCollection<DebateMessage>(
     "debateMessages",
     EMPTY_MESSAGES,
+    participantConstraints,
+    true,
+    `debate-messages:${user.id}`,
   );
-  const commentState = useSeededFirestoreCollection<DebateComment>(
-    "debateComments",
-    EMPTY_COMMENTS,
-  );
+  const commentState = useVisibleDebateComments(user.id);
   const reactionState = useSeededFirestoreCollection<DebateReaction>(
     "debateReactions",
     EMPTY_REACTIONS,
+    ownConstraints,
+    true,
+    `debate-reactions:${user.id}`,
   );
   const chatReadState = useSeededFirestoreCollection<DebateChatRead>(
     "debateChatReads",
     EMPTY_CHAT_READS,
+    ownConstraints,
+    true,
+    `debate-chat-reads:${user.id}`,
   );
 
   const debates = useMemo(
@@ -376,11 +392,7 @@ export const DebatesPage = () => {
     }
 
     try {
-      await joinDebateByInviteCode(
-        joinCode,
-        { id: user.id, name: userName },
-        debates,
-      );
+      await joinDebateByInviteCode(joinCode);
       setJoinCode("");
       setBanner("You joined the debate. It is now active.");
       setActiveTab("my-debates");
@@ -455,7 +467,7 @@ export const DebatesPage = () => {
 
   const handleShare = (debate: DebateThread) => {
     setShareTarget(debate);
-    void incrementDebateShareCount(debate.id, debate.shareCount).catch(() => {});
+    void incrementDebateShareCount(debate.id).catch(() => {});
   };
 
   const renderMatchup = (debate: DebateThread, compact = false) => (

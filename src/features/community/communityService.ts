@@ -5,6 +5,7 @@ import {
   doc,
   getDocs,
   getDoc,
+  increment,
   query,
   runTransaction,
   setDoc,
@@ -12,7 +13,8 @@ import {
   where,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { firestore, storage } from "@/lib/firebase";
+import { httpsCallable } from "firebase/functions";
+import { firestore, functions, storage } from "@/lib/firebase";
 import type {
   CommunityAttachment,
   CommunityChannel,
@@ -120,26 +122,24 @@ export const createPost = async (input: NewPostInput) => {
       // Older membership records did not always use the deterministic
       // channelId-userId document key. Copy a valid existing membership to
       // the canonical key so the Firestore post rule can check it atomically.
-      const channelSnapshot = await getDoc(doc(firestore, "channels", assignedChannelId));
-      const channel = channelSnapshot.data() as (Partial<CommunityChannel> & { inviteCode?: string }) | undefined;
-      const priorInviteCode = existingMembership.data().inviteCode ?? channel?.inviteCode;
       await setDoc(membershipRef, {
         channelId: assignedChannelId,
         userId: input.authorId,
         role: existingMembership.data().role ?? "Member",
         lastActiveAt: new Date().toISOString(),
-        ...(channel?.visibility === "private" && priorInviteCode
-          ? { inviteCode: priorInviteCode }
-          : {}),
       });
     }
   }
 
   const createdAt = new Date().toISOString();
   const attachments = await uploadPostAttachments(input.authorId, input.files ?? []);
+  const channelVisibility = assignedChannelId
+    ? ((await getDoc(doc(firestore, "channels", assignedChannelId))).data()?.visibility ?? "public")
+    : "public";
 
   await addDoc(collection(firestore, "posts"), {
     ...(assignedChannelId ? { channelId: assignedChannelId } : {}),
+    channelVisibility,
     authorId: input.authorId,
     author: input.author,
     authorRole: input.authorRole,
@@ -214,6 +214,16 @@ export const createPracticeGroup = async (input: NewPracticeGroupInput) => {
   return { id: channelRef.id, inviteCode };
 };
 
+/** Memberships are readable, so the server checks the code and adds the member. */
+const joinChannelWithCode = async (inviteCode: string, channelId?: string) => {
+  if (!functions) throw new Error("Firebase Functions is not configured.");
+  const join = httpsCallable<
+    { inviteCode: string; channelId?: string },
+    { channelId: string; channelName: string }
+  >(functions, "joinChannelByInviteCode");
+  return (await join({ inviteCode, channelId })).data.channelName;
+};
+
 export const joinCommunityChannel = async (
   channelId: string,
   userId: string,
@@ -235,19 +245,12 @@ export const joinCommunityChannel = async (
     return channel.name ?? "channel";
   }
 
-  const isPrivate = channel.visibility === "private";
-  const normalizedInviteCode = inviteCode?.trim().toUpperCase();
-  if (isPrivate) {
-    const invitation = normalizedInviteCode
-      ? await getDoc(doc(firestore, "channelInvites", normalizedInviteCode))
-      : null;
-    const legacyChannel = channel as Partial<CommunityChannel> & { inviteCode?: string };
-    const validInvitation = invitation?.exists()
-      ? invitation.data().channelId === channelId
-      : normalizedInviteCode === legacyChannel.inviteCode;
-    if (!validInvitation) {
+  if (channel.visibility === "private") {
+    const normalizedInviteCode = inviteCode?.trim().toUpperCase();
+    if (!normalizedInviteCode) {
       throw new Error("Enter the correct invite code to join this private channel.");
     }
+    return joinChannelWithCode(normalizedInviteCode, channelId);
   }
 
   await setDoc(membershipRef, {
@@ -255,7 +258,6 @@ export const joinCommunityChannel = async (
     userId,
     role: "Member",
     lastActiveAt: new Date().toISOString(),
-    ...(isPrivate && normalizedInviteCode ? { inviteCode: normalizedInviteCode } : {}),
   });
   return channel.name ?? "channel";
 };
@@ -273,7 +275,7 @@ export const leaveCommunityChannel = async (channelId: string, userId: string) =
   );
 };
 
-export const joinPracticeGroupByCode = async (inviteCode: string, userId: string) => {
+export const joinPracticeGroupByCode = async (inviteCode: string) => {
   if (!firestore) throw new Error("Firestore is not configured.");
   const normalizedCode = inviteCode.trim().toUpperCase();
   if (!normalizedCode) throw new Error("Enter an invite code first.");
@@ -281,19 +283,7 @@ export const joinPracticeGroupByCode = async (inviteCode: string, userId: string
     throw new Error("Invite codes use eight letters or numbers.");
   }
 
-  const invitation = await getDoc(doc(firestore, "channelInvites", normalizedCode));
-  if (invitation.exists()) {
-    const channelId = invitation.data().channelId as string;
-    return joinCommunityChannel(channelId, userId, normalizedCode);
-  }
-
-  // Support channels created before invite codes were stored separately.
-  const legacyChannels = await getDocs(
-    query(collection(firestore, "channels"), where("inviteCode", "==", normalizedCode)),
-  );
-  const legacyChannel = legacyChannels.docs[0];
-  if (!legacyChannel) throw new Error("No private community uses that invite code.");
-  return joinCommunityChannel(legacyChannel.id, userId, normalizedCode);
+  return joinChannelWithCode(normalizedCode);
 };
 
 export const updatePostContent = async (
@@ -329,13 +319,13 @@ export const reportPostById = async (postId: string) => {
   });
 };
 
-export const incrementPostShareCount = async (postId: string, currentShareCount = 0) => {
+export const incrementPostShareCount = async (postId: string) => {
   if (!firestore) {
     throw new Error("Firestore is not configured.");
   }
 
   await updateDoc(doc(firestore, "posts", postId), {
-    shareCount: currentShareCount + 1,
+    shareCount: increment(1),
     updatedAt: new Date().toISOString(),
   });
 };
@@ -360,9 +350,13 @@ export const addCommentToPost = async (
   }
 
   const createdAt = new Date().toISOString();
+  const postRef = doc(firestore, "posts", postId);
+  const post = (await getDoc(postRef)).data();
 
   await addDoc(collection(firestore, "postComments"), {
     postId,
+    ...(post?.channelId ? { channelId: post.channelId as string } : {}),
+    channelVisibility: post?.channelVisibility as CommunityPost["channelVisibility"],
     parentCommentId,
     authorId,
     authorName,
@@ -373,12 +367,8 @@ export const addCommentToPost = async (
     replyCount: 0,
   } satisfies Omit<PostComment, "id">);
 
-  const postRef = doc(firestore, "posts", postId);
-  const postSnapshot = await getDoc(postRef);
-  const currentReplyCount = (postSnapshot.data()?.replyCount as number | undefined) ?? 0;
-
   await updateDoc(postRef, {
-    replyCount: currentReplyCount + 1,
+    replyCount: increment(1),
     updatedAt: createdAt,
   });
 
@@ -387,7 +377,7 @@ export const addCommentToPost = async (
     const parentSnapshot = await getDoc(parentRef);
     if (parentSnapshot.exists()) {
       await updateDoc(parentRef, {
-        replyCount: ((parentSnapshot.data()?.replyCount as number | undefined) ?? 0) + 1,
+        replyCount: increment(1),
         updatedAt: createdAt,
       });
     }

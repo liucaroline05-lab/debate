@@ -223,7 +223,7 @@ describe("DebatesPage — Completed", () => {
 
     expect(screen.getByRole("dialog", { name: "Share" })).toBeInTheDocument();
     expect(screen.getByText(`${window.location.origin}/app/debates/finished-round`)).toBeInTheDocument();
-    expect(service.incrementDebateShareCount).toHaveBeenCalledWith("finished-round", undefined);
+    expect(service.incrementDebateShareCount).toHaveBeenCalledWith("finished-round");
   });
 
   it("separates the current user's completed debates from public community debates", () => {

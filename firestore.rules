@@ -47,11 +47,47 @@ service cloud.firestore {
 
     function isCommentCounterUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        "likeCount",
-        "dislikeCount",
-        "replyCount",
-        "updatedAt"
-      ]);
+          "likeCount",
+          "dislikeCount",
+          "replyCount",
+          "updatedAt"
+        ])
+        && stepsAtMostOne("likeCount")
+        && stepsAtMostOne("dislikeCount")
+        && stepsAtMostOne("replyCount");
+    }
+
+    function isOwnCommentEdit() {
+      return ownsExistingResource("authorId")
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "content",
+          "editedAt",
+          "updatedAt"
+        ]);
+    }
+
+    // A vote belongs to the user named in its ID, and only they can change it.
+    function isOwnReactionWrite(reactionId, parentField) {
+      return isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && reactionId == request.resource.data[parentField] + "-" + request.auth.uid
+        && (resource == null || resource.data.userId == request.auth.uid);
+    }
+
+    // Tallies are maintained by clients, so a single write can only move each
+    // one by a step. Fields may be missing on older documents.
+    function stepsAtMostOne(field) {
+      let previous = resource.data.get(field, 0);
+      let next = request.resource.data.get(field, 0);
+      return next is int
+        && next >= 0
+        && next >= previous - 1
+        && next <= previous + 1;
+    }
+
+    function incrementsByOne(field) {
+      return request.resource.data[field] is int
+        && request.resource.data[field] == resource.data.get(field, 0) + 1;
     }
 
     function hasValidDisplayName() {
@@ -64,6 +100,23 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         "displayName"
       ]);
+    }
+
+    // Profile photos are moderated and written by the uploadProfilePhoto
+    // callable, so clients can't point their profile at an arbitrary image or
+    // at another user's stored file.
+    function keepsServerManagedAvatar() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "avatarUrl",
+        "avatarStoragePath"
+      ]);
+    }
+
+    // User documents are readable by every member, so an email address must
+    // never be stored on one. Old values may stay or be removed, not changed.
+    function addsNoEmail() {
+      return !("email" in request.resource.data)
+        || ("email" in resource.data && request.resource.data.email == resource.data.email);
     }
 
     function keepsServerManagedUsername() {
@@ -113,10 +166,16 @@ service cloud.firestore {
       allow create: if isOwner(userId)
         && hasValidDisplayName()
         && !("username" in request.resource.data)
-        && !("usernameUpdatedAt" in request.resource.data);
+        && !("usernameUpdatedAt" in request.resource.data)
+        && !("email" in request.resource.data)
+        && !("avatarStoragePath" in request.resource.data)
+        && (!("avatarUrl" in request.resource.data)
+          || request.resource.data.avatarUrl.matches("https://[a-z0-9]+[.]googleusercontent[.]com/.*"));
       allow update: if isOwner(userId)
         && keepsExistingDisplayName()
-        && keepsServerManagedUsername();
+        && keepsServerManagedUsername()
+        && keepsServerManagedAvatar()
+        && addsNoEmail();
     }
 
     // Username reservations are maintained atomically by the updateUsername
@@ -129,6 +188,10 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
         && request.resource.data.followerId == request.auth.uid
+        && request.resource.data.followingId is string
+        && request.resource.data.followingId != request.auth.uid
+        // Messaging trusts this ID to mean "the first user follows the second".
+        && followId == request.auth.uid + "-" + request.resource.data.followingId
         && !isBlockedBetween(request.resource.data.followerId, request.resource.data.followingId);
       allow delete: if ownsExistingResource("followerId");
     }
@@ -158,13 +221,21 @@ service cloud.firestore {
         && request.resource.data.status == "open";
     }
 
+    // Tournament history is opt-in. It stays private to its owner unless they
+    // have turned on showTabroomHistory.
+    function canReadTabroomData() {
+      return isSignedIn()
+        && (resource.data.userId == request.auth.uid
+          || get(/databases/$(database)/documents/users/$(resource.data.userId)).data.get("showTabroomHistory", false) == true);
+    }
+
     match /tabroomLinks/{linkId} {
-      allow read: if isSignedIn();
+      allow read: if canReadTabroomData();
       allow create, update, delete: if false;
     }
 
     match /tabroomImports/{importId} {
-      allow read: if isSignedIn();
+      allow read: if canReadTabroomData();
       allow create, update, delete: if false;
     }
 
@@ -174,16 +245,31 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Posts and comments carry a copy of their channel's visibility so that
+    // lists can be queried and checked without one lookup per document.
+    function canReadChannelContent() {
+      return resource.data.channelVisibility == "public"
+        || (resource.data.channelVisibility == "private"
+          && hasJoinedChannel(resource.data.channelId));
+    }
+
     match /posts/{postId} {
-      allow read: if true;
+      allow read: if canReadChannelContent();
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid
-        && (!('channelId' in request.resource.data)
-          || request.resource.data.channelId == null
-          || request.resource.data.channelId == ''
-          || request.resource.data.channelId == 'community-general'
+        && (
+          (
+            (!('channelId' in request.resource.data)
+              || request.resource.data.channelId == null
+              || request.resource.data.channelId == ''
+              || request.resource.data.channelId == 'community-general')
+            && request.resource.data.channelVisibility == "public"
+          )
           || (request.resource.data.channelId is string
-            && hasJoinedChannel(request.resource.data.channelId)));
+            && hasJoinedChannel(request.resource.data.channelId)
+            && request.resource.data.channelVisibility
+              == get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data.get("visibility", "public"))
+        );
       allow update: if isSignedIn() && (
         (
           ownsExistingResource("authorId")
@@ -201,70 +287,97 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(["reported", "updatedAt"])
           && request.resource.data.reported == true
         )
-        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["shareCount", "updatedAt"])
-        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(["replyCount", "updatedAt"])
-        || request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          "likeCount",
-          "dislikeCount",
-          "favoriteCount",
-          "updatedAt"
-        ])
+        || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["shareCount", "updatedAt"])
+          && incrementsByOne("shareCount")
+        )
+        || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["replyCount", "updatedAt"])
+          && incrementsByOne("replyCount")
+        )
+        || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "likeCount",
+            "dislikeCount",
+            "favoriteCount",
+            "updatedAt"
+          ])
+          && stepsAtMostOne("likeCount")
+          && stepsAtMostOne("dislikeCount")
+          && stepsAtMostOne("favoriteCount")
+        )
       );
       allow delete: if ownsExistingResource("authorId");
     }
 
+    function postData(postId) {
+      return get(/databases/$(database)/documents/posts/$(postId)).data;
+    }
+
     match /postComments/{commentId} {
-      allow read: if true;
+      allow read: if canReadChannelContent();
       allow create: if isSignedIn()
-        && request.resource.data.authorId == request.auth.uid;
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.channelVisibility == postData(request.resource.data.postId).channelVisibility
+        && request.resource.data.get("channelId", "") == postData(request.resource.data.postId).get("channelId", "");
       // Vote and reply tallies are maintained by any signed-in voter; the
       // per-user vote itself lives in postCommentReactions.
       allow update: if isSignedIn()
-        && (isCommentCounterUpdate() || ownsExistingResource("authorId"));
+        && (isCommentCounterUpdate() || isOwnCommentEdit());
       allow delete: if ownsExistingResource("authorId");
     }
 
     match /postReactions/{reactionId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
+      allow create, update: if isOwnReactionWrite(reactionId, "postId");
     }
 
     match /postCommentReactions/{reactionId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
+      allow create, update: if isOwnReactionWrite(reactionId, "commentId");
     }
 
+    // Written only by the Tabroom sync Cloud Function.
     match /userStats/{statsId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // Same access as the speech itself. Lists must filter on one speechId.
+    function canReadSpeechById(speechId) {
+      let speech = get(/databases/$(database)/documents/speeches/$(speechId)).data;
+      return isSignedIn()
+        && (
+          speech.visibility == "public"
+          || speech.creatorId == request.auth.uid
+          || exists(/databases/$(database)/documents/speechShares/$(speechId)/recipients/$(request.auth.uid))
+        );
     }
 
     match /speechComments/{commentId} {
-      allow read: if isSignedIn();
+      allow read: if canReadSpeechById(resource.data.speechId);
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid;
       // Vote tallies are maintained by any signed-in voter; the per-user vote
       // itself lives in speechCommentReactions.
       allow update: if isSignedIn()
-        && (isCommentCounterUpdate() || ownsExistingResource("authorId"));
+        && (isCommentCounterUpdate() || isOwnCommentEdit());
       allow delete: if ownsExistingResource("authorId");
     }
 
     match /speechCommentReactions/{reactionId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
+      allow create, update: if isOwnReactionWrite(reactionId, "commentId");
     }
 
     match /speeches/{speechId} {
       allow read: if canReadSpeech(speechId);
       allow create: if isSignedIn()
         && request.resource.data.creatorId == request.auth.uid
-        && hasValidSpeechVisibility();
+        && hasValidSpeechVisibility()
+        && !request.resource.data.keys().hasAny(["aiSummary", "summary"]);
       allow update: if ownsExistingResource("creatorId")
+        && request.resource.data.creatorId == resource.data.creatorId
         && hasValidSpeechVisibility()
         && keepsServerManagedSpeechSummary();
       allow delete: if ownsExistingResource("creatorId");
@@ -375,13 +488,102 @@ service cloud.firestore {
       ]);
     }
 
+    function isNewDebateAtStart() {
+      return createsNoServerManagedDebateFields()
+        && request.resource.data.turns == []
+        && request.resource.data.get("likeCount", 0) == 0
+        && request.resource.data.get("dislikeCount", 0) == 0
+        && request.resource.data.get("favoriteCount", 0) == 0
+        && request.resource.data.get("shareCount", 0) == 0
+        && request.resource.data.get("commentCount", 0) == 0;
+    }
+
+    function isNewPrivateDebate() {
+      return request.resource.data.visibility == "private"
+        && request.resource.data.status == "Awaiting Opponent"
+        && request.resource.data.creatorId == request.auth.uid
+        && request.resource.data.participantIds == [request.auth.uid];
+    }
+
+    // Accepting an open challenge creates a public debate between its creator
+    // and the signed-in user, and only while the challenge is still open.
+    function isDebateFromOpenChallenge() {
+      let challenge = get(/databases/$(database)/documents/matchRequests/$(request.resource.data.matchRequestId)).data;
+      return request.resource.data.visibility == "public"
+        && request.resource.data.status == "Active"
+        && challenge.status == "Open"
+        && challenge.creatorId != request.auth.uid
+        && request.resource.data.creatorId == challenge.creatorId
+        && request.resource.data.participantIds == [challenge.creatorId, request.auth.uid];
+    }
+
+    // Appends the signed-in user's own turn and leaves earlier turns untouched.
+    function isOwnTurnSubmission() {
+      let previousTurns = resource.data.get("turns", []);
+      let turns = request.resource.data.turns;
+      return request.auth.uid in resource.data.participantIds
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "turns",
+          "currentRound",
+          "currentTurnUserId",
+          "status",
+          "updatedAt"
+        ])
+        && resource.data.status == "Active"
+        && resource.data.get("currentTurnUserId", null) in [request.auth.uid, null]
+        && turns.size() == previousTurns.size() + 1
+        // A list can't be sliced to length 0, so a first turn skips this check.
+        && (previousTurns.size() == 0 || turns[0:previousTurns.size()] == previousTurns)
+        && turns[previousTurns.size()].authorId == request.auth.uid
+        && (request.resource.data.currentTurnUserId == null
+          || request.resource.data.currentTurnUserId in resource.data.participantIds)
+        && (request.resource.data.status == "Active"
+          || (request.resource.data.status == "Completed"
+            && turns.size() >= resource.data.totalRounds));
+    }
+
+    // Repairs debates that have every turn but were never marked complete.
+    function isCompletionRepair() {
+      return request.auth.uid in resource.data.participantIds
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "currentRound",
+          "currentTurnUserId",
+          "status",
+          "updatedAt"
+        ])
+        && request.resource.data.status == "Completed"
+        && request.resource.data.currentTurnUserId == null
+        && resource.data.get("turns", []).size() >= resource.data.totalRounds;
+    }
+
+    function isDebateTallyUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return (resource.data.visibility == "public"
+          || request.auth.uid in resource.data.participantIds)
+        && (
+          (
+            changed.hasOnly(["likeCount", "dislikeCount", "favoriteCount", "updatedAt"])
+            && stepsAtMostOne("likeCount")
+            && stepsAtMostOne("dislikeCount")
+            && stepsAtMostOne("favoriteCount")
+          )
+          || (changed.hasOnly(["commentCount", "updatedAt"]) && incrementsByOne("commentCount"))
+          || (changed.hasOnly(["shareCount", "updatedAt"]) && incrementsByOne("shareCount"))
+        );
+    }
+
     match /debates/{debateId} {
-      // Public debates are readable to any signed-in user; private debates are
-      // readable to their participants and creator. (Whole-collection listeners
-      // still require a broad read, so listing stays gated to signed-in users.)
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && createsNoServerManagedDebateFields();
-      allow update: if isSignedIn() && keepsServerManagedDebateFields();
+      // Lists must filter on visibility == "public" or on participantIds
+      // containing the user. Joining by invite code goes through a callable,
+      // because the joiner can't read a private debate until they are in it.
+      allow read: if isSignedIn()
+        && (resource.data.visibility == "public"
+          || request.auth.uid in resource.data.participantIds);
+      allow create: if isSignedIn()
+        && isNewDebateAtStart()
+        && (isNewPrivateDebate() || isDebateFromOpenChallenge());
+      allow update: if isSignedIn()
+        && (isOwnTurnSubmission() || isCompletionRepair() || isDebateTallyUpdate());
     }
 
     // Raw debate transcripts are written by Cloud Functions and are not exposed
@@ -397,29 +599,56 @@ service cloud.firestore {
     }
 
     match /matchRequests/{requestId} {
-      allow read, create, update: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.creatorId == request.auth.uid
+        && request.resource.data.status == "Open";
+      allow update: if isSignedIn()
+        && (
+          // The creator can change the challenge's status.
+          (
+            ownsExistingResource("creatorId")
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "updatedAt"])
+          )
+          // An accepter closes it in the same write that creates the debate.
+          || (
+            resource.data.status == "Open"
+            && request.resource.data.status == "Matched"
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "matchedDebateId", "updatedAt"])
+            && getAfter(/databases/$(database)/documents/debates/$(request.resource.data.matchedDebateId)).data.matchRequestId == requestId
+            && request.auth.uid in getAfter(/databases/$(database)/documents/debates/$(request.resource.data.matchedDebateId)).data.participantIds
+          )
+        );
     }
 
+    // Messages carry a copy of participantIds so a list can be checked without
+    // one lookup per debate. The join callable adds new participants to them.
     match /debateMessages/{messageId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && request.auth.uid in resource.data.participantIds;
       // Only debate participants may post to the participant chat.
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid
-        && isDebateParticipant(request.resource.data.debateId);
+        && isDebateParticipant(request.resource.data.debateId)
+        && request.resource.data.participantIds == debateData(request.resource.data.debateId).participantIds;
     }
 
+    // Comments carry a copy of the debate's audience for the same reason.
     match /debateComments/{commentId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn()
+        && (resource.data.debateVisibility == "public"
+          || request.auth.uid in resource.data.participantIds);
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid
-        && debateCommentsAllowed(request.resource.data.debateId);
+        && debateCommentsAllowed(request.resource.data.debateId)
+        && request.resource.data.debateVisibility == debateData(request.resource.data.debateId).visibility
+        && request.resource.data.participantIds == debateData(request.resource.data.debateId).participantIds;
     }
 
     match /debateReactions/{reactionId} {
-      allow read: if isSignedIn();
-      // A reaction document is writable only by its owning user.
-      allow create, update: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
+      // `resource` is null when the like flow checks for an earlier reaction.
+      allow read: if isSignedIn()
+        && (resource == null || resource.data.userId == request.auth.uid);
+      allow create, update: if isOwnReactionWrite(reactionId, "debateId");
     }
 
     match /debateWinnerVotes/{voteId} {
@@ -738,15 +967,17 @@ service cloud.firestore {
 
     match /channels/{channelId} {
       allow read: if true;
+      // Channels are public documents, so invite codes live in channelInvites.
       allow create: if isSignedIn()
-        && request.resource.data.creatorId == request.auth.uid;
+        && request.resource.data.creatorId == request.auth.uid
+        && !("inviteCode" in request.resource.data);
       allow update, delete: if ownsExistingResource("creatorId");
     }
 
     match /debateChatReads/{readId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn()
+        && (resource == null || resource.data.userId == request.auth.uid);
+      allow create, update: if isOwnReactionWrite(readId, "debateId");
     }
 
     function chatData(threadId) {
@@ -909,21 +1140,14 @@ service cloud.firestore {
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.channelId is string
         && membershipId == request.resource.data.channelId + "-" + request.auth.uid
+        && !("inviteCode" in request.resource.data)
         && exists(/databases/$(database)/documents/channels/$(request.resource.data.channelId))
+        // Private channels are joined through the joinChannelByInviteCode
+        // callable; memberships are readable, so a code can't be stored on them.
         && (
           get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data.creatorId == request.auth.uid
           || !('visibility' in get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data)
           || get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data.visibility == 'public'
-          || (
-            'inviteCode' in request.resource.data
-            && (
-              (
-                exists(/databases/$(database)/documents/channelInvites/$(request.resource.data.inviteCode))
-                && get(/databases/$(database)/documents/channelInvites/$(request.resource.data.inviteCode)).data.channelId == request.resource.data.channelId
-              )
-              || request.resource.data.inviteCode == get(/databases/$(database)/documents/channels/$(request.resource.data.channelId)).data.inviteCode
-            )
-          )
         );
       allow update: if ownsExistingResource("userId")
         && request.resource.data.userId == request.auth.uid
@@ -933,7 +1157,7 @@ service cloud.firestore {
     }
 
     match /channelInvites/{inviteCode} {
-      allow get: if isSignedIn();
+      allow get: if ownsExistingResource("createdBy");
       allow list: if false;
       allow create: if isSignedIn()
         && request.resource.data.createdBy == request.auth.uid

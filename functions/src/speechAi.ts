@@ -347,6 +347,14 @@ const processSpeechUpload = async (
       return;
     }
 
+    // Storage rules check this at upload too. A recording can only summarize
+    // its uploader's own speech. A missing document is handled by the claim.
+    const taggedSpeech = await getFirestore().doc(`speeches/${speechId}`).get();
+    if (taggedSpeech.exists && taggedSpeech.data()?.creatorId !== userId) {
+      console.warn("Skipping recording tagged with another user's speech.", { speechId, storagePath });
+      return;
+    }
+
     try {
       if (!(await claimSpeechSummary(speechId, eventId, allowStaleTakeover))) {
         console.info("Speech summary claim skipped", { speechId, eventId });

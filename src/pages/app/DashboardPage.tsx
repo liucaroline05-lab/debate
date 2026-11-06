@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
+import { useVisibleDebates } from "@/features/debates/useVisibleDebates";
 import {
   CalendarDays,
   ChevronDown,
@@ -17,7 +18,6 @@ import {
 import { PageMeta } from "@/components/common/PageMeta";
 import {
   seededChannels,
-  seededDebates,
   seededResources,
 } from "@/data/firestoreSeeds";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -491,7 +491,7 @@ export const DashboardPage = () => {
     Boolean(currentUserId),
     currentUserId ? `tabroom-imports:${currentUserId}` : undefined,
   );
-  const debateState = useSeededFirestoreCollection("debates", seededDebates);
+  const debateState = useVisibleDebates(currentUserId);
   const resourceState = useSeededFirestoreCollection("resources", seededResources);
   const resourceSaveState = useSeededFirestoreCollection<ResourceSave>(
     "resourceSaves",

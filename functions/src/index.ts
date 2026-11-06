@@ -29,6 +29,7 @@ export {
   transcribeDebateSpeech,
 } from "./debateAi";
 export { castDebateWinnerVote } from "./debateVoting";
+export { joinChannelByInviteCode, joinDebateByInviteCode } from "./inviteJoins";
 export { recordDebateView } from "./debateViews";
 export { retrySpeechSummary, summarizeUploadedSpeech } from "./speechAi";
 export { sendModeratedChatAttachment, getChatAttachment, getChatAttachmentTranscript } from "./chatAttachments";
@@ -209,8 +210,9 @@ const moderateProfilePhoto = async (openai: OpenAI, dataUrl: string) => {
   }
 };
 
-const deletePreviousAvatar = async (storagePath?: unknown) => {
-  if (typeof storagePath !== "string" || !storagePath.startsWith("avatars/")) {
+const deletePreviousAvatar = async (uid: string, storagePath?: unknown) => {
+  // The path is read from the user's profile, so only ever delete their own file.
+  if (typeof storagePath !== "string" || !storagePath.startsWith(`avatars/${uid}/`)) {
     return;
   }
 
@@ -284,7 +286,7 @@ export const uploadProfilePhoto = onCall(
         },
         { merge: true },
       );
-      await deletePreviousAvatar(previousStoragePath);
+      await deletePreviousAvatar(request.auth.uid, previousStoragePath);
 
       return {
         avatarUrl,
@@ -436,7 +438,7 @@ export const removeProfilePhoto = onCall(
 
     const userRef = getFirestore().doc(`users/${request.auth.uid}`);
     const userSnapshot = await userRef.get();
-    await deletePreviousAvatar(userSnapshot.data()?.avatarStoragePath);
+    await deletePreviousAvatar(request.auth.uid, userSnapshot.data()?.avatarStoragePath);
     await userRef.set(
       {
         avatarStoragePath: FieldValue.delete(),

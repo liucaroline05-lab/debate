@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
+import { useVisiblePosts } from "@/features/community/useVisibleChannelContent";
+import { useVisibleDebates } from "@/features/debates/useVisibleDebates";
 import { Ban, CalendarClock, Flag, History, MapPin, MoreVertical, Share2 } from "lucide-react";
 import { PageMeta } from "@/components/common/PageMeta";
 import { PerformanceCharts } from "@/components/profile/PerformanceCharts";
@@ -8,9 +10,7 @@ import { ShareToMessageDialog } from "@/features/messages/ShareToMessageDialog";
 import {
   seededChannelMemberships,
   seededChannels,
-  seededDebates,
   seededFollows,
-  seededPosts,
   seededTabroomImports,
   seededTabroomLinks,
   seededUserStats,
@@ -283,7 +283,7 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
   const { currentUser, isDemoMode, updateProfile } = useAuth();
   const location = useLocation();
   const usersState = useSeededFirestoreCollection("users", seededUsers);
-  const postsState = useSeededFirestoreCollection("posts", seededPosts);
+  const postsState = useVisiblePosts(currentUser?.id);
   const followsState = useSeededFirestoreCollection("follows", seededFollows);
   const blockConstraints = useMemo<QueryConstraint[]>(
     () => currentUser ? [where("blockerId", "==", currentUser.id)] : [],
@@ -298,12 +298,28 @@ export const UserProfileView = ({ userId, isOwnProfile }: UserProfileViewProps) 
     "channelMemberships",
     seededChannelMemberships,
   );
-  const debatesState = useSeededFirestoreCollection("debates", seededDebates);
+  const debatesState = useVisibleDebates(currentUser?.id);
   const statsState = useSeededFirestoreCollection("userStats", seededUserStats);
-  const tabroomLinksState = useSeededFirestoreCollection("tabroomLinks", seededTabroomLinks);
+  // Other members' Tournament history is only readable if they opted in.
+  const canReadTabroomHistory = isOwnProfile
+    || Boolean(usersState.data.find((user) => user.id === userId)?.showTabroomHistory);
+  const tabroomConstraints = useMemo<QueryConstraint[]>(
+    () => (userId ? [where("userId", "==", userId)] : []),
+    [userId],
+  );
+  const tabroomLinksState = useSeededFirestoreCollection(
+    "tabroomLinks",
+    seededTabroomLinks,
+    tabroomConstraints,
+    canReadTabroomHistory,
+    `tabroom-links:${userId}`,
+  );
   const tabroomImportsState = useSeededFirestoreCollection(
     "tabroomImports",
     seededTabroomImports,
+    tabroomConstraints,
+    canReadTabroomHistory,
+    `tabroom-imports:${userId}`,
   );
 
   const profile = useMemo(() => {

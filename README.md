@@ -223,6 +223,8 @@ September 10, 2026:
 [X] for the folders on the main page, delete the text that says "open this public collection to review its summaries and files"
 [X] dms are bugging for alt account
 [X] make users able to add folders inside of folders
+[ ] fix a delayed profile load restoring a user after they log out or switch accounts (AuthContext's auth listener doesn't check the user is still signed in when loadProfile finishes)
+[ ] logging out while on the Community page shows the "Something went wrong" screen (it returns early before its hooks; DebatesPage uses the same pattern)
 [ ] in dms, if you right click on the other person's message, you can reply/react/copy (similar to messages app). you can also pin conversations/groups
 [X] reformat the settings page so that everything is evened out at the bottom
 [ ] fix editing own posts in "community", also just fix community in general

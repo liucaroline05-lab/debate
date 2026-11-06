@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { where, type QueryConstraint } from "firebase/firestore";
+import { useVisiblePostComments, useVisiblePosts } from "@/features/community/useVisibleChannelContent";
 import {
   Bookmark,
   Check,
@@ -23,9 +24,7 @@ import { PageMeta } from "@/components/common/PageMeta";
 import {
   seededChannels,
   seededChannelMemberships,
-  seededComments,
   seededFollows,
-  seededPosts,
   seededUsers,
 } from "@/data/firestoreSeeds";
 import {
@@ -227,8 +226,8 @@ export const CommunityPage = () => {
     "channelMemberships",
     seededChannelMemberships,
   );
-  const postState = useSeededFirestoreCollection("posts", seededPosts);
-  const commentState = useSeededFirestoreCollection("postComments", seededComments);
+  const postState = useVisiblePosts(author.id);
+  const commentState = useVisiblePostComments(author.id);
   const followsState = useSeededFirestoreCollection("follows", seededFollows);
   const blockConstraints = useMemo<QueryConstraint[]>(() => [where("blockerId", "==", author.id)], [author.id]);
   const blocksState = useSeededFirestoreCollection<UserBlock>("userBlocks", [], blockConstraints, true, `user-blocks:${author.id}`);
@@ -517,7 +516,7 @@ export const CommunityPage = () => {
 
   const joinPracticeGroup = async () => {
     try {
-      const groupName = await joinPracticeGroupByCode(groupJoinCode, author.id);
+      const groupName = await joinPracticeGroupByCode(groupJoinCode);
       setGroupInviteNotice(`Joined ${groupName}.`);
       setGroupJoinCode("");
     } catch (error) {
@@ -614,7 +613,7 @@ export const CommunityPage = () => {
     });
     setSharedPostId(post.id);
     // Best-effort: record the share without blocking the dialog.
-    void incrementPostShareCount(post.id, post.shareCount).catch(() => {});
+    void incrementPostShareCount(post.id).catch(() => {});
   };
 
   const handleReaction = async (

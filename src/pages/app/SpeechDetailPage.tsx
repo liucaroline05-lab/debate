@@ -133,9 +133,16 @@ export const SpeechDetailPage = () => {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
+  const commentConstraints = useMemo<QueryConstraint[]>(
+    () => (speechId ? [where("speechId", "==", speechId)] : []),
+    [speechId],
+  );
   const commentsState = useSeededFirestoreCollection<SpeechComment>(
     "speechComments",
     EMPTY_SPEECH_COMMENTS,
+    commentConstraints,
+    Boolean(speechId),
+    speechId ? `speech-comments:${speechId}` : undefined,
   );
   const commentReactionState = useSeededFirestoreCollection<SpeechCommentReaction>(
     "speechCommentReactions",
