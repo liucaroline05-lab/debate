@@ -68,6 +68,8 @@ export const SettingsPage = () => {
   const [notificationMessage, setNotificationMessage] = useState("");
   const [isSavingNotifications, setIsSavingNotifications] = useState(false);
   const [debateDefaults, setDebateDefaults] = useState(resolvedPreferences.debateDefaults);
+  const [debateDefaultsMessage, setDebateDefaultsMessage] = useState("");
+  const [isSavingDebateDefaults, setIsSavingDebateDefaults] = useState(false);
   const [messagingPermission, setMessagingPermission] = useState<MessagingPermission>(
     resolvedPreferences.messaging.whoCanMessage,
   );
@@ -266,6 +268,31 @@ export const SettingsPage = () => {
       );
     } finally {
       setIsSavingNotifications(false);
+    }
+  };
+
+  const saveDebateDefaults = async () => {
+    if (isSavingDebateDefaults) return;
+    setDebateDefaultsMessage("");
+    setIsSavingDebateDefaults(true);
+    try {
+      await updateProfile({
+        preferences: {
+          ...profile.preferences,
+          debateDefaults,
+        },
+      });
+      setDebateDefaultsMessage(
+        isDemoMode
+          ? "Saved for this session. Connect Firebase to keep this setting."
+          : "Debate preferences saved.",
+      );
+    } catch (error) {
+      setDebateDefaultsMessage(
+        error instanceof Error ? error.message : "Unable to save debate preferences.",
+      );
+    } finally {
+      setIsSavingDebateDefaults(false);
     }
   };
 
@@ -826,6 +853,17 @@ export const SettingsPage = () => {
                 <option>48 hours</option>
               </select>
             </div>
+          </div>
+          <div className="stack" style={{ marginTop: "1rem" }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={isSavingDebateDefaults}
+              onClick={() => void saveDebateDefaults()}
+            >
+              {isSavingDebateDefaults ? "Saving..." : "Save debate preferences"}
+            </button>
+            {debateDefaultsMessage ? <p className="meta-line" role="status">{debateDefaultsMessage}</p> : null}
           </div>
         </article>
       </section>

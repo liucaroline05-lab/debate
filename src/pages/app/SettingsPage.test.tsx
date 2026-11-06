@@ -74,6 +74,43 @@ describe("SettingsPage messaging privacy", () => {
   });
 });
 
+describe("SettingsPage debate preferences", () => {
+  it("saves all three choices without touching other preferences", async () => {
+    mocks.updateProfile.mockReset().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+
+    await user.selectOptions(screen.getByLabelText("Preferred format"), "Policy");
+    await user.selectOptions(screen.getByLabelText("Preferred side"), "Neg");
+    await user.selectOptions(screen.getByLabelText("Async response cadence"), "48 hours");
+    expect(mocks.updateProfile).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Save debate preferences" }));
+
+    expect(mocks.updateProfile).toHaveBeenCalledWith({
+      preferences: {
+        ...profile.preferences,
+        debateDefaults: {
+          preferredFormat: "Policy",
+          preferredSide: "Neg",
+          asyncResponseCadence: "48 hours",
+        },
+      },
+    });
+    expect(await screen.findByText("Debate preferences saved.")).toBeInTheDocument();
+  });
+
+  it("shows the reason when saving fails", async () => {
+    mocks.updateProfile.mockReset().mockRejectedValue(new Error("You are offline."));
+    const user = userEvent.setup();
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+
+    await user.click(screen.getByRole("button", { name: "Save debate preferences" }));
+
+    expect(await screen.findByText("You are offline.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save debate preferences" })).toBeEnabled();
+  });
+});
+
 describe("SettingsPage notification history", () => {
   it("stacks Notifications directly below Account in the left column", () => {
     render(<SettingsPage />);
