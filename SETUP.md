@@ -42,3 +42,17 @@
 - Add Firestore security rules and a real user profile document shape.
 - Connect community posting, resource bookmarking, and debate creation to write APIs.
 - Evaluate summary attribution and evidence fidelity on several real debates before considering a larger summary model.
+
+## Security rules rollout (November 2026)
+
+The stricter `firestore.rules` and `storage.rules` depend on new client queries, two new functions, and new fields on existing documents. Deploy in this order, or pages will start failing with permission errors:
+
+1. Deploy the functions: `firebase deploy --only functions`.
+2. Build and deploy the site: `npm run build`, then `firebase deploy --only hosting`.
+3. Preview the data migration, then apply it. See the header of `functions/scripts/migrate-security-rules.mjs` for credentials. Run this as close to step 4 as you can, because anything posted from an old tab before then won't have the new fields:
+   - `cd functions && node scripts/migrate-security-rules.mjs`
+   - `cd functions && node scripts/migrate-security-rules.mjs --apply`
+4. Deploy the rules: `firebase deploy --only firestore:rules,storage`.
+5. Re-run the migration once more to catch anything written during the rollout. It is safe to repeat.
+
+Tabs left open from before step 2 need a refresh. Their old queries are rejected by the new rules.
