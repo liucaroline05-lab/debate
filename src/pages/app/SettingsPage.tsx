@@ -699,6 +699,27 @@ export const SettingsPage = () => {
             ) : null}
           </div>
         </article>
+        <article className="app-card settings-profile-privacy-card">
+          <h2 className="card-title">Profile privacy</h2>
+          <p className="card-copy">Control what other members can see on your profile.</p>
+          <button
+            type="button"
+            className="settings-toggle-row"
+            aria-pressed={hidePerformance}
+            disabled={isSavingPerformance}
+            onClick={() => void togglePerformanceVisibility()}
+          >
+            <div>
+              <strong>Hide my performance</strong>
+              <span className="meta-line">Removes the Performance section, including your win record and graphs, from your profile.</span>
+            </div>
+            <span className={hidePerformance ? "settings-toggle is-on" : "settings-toggle"}>
+              {hidePerformance ? "On" : "Off"}
+            </span>
+          </button>
+          {performanceMessage ? <p className="meta-line" aria-live="polite">{performanceMessage}</p> : null}
+        </article>
+
         <article className="app-card settings-messaging-card">
           <h2 className="card-title">Messaging privacy</h2>
           <p className="card-copy">Choose who can start a new DM or add you to a group chat.</p>
@@ -745,27 +766,7 @@ export const SettingsPage = () => {
             {blockMessage ? <p className="meta-line" role="status">{blockMessage}</p> : null}
           </div>
         </article>
-
-        <article className="app-card settings-profile-privacy-card">
-          <h2 className="card-title">Profile privacy</h2>
-          <p className="card-copy">Control what other members can see on your profile.</p>
-          <button
-            type="button"
-            className="settings-toggle-row"
-            aria-pressed={hidePerformance}
-            disabled={isSavingPerformance}
-            onClick={() => void togglePerformanceVisibility()}
-          >
-            <div>
-              <strong>Hide my performance</strong>
-              <span className="meta-line">Removes the Performance section, including your win record and graphs, from your profile.</span>
-            </div>
-            <span className={hidePerformance ? "settings-toggle is-on" : "settings-toggle"}>
-              {hidePerformance ? "On" : "Off"}
-            </span>
-          </button>
-          {performanceMessage ? <p className="meta-line" aria-live="polite">{performanceMessage}</p> : null}
-        </article>
+        </div>
 
         <article className="app-card settings-debate-preferences-card">
           <h2 className="card-title">Debate preferences</h2>
@@ -827,7 +828,6 @@ export const SettingsPage = () => {
             </div>
           </div>
         </article>
-        </div>
       </section>
     </>
   );

@@ -3173,45 +3173,6 @@ button {
   align-items: stretch;
 }
 
-.settings-grid > .settings-left-stack,
-.settings-grid > .settings-right-stack {
-  display: contents;
-}
-
-.settings-left-stack > .settings-account-card {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.settings-right-stack > .settings-profile-card {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-.settings-left-stack > .settings-notifications-card {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.settings-right-stack > .settings-profile-privacy-card {
-  grid-column: 2;
-  grid-row: 2;
-}
-
-.settings-right-stack > .settings-messaging-card {
-  grid-column: 1 / -1;
-  grid-row: 3;
-}
-
-.settings-right-stack > .settings-debate-preferences-card {
-  grid-column: 1 / -1;
-  grid-row: 4;
-}
-
-.settings-account-card {
-  align-self: stretch;
-}
-
 .settings-blocked-accounts {
   margin-top: 1.25rem;
   padding-top: 1.25rem;
@@ -3230,12 +3191,33 @@ button {
   font-weight: 700;
 }
 
+/* Each column stacks on its own so a short card never stretches to match the
+   card beside it. Both columns end level: Bio takes any spare height on the
+   right, and the Notifications rows spread out if the right column runs taller. */
 .settings-left-stack,
 .settings-right-stack {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 1.5rem;
-  align-content: start;
   min-width: 0;
+}
+
+.settings-debate-preferences-card {
+  grid-column: 1 / -1;
+}
+
+.settings-notifications-card,
+.settings-profile-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.settings-notifications-card > .stack {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .settings-history-row {
@@ -3464,6 +3446,7 @@ button {
 
 .settings-avatar-panel {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
   gap: 1.25rem;
@@ -3493,9 +3476,16 @@ button {
 }
 
 .settings-bio-field {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   width: 100%;
   max-width: 34rem;
   text-align: left;
+}
+
+.settings-bio-field textarea {
+  flex: 1 1 auto;
 }
 
 .settings-profile-save-button {
@@ -3617,10 +3607,6 @@ button {
 
 .settings-segment-option:disabled {
   cursor: progress;
-}
-
-.settings-messaging-card {
-  align-self: start;
 }
 
 .settings-message-options {
@@ -4509,16 +4495,6 @@ button {
 
   .settings-debate-preferences-card {
     grid-column: auto;
-  }
-
-  .settings-left-stack > .settings-account-card,
-  .settings-right-stack > .settings-profile-card,
-  .settings-left-stack > .settings-notifications-card,
-  .settings-right-stack > .settings-messaging-card,
-  .settings-right-stack > .settings-profile-privacy-card,
-  .settings-right-stack > .settings-debate-preferences-card {
-    grid-column: 1;
-    grid-row: auto;
   }
 
   .dashboard-grid .app-card:first-child {

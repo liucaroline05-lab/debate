@@ -82,6 +82,17 @@ describe("SettingsPage notification history", () => {
     expect(leftColumn).not.toContainElement(screen.getByRole("heading", { name: "Profile photo" }));
   });
 
+  it("stacks the privacy cards under Profile photo, with Debate preferences below both columns", () => {
+    render(<SettingsPage />);
+    const rightColumn = screen.getByRole("heading", { name: "Profile photo" }).closest(".settings-right-stack");
+    expect(Array.from(rightColumn!.querySelectorAll("h2")).map((heading) => heading.textContent)).toEqual([
+      "Profile photo",
+      "Profile privacy",
+      "Messaging privacy",
+    ]);
+    expect(screen.getByRole("heading", { name: "Debate preferences" }).closest("article")?.parentElement).toHaveClass("settings-grid");
+  });
+
   it("saves the selected number of history days on the profile", async () => {
     mocks.updateProfile.mockReset().mockResolvedValue(undefined);
     const user = userEvent.setup();

@@ -224,7 +224,7 @@ September 10, 2026:
 [X] dms are bugging for alt account
 [X] make users able to add folders inside of folders
 [ ] in dms, if you right click on the other person's message, you can reply/react/copy (similar to messages app). you can also pin conversations/groups
-[ ] reformat the settings page so that everything is evened out at the bottom
+[X] reformat the settings page so that everything is evened out at the bottom
 [ ] fix editing own posts in "community", also just fix community in general
 [ ] you should only be able to post in channels that you have joined. and if youre not posting in a channel, there should be no text indicating it on the post (delete "general community)
 [ ] on profile, make users able to see their "following" and "followers" list. Also, each user should have a username (seperate from display name) which is unique and only changeable every 30 days.
