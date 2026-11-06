@@ -567,9 +567,12 @@ service cloud.firestore {
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 60
           && request.resource.data.visibility in ["public", "private"]
-          && (!("parentFolderId" in resource.data)
-            || folderDocument(resource.data.parentFolderId).data.visibility == request.resource.data.visibility)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name", "description", "visibility", "tournamentId", "tournamentName", "updatedAt", "itemCount", "fileCount", "collaboratorIds"])
+          && (!("parentFolderId" in request.resource.data)
+            || (request.resource.data.parentFolderId is string
+              && request.resource.data.parentFolderId != folderId
+              && ownsFolder(request.resource.data.parentFolderId)
+              && folderDocument(request.resource.data.parentFolderId).data.get("visibility", "private") == request.resource.data.visibility))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["name", "description", "visibility", "parentFolderId", "tournamentId", "tournamentName", "updatedAt", "itemCount", "fileCount", "collaboratorIds"])
           && request.resource.data.get("collaboratorIds", []).toSet()
             .difference(resource.data.get("collaboratorIds", []).toSet()).size() == 0)
         || (request.auth.uid in resource.data.get("collaboratorIds", [])

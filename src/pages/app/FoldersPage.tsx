@@ -30,6 +30,7 @@ import { FolderCollaboratorsPanel } from "@/features/folders/FolderCollaborators
 import { FolderCommentsSection } from "@/features/folders/FolderCommentsSection";
 import { FolderEngagementBar } from "@/features/folders/FolderEngagementBar";
 import { FolderInvitesBanner } from "@/features/folders/FolderInvitesBanner";
+import { FolderMoveButton } from "@/features/folders/FolderMoveButton";
 import { useAuth } from "@/features/auth/AuthContext";
 import {
   createContentFolder,
@@ -490,7 +491,11 @@ export const FoldersPage = () => {
     return allFolders.filter((folder) => {
       const isPublic = folderVisibility(folder) === "public";
       if (!isPublic && !isContentFolderMember(folder, userId)) return false;
-      if (folder.parentFolderId) return false;
+      // Nested folders live on their parent's board, but stay findable through
+      // search and "Saved only". A collaborator who can't see the parent still
+      // needs the folder listed, or they would have no way to reach it.
+      const isReachableThroughParent = allFolders.some((parent) => parent.id === folder.parentFolderId);
+      if (isReachableThroughParent && !normalizedQuery && !savedOnly) return false;
       if (visibilityFilter === "Public" && !isPublic) return false;
       if (visibilityFilter === "Private" && isPublic) return false;
       if (savedOnly && !savedFolderIds.has(folder.id)) return false;
@@ -900,6 +905,7 @@ export const FoldersPage = () => {
             <div><p className="eyebrow">Your collection</p><h2 id="folder-board-heading">Board</h2></div>
             <div className="folder-board-heading-actions">
               <span className="meta-line">{boardCards.length} item{boardCards.length === 1 ? "" : "s"}</span>
+              {isFolderOwner ? <FolderMoveButton key={selectedFolder.id} folder={selectedFolder} ownedFolders={foldersState.data} /> : null}
               {isFolderOwner ? <button type="button" className="btn btn-secondary" onClick={() => { setIsSubfolderFormOpen((value) => !value); setSubfolderNotice(""); }}><Plus size={16} aria-hidden="true" /> {isSubfolderFormOpen ? "Cancel" : "New nested folder"}</button> : null}
               {canEditFolder ? <button type="button" className={isBoardEditing ? "btn btn-primary" : "btn btn-secondary"} disabled={boardLayoutBusy} onClick={toggleBoardEditing}>{isBoardEditing ? <Check size={16} aria-hidden="true" /> : <Pencil size={16} aria-hidden="true" />}{isBoardEditing ? "Done editing" : "Edit board"}</button> : null}
             </div>

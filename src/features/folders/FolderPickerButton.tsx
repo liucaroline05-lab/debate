@@ -5,6 +5,7 @@ import { where, type QueryConstraint } from "firebase/firestore";
 import { useAuth } from "@/features/auth/AuthContext";
 import {
   addContentToFolder,
+  getContentFolderPath,
   removeContentFromFolder,
 } from "@/features/folders/folderService";
 import { useSeededFirestoreCollection } from "@/hooks/useSeededFirestoreCollection";
@@ -152,7 +153,7 @@ export const FolderPickerButton = (props: FolderPickerButtonProps) => {
                 <select value={selectedFolderId} onChange={(event) => setSelectedFolderId(event.target.value)}>
                   {folders.map((folder) => (
                     <option key={folder.id} value={folder.id}>
-                      {folder.name}{folder.tournamentName ? ` · ${folder.tournamentName}` : ""}
+                      {getContentFolderPath(folder, folders)}{folder.tournamentName ? ` · ${folder.tournamentName}` : ""}
                     </option>
                   ))}
                 </select>

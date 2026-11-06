@@ -222,7 +222,7 @@ September 10, 2026:
 [ ] in resources, the quick reads should be like a carousel, so there isn't really a start or end, it just loops around. also, make the left and right buttons more aesthetically consistent with the rest of the website (especially make the border around the circle thinner). the buttons should also be vertically centered with the quick reads, right now they are slightly too high.
 [X] for the folders on the main page, delete the text that says "open this public collection to review its summaries and files"
 [X] dms are bugging for alt account
-[ ] make users able to add folders inside of folders
+[X] make users able to add folders inside of folders
 [ ] in dms, if you right click on the other person's message, you can reply/react/copy (similar to messages app). you can also pin conversations/groups
 [ ] reformat the settings page so that everything is evened out at the bottom
 [ ] fix editing own posts in "community", also just fix community in general

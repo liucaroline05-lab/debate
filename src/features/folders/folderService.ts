@@ -3,6 +3,7 @@ import {
   arrayUnion,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -115,6 +116,47 @@ const getDescendantFolders = async (parentFolderId: string, userId: string): Pro
   return descendants;
 };
 
+// The root folder must already be written. Rules compare each subfolder with
+// its parent's committed visibility, so they are written one at a time, parents
+// first. In a shared batch, anything nested two levels down would be rejected.
+const cascadeFolderVisibility = async (
+  rootFolderId: string,
+  descendants: ContentFolder[],
+  visibility: "public" | "private",
+) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const folderIds = [rootFolderId, ...descendants.map((child) => child.id)];
+  const [itemsByFolder, filesByFolder] = await Promise.all([
+    Promise.all(folderIds.map((id) => getDocs(query(collection(firestore!, "folderItems"), where("folderId", "==", id))))),
+    Promise.all(folderIds.map((id) => getDocs(query(collection(firestore!, "folderFiles"), where("folderId", "==", id))))),
+  ]);
+  const now = new Date().toISOString();
+  for (const child of descendants) {
+    await updateDoc(doc(firestore, "folders", child.id), { visibility, updatedAt: now });
+  }
+  const children = [
+    ...itemsByFolder.flatMap((group) => group.docs).map((item) => {
+      const data = item.data() as Partial<ContentFolderItem>;
+      return {
+        ref: item.ref,
+        updates: {
+          visibility,
+          sourceVisibility: data.sourceVisibility ?? (data.itemType === "resource" ? "public" : "private"),
+        },
+      };
+    }),
+    ...filesByFolder.flatMap((group) => group.docs).map((file) => ({
+      ref: file.ref,
+      updates: { visibility },
+    })),
+  ];
+  for (let offset = 0; offset < children.length; offset += 450) {
+    const batch = writeBatch(firestore);
+    children.slice(offset, offset + 450).forEach((child) => batch.update(child.ref, child.updates));
+    await batch.commit();
+  }
+};
+
 export const updateContentFolder = async (
   folder: ContentFolder,
   folderId: string,
@@ -141,40 +183,91 @@ export const updateContentFolder = async (
   });
   if (folder.visibility === updates.visibility) return;
 
-  const [itemsByFolder, filesByFolder] = await Promise.all([
-    Promise.all(folderIds.map((id) => getDocs(query(collection(firestore!, "folderItems"), where("folderId", "==", id))))),
-    Promise.all(folderIds.map((id) => getDocs(query(collection(firestore!, "folderFiles"), where("folderId", "==", id))))),
-  ]);
-  const now = new Date().toISOString();
-  for (let offset = 0; offset < descendants.length; offset += 450) {
-    const batch = writeBatch(firestore);
-    descendants.slice(offset, offset + 450).forEach((child) => batch.update(
-      doc(firestore!, "folders", child.id),
-      { visibility: updates.visibility, updatedAt: now },
-    ));
-    await batch.commit();
+  await cascadeFolderVisibility(folderId, descendants, updates.visibility);
+};
+
+/** The folder's location, such as "State prep / Evidence". */
+export const getContentFolderPath = (folder: ContentFolder, folders: ContentFolder[]) => {
+  const names = [folder.name];
+  const visited = new Set([folder.id]);
+  let parentId = folder.parentFolderId;
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = folders.find((candidate) => candidate.id === parentId);
+    if (!parent) break;
+    names.unshift(parent.name);
+    parentId = parent.parentFolderId;
   }
-  const children = [
-    ...itemsByFolder.flatMap((group) => group.docs).map((item) => {
-      const data = item.data() as Partial<ContentFolderItem>;
-      return {
-        ref: item.ref,
-        updates: {
-          visibility: updates.visibility,
-          sourceVisibility: data.sourceVisibility ?? (data.itemType === "resource" ? "public" : "private"),
-        },
-      };
-    }),
-    ...filesByFolder.flatMap((group) => group.docs).map((file) => ({
-      ref: file.ref,
-      updates: { visibility: updates.visibility },
-    })),
-  ];
-  for (let offset = 0; offset < children.length; offset += 450) {
-    const batch = writeBatch(firestore);
-    children.slice(offset, offset + 450).forEach((child) => batch.update(child.ref, child.updates));
-    await batch.commit();
-  }
+  return names.join(" / ");
+};
+
+/**
+ * Folders that `folder` can be placed in: never itself or anything inside it,
+ * and, like other private content, a private folder never goes in a public one.
+ */
+export const getContentFolderMoveTargets = (folder: ContentFolder, ownedFolders: ContentFolder[]) => {
+  const isInsideFolder = (candidate: ContentFolder) => {
+    const visited = new Set<string>();
+    let current: ContentFolder | undefined = candidate;
+    while (current && !visited.has(current.id)) {
+      if (current.id === folder.id) return true;
+      visited.add(current.id);
+      current = ownedFolders.find((entry) => entry.id === current?.parentFolderId);
+    }
+    return false;
+  };
+  return ownedFolders.filter((candidate) =>
+    !isInsideFolder(candidate)
+    && (folder.visibility === "public" || candidate.visibility !== "public"),
+  );
+};
+
+/**
+ * Puts a folder inside another folder, or back at the top level when
+ * `parentFolderId` is null. Subfolders share their parent's visibility, so a
+ * public folder moved into a private one becomes private with all its content.
+ */
+export const moveContentFolder = async (folderId: string, parentFolderId: string | null) => {
+  if (!firestore) throw new Error("Firestore is not configured.");
+  const database = firestore;
+  const folderRef = doc(database, "folders", folderId);
+  const moved = await runTransaction(database, async (transaction) => {
+    const folderSnapshot = await transaction.get(folderRef);
+    if (!folderSnapshot.exists()) throw new Error("This folder is no longer available.");
+    const folder = folderSnapshot.data() as ContentFolder;
+    const currentVisibility: ContentFolder["visibility"] = folder.visibility === "public" ? "public" : "private";
+    const updatedAt = new Date().toISOString();
+    if (!parentFolderId) {
+      transaction.update(folderRef, { parentFolderId: deleteField(), visibility: currentVisibility, updatedAt });
+      return { userId: folder.userId, visibility: currentVisibility, visibilityChanged: false };
+    }
+
+    // Walk up from the destination so a stale list can't create a loop.
+    let destination: ContentFolder | undefined;
+    const visited = new Set<string>();
+    let ancestorId: string | undefined = parentFolderId;
+    while (ancestorId && !visited.has(ancestorId)) {
+      if (ancestorId === folderId) throw new Error("A folder can't go inside itself or one of its subfolders.");
+      visited.add(ancestorId);
+      const ancestorSnapshot = await transaction.get(doc(database, "folders", ancestorId));
+      if (!ancestorSnapshot.exists()) throw new Error("That folder is no longer available.");
+      const ancestor = ancestorSnapshot.data() as ContentFolder;
+      destination ??= ancestor;
+      ancestorId = ancestor.parentFolderId;
+    }
+    if (!destination || destination.userId !== folder.userId) {
+      throw new Error("You can only add a folder to folders you own.");
+    }
+    const visibility: ContentFolder["visibility"] = destination.visibility === "public" ? "public" : "private";
+    if (visibility === "public" && currentVisibility !== "public") {
+      throw new Error("Private folders can only be added to a private folder.");
+    }
+    transaction.update(folderRef, { parentFolderId, visibility, updatedAt });
+    return { userId: folder.userId, visibility, visibilityChanged: visibility !== currentVisibility };
+  });
+  if (!moved.visibilityChanged) return;
+  const descendants = await getDescendantFolders(folderId, moved.userId);
+  await cascadeFolderVisibility(folderId, descendants, moved.visibility);
 };
 
 const makeFolderItemId = (folderId: string, itemType: FolderItemType, itemId: string) =>
